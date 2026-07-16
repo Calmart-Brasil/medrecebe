@@ -57,7 +57,7 @@ assert.ok(
   'appState só pode ser carregado depois da mensagem padrão usada pelo estado vazio',
 );
 assert.ok(!html.includes('Beta local:'), 'o aviso antigo de beta local não deve aparecer na entrada');
-assert.ok(html.includes('styles.css?v=3') && html.includes('app.js?v=4'), 'os arquivos corrigidos precisam de cache busting');
+assert.ok(html.includes('styles.css?v=3') && html.includes('app.js?v=5'), 'os arquivos corrigidos precisam de cache busting');
 for (const marker of ['billing-view', 'R$ 29,90', 'runtime-config.js', 'cloud.js']) {
   assert.ok(html.includes(marker), `fluxo de assinatura sem: ${marker}`);
 }
@@ -76,7 +76,7 @@ for (const marker of ['profiles', 'subscriptions', 'billing_events', 'admin_audi
   assert.ok(migration.toLowerCase().includes(marker), `banco de produção sem: ${marker}`);
 }
 
-for (const marker of ['install', 'activate', 'fetch', 'caches.open', 'medrecebe-beta-v4']) {
+for (const marker of ['install', 'activate', 'fetch', 'caches.open', 'medrecebe-beta-v5']) {
   assert.ok(worker.includes(marker), `sw.js sem: ${marker}`);
 }
 

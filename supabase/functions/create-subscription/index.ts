@@ -30,7 +30,9 @@ Deno.serve(async (request) => {
       return json(request, { checkoutUrl: current.checkout_url, reused: true });
     }
 
-    const appUrl = Deno.env.get('APP_URL') || 'https://calmart-brasil.github.io/medrecebe/';
+    const appUrl = new URL(Deno.env.get('APP_URL') || 'https://calmart-brasil.github.io/medrecebe/');
+    appUrl.search = '';
+    appUrl.hash = '';
     const endDate = new Date();
     endDate.setUTCFullYear(endDate.getUTCFullYear() + 10);
     const subscription = await mercadoPago<MercadoPagoSubscription>('/preapproval', {
@@ -46,7 +48,7 @@ Deno.serve(async (request) => {
           transaction_amount: 29.9,
           currency_id: 'BRL',
         },
-        back_url: `${appUrl}?billing=return`,
+        back_url: appUrl.toString(),
         status: 'pending',
       }),
     });
