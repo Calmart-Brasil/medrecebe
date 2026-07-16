@@ -1,0 +1,22 @@
+project_id = "medrecebe"
+
+[functions.register]
+verify_jwt = false
+
+[functions.login-cpf]
+verify_jwt = false
+
+[functions.account-status]
+verify_jwt = false
+
+[functions.create-subscription]
+verify_jwt = false
+
+[functions.mercado-pago-webhook]
+verify_jwt = false
+
+[functions.admin-users]
+verify_jwt = false
+
+[functions.admin-update-user]
+verify_jwt = false

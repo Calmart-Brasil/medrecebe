@@ -8,6 +8,7 @@ const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const screen = $('#screen');
 const modalRoot = $('#modal-root');
+const cloud = window.MedRecebeCloud;
 
 let authMode = 'login';
 let currentRoute = 'home';
@@ -20,6 +21,8 @@ let toastTimer = 0;
 let draftWorkplace = null;
 let editingModalityIndex = null;
 let attendanceDraft = null;
+let cloudAccount = null;
+let activeStateKey = APP_KEY;
 
 const TITLES = {
   home: 'Início',
@@ -47,7 +50,7 @@ Peço a confirmação do recebimento e a previsão de regularização.
 Atenciosamente,
 {{medico}}`;
 
-let appState = loadState();
+let appState = loadState(activeStateKey);
 
 function emptyState() {
   return {
@@ -61,9 +64,9 @@ function emptyState() {
   };
 }
 
-function loadState() {
+function loadState(storageKey = activeStateKey) {
   try {
-    const parsed = JSON.parse(localStorage.getItem(APP_KEY));
+    const parsed = JSON.parse(localStorage.getItem(storageKey));
     if (parsed && Array.isArray(parsed.workplaces) && Array.isArray(parsed.attendances)) {
       return { ...emptyState(), ...parsed };
     }
@@ -75,7 +78,7 @@ function loadState() {
 
 function saveState() {
   try {
-    localStorage.setItem(APP_KEY, JSON.stringify(appState));
+    localStorage.setItem(activeStateKey, JSON.stringify(appState));
     return true;
   } catch {
     showToast('O armazenamento local está cheio. Remova fotos antigas e tente novamente.');
@@ -314,14 +317,60 @@ function isStandalone() {
   return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
 }
 
+function isCloudMode() {
+  return Boolean(cloud?.isEnabled());
+}
+
+function cloudAccessAllowed() {
+  return !isCloudMode() || cloudAccount?.profile?.role === 'admin' || cloudAccount?.profile?.accessStatus === 'active';
+}
+
+function applyCloudAccount(result, cpf = '') {
+  cloudAccount = result;
+  activeStateKey = `${APP_KEY}.user.${result.profile.id}`;
+  appState = loadState(activeStateKey);
+  appState.profile = {
+    name: result.profile.fullName,
+    email: result.profile.email,
+    cpf: cpf || appState.profile?.cpf || `*******${result.profile.cpfLast4}`,
+  };
+  appState.cloudUserId = result.profile.id;
+  saveState();
+  activateSession();
+  if (cloudAccessAllowed()) showApp();
+  else showBilling();
+}
+
+function showBilling() {
+  $('#login-view').hidden = true;
+  $('#app-view').hidden = true;
+  $('#billing-view').hidden = false;
+  closeDrawer();
+  const status = cloudAccount?.profile?.accessStatus || 'pending_payment';
+  const messages = {
+    pending_payment: ['Ative seu acesso para registrar atendimentos e acompanhar seus repasses.', 'Aguardando a assinatura mensal de R$ 29,90.'],
+    past_due: ['Não conseguimos confirmar a última mensalidade.', 'Atualize o pagamento no Mercado Pago para restabelecer o acesso.'],
+    canceled: ['Sua assinatura não está ativa.', 'Faça uma nova assinatura para voltar a usar o MedRecebe.'],
+    suspended: ['Este acesso foi suspenso pelo administrador.', 'Entre em contato com o suporte antes de tentar um novo pagamento.'],
+  };
+  const [lead, detail] = messages[status] || messages.pending_payment;
+  $('#billing-lead').textContent = lead;
+  $('#billing-status').textContent = detail;
+  $('#billing-subscribe').hidden = status === 'suspended';
+  $('#billing-refresh').hidden = status === 'suspended';
+}
+
 function showLogin() {
   $('#app-view').hidden = true;
+  $('#billing-view').hidden = true;
   $('#login-view').hidden = false;
   closeDrawer();
 }
 
 function showApp() {
+  if (!cloudAccessAllowed()) return showBilling();
   $('#login-view').hidden = true;
+  $('#billing-view').hidden = true;
   $('#app-view').hidden = false;
   $('#drawer-name').textContent = appState.profile?.name || 'Médico';
   $('#drawer-email').textContent = appState.profile?.email || 'Dados neste aparelho';
@@ -511,7 +560,19 @@ function renderFeedback() {
 }
 
 function renderAccount() {
-  screen.innerHTML = `<div class="screen-stack">${pageHeading('Perfil neste aparelho', 'Conta e instalação', 'Gerencie seu acesso e instale o atalho na Tela de Início.')}<div class="card card-head"><span class="avatar">${escapeHtml((appState.profile?.name || 'M').charAt(0))}</span><div><h3>${escapeHtml(appState.profile?.name || 'Médico')}</h3><p>${formatCpf(appState.profile?.cpf || '')}<br/>${escapeHtml(appState.profile?.email || '')}</p></div></div><div class="notice success"><strong>Dados salvos neste aparelho</strong><br/>Fechar o MedRecebe ou o Safari não apaga sua conta, seus cadastros ou atendimentos.</div><h2 class="section-title">Instalação</h2><div class="card install-card"><span class="install-icon">${isStandalone() ? '✓' : '⇧'}</span><div><strong>${isStandalone() ? 'Beta instalado' : 'Adicionar à Tela de Início'}</strong><p>${isStandalone() ? 'Você está usando o modo aplicativo.' : 'Abra no Safari e instale o atalho para usar offline.'}</p></div>${isStandalone() ? '' : '<button class="link-button" data-action="install" type="button">Ver passos</button>'}</div><h2 class="section-title">Privacidade e suporte</h2><div class="card account-links"><a class="account-link" href="./privacidade.html" target="_blank" rel="noopener">Política de Privacidade <span>›</span></a><a class="account-link" href="./suporte.html" target="_blank" rel="noopener">Ajuda e suporte <span>›</span></a></div><button class="button secondary" data-action="logout" type="button">Sair</button><button class="button danger" data-action="delete-beta-data" type="button">Excluir conta e dados deste beta</button><p class="muted" style="text-align:center;font-size:9px">MedRecebe • Beta web 1.1</p></div>`;
+  const subscriptionLabels = {
+    active: 'Assinatura ativa',
+    pending_payment: 'Pagamento pendente',
+    past_due: 'Mensalidade pendente',
+    suspended: 'Acesso suspenso',
+    canceled: 'Assinatura cancelada',
+  };
+  const accessStatus = cloudAccount?.profile?.accessStatus;
+  const cloudSection = isCloudMode()
+    ? `<h2 class="section-title">Plano e acesso</h2><div class="card workplace-summary"><div class="card-head"><span class="round-icon">✓</span><div><h3>Plano Profissional</h3><p>R$ 29,90 por mês • Mercado Pago</p></div><span class="badge ${accessStatus === 'active' ? '' : 'inactive'}">${escapeHtml(subscriptionLabels[accessStatus] || 'Em configuração')}</span></div></div>${cloudAccount?.profile?.role === 'admin' ? '<a class="button primary" href="./admin.html">Abrir painel administrativo</a>' : ''}`
+    : '';
+  const deleteLabel = isCloudMode() ? 'Excluir dados salvos neste aparelho' : 'Excluir conta e dados deste beta';
+  screen.innerHTML = `<div class="screen-stack">${pageHeading('Perfil neste aparelho', 'Conta e instalação', 'Gerencie seu acesso e instale o atalho na Tela de Início.')}<div class="card card-head"><span class="avatar">${escapeHtml((appState.profile?.name || 'M').charAt(0))}</span><div><h3>${escapeHtml(appState.profile?.name || 'Médico')}</h3><p>${formatCpf(appState.profile?.cpf || '')}<br/>${escapeHtml(appState.profile?.email || '')}</p></div></div>${cloudSection}<div class="notice success"><strong>Dados salvos neste aparelho</strong><br/>Fechar o MedRecebe ou o Safari não apaga seus cadastros ou atendimentos.</div><h2 class="section-title">Instalação</h2><div class="card install-card"><span class="install-icon">${isStandalone() ? '✓' : '⇧'}</span><div><strong>${isStandalone() ? 'Beta instalado' : 'Adicionar à Tela de Início'}</strong><p>${isStandalone() ? 'Você está usando o modo aplicativo.' : 'Abra no Safari e instale o atalho para usar offline.'}</p></div>${isStandalone() ? '' : '<button class="link-button" data-action="install" type="button">Ver passos</button>'}</div><h2 class="section-title">Privacidade e suporte</h2><div class="card account-links"><a class="account-link" href="./privacidade.html" target="_blank" rel="noopener">Política de Privacidade <span>›</span></a><a class="account-link" href="./suporte.html" target="_blank" rel="noopener">Ajuda e suporte <span>›</span></a></div><button class="button secondary" data-action="logout" type="button">Sair</button><button class="button danger" data-action="delete-beta-data" type="button">${deleteLabel}</button><p class="muted" style="text-align:center;font-size:9px">MedRecebe • Beta web 1.2</p></div>`;
 }
 
 function openInstallModal() {
@@ -624,10 +685,16 @@ function bindEvents() {
     const register = authMode === 'register';
     $('#register-fields').hidden = !register;
     $('#auth-title').textContent = register ? 'Criar meu acesso' : 'Boas-vindas';
-    $('#auth-description').textContent = register ? 'Cadastre seus dados reais. A conta permanecerá salva neste aparelho.' : 'Entre com o CPF e a senha cadastrados neste aparelho.';
+    $('#auth-description').textContent = register
+      ? isCloudMode()
+        ? 'Cadastre seus dados para criar sua conta MedRecebe.'
+        : 'Cadastre seus dados reais. A conta permanecerá salva neste aparelho.'
+      : isCloudMode()
+        ? 'Entre com o CPF e a senha da sua conta MedRecebe.'
+        : 'Entre com o CPF e a senha cadastrados neste aparelho.';
     $('#auth-submit').textContent = register ? 'Criar acesso e entrar' : 'Entrar';
     $('#auth-toggle').textContent = register ? 'Já tenho acesso' : 'Primeiro uso? Criar meu acesso';
-    $('#demo-entry').hidden = register;
+    $('#demo-entry').hidden = register || isCloudMode();
     $('#auth-password').autocomplete = register ? 'new-password' : 'current-password';
     $('#auth-error').textContent = '';
   });
@@ -638,7 +705,41 @@ function bindEvents() {
     const cpf = onlyDigits($('#auth-cpf').value);
     const password = $('#auth-password').value;
     const error = $('#auth-error');
+    const submit = $('#auth-submit');
     error.textContent = '';
+    if (isCloudMode()) {
+      submit.disabled = true;
+      submit.textContent = 'Aguarde…';
+      try {
+        if (authMode === 'register') {
+          const name = $('#auth-name').value.trim();
+          const email = $('#auth-email').value.trim().toLowerCase();
+          if (name.length < 3) throw new Error('Informe seu nome completo.');
+          if (!isValidCpf(cpf)) throw new Error('Informe um CPF válido.');
+          if (!/^\S+@\S+\.\S+$/.test(email)) throw new Error('Informe um e-mail válido.');
+          if (password.length < 8) throw new Error('A senha deve ter pelo menos oito caracteres.');
+          const result = await cloud.register({ name, email, cpf, password });
+          if (result.requiresEmailConfirmation) {
+            authMode = 'login';
+            $('#register-fields').hidden = true;
+            $('#auth-title').textContent = 'Confirme seu e-mail';
+            $('#auth-description').textContent = 'Depois da confirmação, entre com seu CPF e senha.';
+            $('#auth-toggle').textContent = 'Primeiro uso? Criar meu acesso';
+            error.textContent = 'Cadastro criado. Confirme o e-mail enviado e depois entre com CPF e senha.';
+            return;
+          }
+          applyCloudAccount(result, cpf);
+        } else {
+          applyCloudAccount(await cloud.login(cpf, password), cpf);
+        }
+      } catch (caught) {
+        error.textContent = caught instanceof Error ? caught.message : 'Não foi possível concluir o acesso.';
+      } finally {
+        submit.disabled = false;
+        submit.textContent = authMode === 'register' ? 'Criar acesso e entrar' : 'Entrar';
+      }
+      return;
+    }
     if (authMode === 'register') {
       const name = $('#auth-name').value.trim();
       const email = $('#auth-email').value.trim().toLowerCase();
@@ -665,6 +766,44 @@ function bindEvents() {
     if (!saveState() || !activateSession()) return;
     showApp();
   });
+
+  $('#billing-subscribe').addEventListener('click', async () => {
+    const button = $('#billing-subscribe');
+    button.disabled = true;
+    button.textContent = 'Abrindo Mercado Pago…';
+    try {
+      const result = await cloud.createSubscription();
+      if (result.active || result.adminAccess) {
+        const restored = await cloud.restore();
+        if (restored) applyCloudAccount(restored);
+        return;
+      }
+      if (!result.checkoutUrl) throw new Error('Link de pagamento indisponível.');
+      window.location.assign(result.checkoutUrl);
+    } catch (caught) {
+      $('#billing-status').textContent = caught instanceof Error ? caught.message : 'Não foi possível abrir o pagamento.';
+      button.disabled = false;
+      button.textContent = 'Assinar com cartão';
+    }
+  });
+
+  $('#billing-refresh').addEventListener('click', async () => {
+    const button = $('#billing-refresh');
+    button.disabled = true;
+    button.textContent = 'Verificando…';
+    try {
+      const restored = await cloud.restore();
+      if (restored) applyCloudAccount(restored);
+      if (!cloudAccessAllowed()) $('#billing-status').textContent = 'O pagamento ainda está em processamento. Tente novamente em alguns instantes.';
+    } catch (caught) {
+      $('#billing-status').textContent = caught instanceof Error ? caught.message : 'Não foi possível verificar o pagamento.';
+    } finally {
+      button.disabled = false;
+      button.textContent = 'Já paguei — verificar acesso';
+    }
+  });
+
+  $('#billing-logout').addEventListener('click', logout);
 
   $('#header-action').addEventListener('click', () => (currentRoute === 'attendance' ? navigate('home') : openDrawer()));
   $('#feedback-shortcut').addEventListener('click', () => navigate('feedback'));
@@ -724,11 +863,12 @@ function handleClick(event) {
     $$('.rating button').forEach((button) => button.classList.toggle('selected', Number(button.dataset.value) === feedbackRating));
   }
   if (action === 'logout') logout();
-  if (action === 'delete-beta-data' && confirm('Excluir conta, cadastros, atendimentos, fotos e feedbacks deste beta?')) {
-    localStorage.removeItem(APP_KEY);
+  if (action === 'delete-beta-data' && confirm(isCloudMode() ? 'Excluir deste aparelho os cadastros, atendimentos, fotos e feedbacks?' : 'Excluir conta, cadastros, atendimentos, fotos e feedbacks deste beta?')) {
+    localStorage.removeItem(activeStateKey);
     localStorage.removeItem(SESSION_KEY);
     appState = emptyState();
-    showLogin();
+    if (isCloudMode()) logout();
+    else showLogin();
   }
   if (action === 'edit-modality') {
     preserveWorkplaceFields();
@@ -846,20 +986,36 @@ function saveWorkplace() {
 }
 
 function logout() {
+  if (isCloudMode()) void cloud.logout();
+  cloudAccount = null;
   localStorage.removeItem(SESSION_KEY);
+  activeStateKey = APP_KEY;
+  appState = loadState(APP_KEY);
   currentRoute = 'home';
   showLogin();
 }
 
-function boot() {
+async function boot() {
   bindEvents();
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(() => {});
   window.addEventListener('beforeinstallprompt', (event) => {
     event.preventDefault();
     deferredInstallPrompt = event;
   });
+  if (isCloudMode()) {
+    $('#demo-entry').hidden = true;
+    $('#auth-description').textContent = 'Entre com o CPF e a senha da sua conta MedRecebe.';
+    try {
+      const restored = await cloud.restore();
+      if (restored) applyCloudAccount(restored);
+      else showLogin();
+    } catch {
+      showLogin();
+    }
+    return;
+  }
   if (localStorage.getItem(SESSION_KEY) === 'active' && appState.profile && appState.account) showApp();
   else showLogin();
 }
 
-boot();
+void boot();

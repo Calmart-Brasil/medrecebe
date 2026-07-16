@@ -35,9 +35,9 @@
     </header>
     <main>
       <h1>Política de Privacidade</h1>
-      <p class="updated">MedRecebe • atualização: 15 de julho de 2026</p>
+      <p class="updated">MedRecebe • atualização: 16 de julho de 2026</p>
       <p class="notice">
-        Esta política descreve a versão MVP local do MedRecebe. Antes de uma versão com sincronização em nuvem, este texto e as declarações de privacidade da loja serão atualizados.
+        Esta política descreve o beta local e a infraestrutura de conta e assinatura que será ativada para a versão comercial. Cadastros financeiros e comprovantes continuam no aparelho; identidade, situação do acesso e cobrança podem ser processadas online.
       </p>
 
       <h2>1. Quem somos e finalidade do aplicativo</h2>
@@ -68,6 +68,14 @@
         No beta acessado pelo Safari e adicionado à Tela de Início, conta, senha protegida por hash, cadastros, atendimentos, comprovantes e feedbacks preparados ficam no armazenamento local daquele aparelho. Fechar o Safari ou o MedRecebe não apaga essas informações. Não há sincronização ou recuperação em servidor; limpar os dados do site no Safari ou usar a opção de exclusão dentro do beta remove as informações. O service worker mantém apenas os arquivos necessários para abrir o aplicativo offline.
       </p>
 
+      <h2>3.2. Conta online, painel e assinatura</h2>
+      <p>
+        Quando a infraestrutura comercial estiver ativada, nome, e-mail, identificador da conta, quatro últimos dígitos do CPF e situação do acesso serão armazenados no Supabase. O CPF completo é transformado no servidor em um hash com segredo antes da persistência. A senha é tratada pelo serviço de autenticação e não fica disponível no painel administrativo.
+      </p>
+      <p>
+        O Mercado Pago processará a assinatura recorrente, os dados do cartão, pagamentos, cancelamentos e reembolsos. O MedRecebe recebe identificadores e estados necessários para liberar ou bloquear o acesso, mas não recebe o número completo nem o código de segurança do cartão. Administradores autorizados podem consultar nome, e-mail, últimos dígitos do CPF, assinatura e situação do acesso; mudanças manuais ficam registradas em auditoria.
+      </p>
+
       <h2>4. Câmera, fotos e biometria</h2>
       <ul>
         <li>A câmera e a biblioteca de fotos são acessadas somente quando o usuário decide adicionar um comprovante.</li>
@@ -86,12 +94,12 @@
 
       <h2>6. Compartilhamento, publicidade e rastreamento</h2>
       <p>
-        O MVP não vende dados, não exibe publicidade, não realiza rastreamento entre aplicativos e não inclui SDKs de analytics ou anúncios. Ao enviar um e-mail, os dados escolhidos passam a ser tratados pelo provedor de e-mail e pelo destinatário conforme as respectivas políticas.
+        O MVP não vende dados, não exibe publicidade e não realiza rastreamento entre aplicativos para publicidade. Quando a conta comercial estiver ativada, Supabase processará autenticação e banco e Mercado Pago processará cobrança recorrente. Ao enviar um e-mail, os dados escolhidos passam a ser tratados pelo provedor de e-mail e pelo destinatário conforme as respectivas políticas.
       </p>
 
       <h2>7. Retenção e exclusão</h2>
       <p>
-        Os dados permanecem no iPhone enquanto o acesso estiver configurado. Em <strong>Menu → Conta e segurança → Excluir conta e todos os dados</strong>, o usuário pode apagar a conta local, cadastros, atendimentos, configurações e comprovantes. Desinstalar o aplicativo também remove o banco e os arquivos, embora itens do Keychain possam seguir o comportamento de retenção definido pelo próprio iOS; a exclusão dentro do aplicativo remove explicitamente a credencial.
+        Os dados operacionais permanecem no iPhone enquanto o acesso estiver configurado. A opção de exclusão do aparelho apaga cadastros, atendimentos, configurações e comprovantes locais. Quando a conta online estiver ativada, a exclusão da identidade e da assinatura também poderá ser solicitada pelo suporte; a função de exclusão integral dentro do aplicativo será disponibilizada antes da versão final da App Store.
       </p>
 
       <h2>8. Segurança e limites</h2>

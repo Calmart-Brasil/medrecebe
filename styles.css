@@ -110,6 +110,44 @@ input:focus, select:focus, textarea:focus { border-color: var(--blue-600); box-s
 .demo-entry small { color: var(--muted); font-size: 11px; line-height: 1.4; }
 .demo-entry b { color: var(--blue-700); font-size: 12px; }
 
+.billing-shell {
+  min-height: 100vh;
+  padding: calc(24px + env(safe-area-inset-top)) 20px calc(28px + env(safe-area-inset-bottom));
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(circle at 82% 10%, rgb(24 214 233 / 48%), transparent 34%),
+    radial-gradient(circle at 16% 75%, rgb(16 102 225 / 52%), transparent 40%),
+    linear-gradient(145deg, #051449, #0760c6 58%, #09a9d3);
+}
+.billing-glass {
+  width: min(100%, 440px);
+  padding: 26px 22px;
+  border: 1px solid rgb(255 255 255 / 34%);
+  border-radius: 30px;
+  background: linear-gradient(145deg, rgb(255 255 255 / 25%), rgb(255 255 255 / 11%));
+  box-shadow: 0 30px 80px rgb(0 12 52 / 35%), inset 0 1px 0 rgb(255 255 255 / 55%);
+  color: white;
+  text-align: center;
+  backdrop-filter: blur(24px) saturate(145%);
+}
+.billing-glass > img { border-radius: 24px; box-shadow: 0 15px 34px rgb(0 28 96 / 34%); }
+.billing-glass .beta-badge { color: #bff5ff; }
+.billing-glass h1 { margin: 6px 0 7px; font-size: 30px; letter-spacing: -.8px; }
+.billing-lead { margin: 0 auto; max-width: 330px; color: rgb(255 255 255 / 78%); font-size: 13px; line-height: 1.55; }
+.billing-price { display: flex; justify-content: center; align-items: baseline; gap: 7px; margin: 18px 0; }
+.billing-price strong { font-size: 37px; letter-spacing: -1.4px; }
+.billing-price span { color: rgb(255 255 255 / 72%); font-size: 13px; }
+.billing-benefits { display: grid; gap: 9px; margin: 0 0 18px; padding: 0; list-style: none; text-align: left; }
+.billing-benefits li { position: relative; padding-left: 27px; color: rgb(255 255 255 / 88%); font-size: 12px; line-height: 1.4; }
+.billing-benefits li::before { position: absolute; left: 2px; content: '✓'; color: #7ff5e8; font-weight: 900; }
+.billing-glass .notice { margin-bottom: 12px; border-color: rgb(255 255 255 / 24%); background: rgb(0 24 78 / 23%); color: #e8f9ff; text-align: left; }
+.billing-glass .button { width: 100%; margin-top: 9px; }
+.billing-glass .button.primary { background: white; color: #0755b7; box-shadow: 0 10px 24px rgb(0 32 104 / 28%); }
+.billing-glass .button.secondary { border-color: rgb(255 255 255 / 48%); background: rgb(255 255 255 / 10%); color: white; }
+.billing-glass .text-button { color: #c8f5ff; }
+.billing-legal { margin: 13px 8px 0; color: rgb(255 255 255 / 62%); font-size: 9px; line-height: 1.5; }
+
 .app-shell { width: min(100%, 540px); min-height: 100vh; margin: auto; background: var(--mist); }
 .app-header {
   position: sticky;

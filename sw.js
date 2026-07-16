@@ -1,9 +1,10 @@
-const CACHE_NAME = 'medrecebe-beta-v2';
+const CACHE_NAME = 'medrecebe-beta-v3';
 const APP_SHELL = [
   './',
   './index.html',
-  './styles.css?v=2',
-  './app.js?v=2',
+  './styles.css?v=3',
+  './cloud.js?v=3',
+  './app.js?v=3',
   './manifest.webmanifest',
   './assets/icon-192.png',
   './assets/icon-512.png',
@@ -26,6 +27,20 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET' || new URL(event.request.url).origin !== self.location.origin) return;
+  const requestUrl = new URL(event.request.url);
+
+  if (requestUrl.pathname.endsWith('/runtime-config.js')) {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          const copy = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+          return response;
+        })
+        .catch(() => caches.match(event.request)),
+    );
+    return;
+  }
 
   if (event.request.mode === 'navigate') {
     event.respondWith(
