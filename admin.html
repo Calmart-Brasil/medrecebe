@@ -7,7 +7,7 @@
     <title>Painel administrativo • MedRecebe</title>
     <meta name="robots" content="noindex,nofollow" />
     <link rel="icon" sizes="192x192" href="assets/icon-192.png" />
-    <link rel="stylesheet" href="admin.css?v=1" />
+    <link rel="stylesheet" href="admin.css?v=2" />
   </head>
   <body>
     <section class="admin-login" id="admin-login">
@@ -38,7 +38,10 @@
           <article><small>SUSPENSOS</small><strong id="metric-suspended">—</strong></article>
         </section>
         <section class="users-panel">
-          <form class="search" id="admin-search-form"><input id="admin-search" placeholder="Buscar por nome, e-mail ou 4 últimos dígitos" /><button class="secondary" type="submit">Buscar</button></form>
+          <div class="users-toolbar">
+            <div><h2>Base de usuários</h2><p>Consulte cadastros, acompanhe assinaturas e controle a liberação de cada acesso.</p></div>
+            <form class="search" id="admin-search-form"><input id="admin-search" aria-label="Buscar usuários" placeholder="Buscar por nome, e-mail ou 4 últimos dígitos" /><button class="secondary" type="submit">Buscar</button></form>
+          </div>
           <div class="table-wrap">
             <table>
               <thead><tr><th>Usuário</th><th>CPF</th><th>Assinatura</th><th>Acesso</th><th>Cadastro</th><th>Ações</th></tr></thead>
