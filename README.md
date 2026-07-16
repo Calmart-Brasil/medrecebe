@@ -5,13 +5,16 @@ Aplicativo para médicos registrarem atendimentos, preverem repasses e preparare
 ## Estrutura
 
 - A raiz contém o beta web instalável (PWA) publicado pelo GitHub Pages.
+- [`admin.html`](admin.html) contém o painel administrativo protegido por função de servidor.
+- [`supabase/`](supabase/) contém banco, RLS e Edge Functions para autenticação, assinatura e administração.
+- [`branding/`](branding/) contém o master Liquid Glass e camadas para o Icon Composer.
 - [`mobile/`](mobile/README.md) contém o MVP iOS em Expo, preparado para EAS Build e TestFlight.
 
 ## Acesso beta
 
 `https://calmart-brasil.github.io/medrecebe/`
 
-O beta é público, mas cada conta e seus dados ficam somente no aparelho em que o acesso foi criado. Fechar o Safari ou o atalho não apaga as informações.
+Sem configuração de backend, o beta continua no modo local. Com Supabase configurado, identidade e situação da assinatura passam a ser verificadas online; cadastros, fotos e atendimentos continuam separados por usuário no aparelho.
 
 ## Instalação no iPhone
 
@@ -39,6 +42,10 @@ Antes de iniciar a rodada de testes, configure esse endereço como caixa ou enca
 - Limpar os dados do Safari ou excluir os dados pelo app remove as informações do beta.
 - O acesso biométrico e o envio de anexos já estão previstos no aplicativo iOS nativo, mas não fazem parte desta versão web local.
 - Na conciliação, o beta prepara o e-mail; o tester anexa os comprovantes manualmente no Mail.
+
+## Assinatura e administração
+
+O fluxo comercial está preparado para R$ 29,90/mês pelo Mercado Pago, com checkout hospedado, webhook idempotente, liberação de acesso e painel administrativo. Consulte [`docs/BILLING_ADMIN.md`](docs/BILLING_ADMIN.md) antes de ativar credenciais de produção.
 
 ## Validação
 

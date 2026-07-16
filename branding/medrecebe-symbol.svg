@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">Símbolo MedRecebe</title>
+  <desc id="desc">Estetoscópio com marca de confirmação.</desc>
+  <defs>
+    <linearGradient id="bg" x1="96" y1="64" x2="928" y2="960" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#061A5B"/>
+      <stop offset="0.5" stop-color="#075AC7"/>
+      <stop offset="1" stop-color="#12CBE7"/>
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+  <g fill="none" stroke="#EFF8FF" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M390 212h38M596 212h38" stroke-width="74"/>
+    <path d="M390 230c-83 22-116 101-82 223M634 230c83 22 116 101 82 223" stroke-width="54"/>
+    <path d="M314 574c-18 174 96 282 268 282 151 0 232-83 232-217" stroke-width="58"/>
+    <path d="M382 591l126 126 247-263" stroke-width="86"/>
+  </g>
+  <circle cx="814" cy="603" r="93" fill="#EFF8FF"/>
+  <circle cx="814" cy="603" r="58" fill="#12CFC5"/>
+</svg>

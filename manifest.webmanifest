@@ -9,7 +9,7 @@
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#F5F8FB",
-  "theme_color": "#0377BF",
+  "theme_color": "#08236B",
   "categories": ["finance", "productivity", "medical"],
   "icons": [
     {
