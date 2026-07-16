@@ -3,28 +3,18 @@
   <desc id="desc">Estetoscópio com marca de confirmação.</desc>
   <defs>
     <linearGradient id="bg" x1="96" y1="64" x2="928" y2="960" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#0B2D88"/>
-      <stop offset="0.52" stop-color="#087DD1"/>
-      <stop offset="1" stop-color="#35E2F1"/>
+      <stop stop-color="#061A5B"/>
+      <stop offset="0.5" stop-color="#075AC7"/>
+      <stop offset="1" stop-color="#12CBE7"/>
     </linearGradient>
-    <radialGradient id="shine" cx="0" cy="0" r="1" gradientTransform="translate(292 170) rotate(48) scale(690)">
-      <stop stop-color="#FFFFFF" stop-opacity=".24"/>
-      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
-    </radialGradient>
-    <filter id="greenGlow" x="-100%" y="-100%" width="300%" height="300%">
-      <feGaussianBlur stdDeviation="22" result="blur"/>
-      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
-    </filter>
   </defs>
   <rect width="1024" height="1024" fill="url(#bg)"/>
-  <rect width="1024" height="1024" fill="url(#shine)"/>
-  <g fill="none" stroke="#FFFFFF" stroke-linecap="round" stroke-linejoin="round">
+  <g fill="none" stroke="#EFF8FF" stroke-linecap="round" stroke-linejoin="round">
     <path d="M390 212h38M596 212h38" stroke-width="74"/>
     <path d="M390 230c-83 22-116 101-82 223M634 230c83 22 116 101 82 223" stroke-width="54"/>
     <path d="M314 574c-18 174 96 282 268 282 151 0 232-83 232-217" stroke-width="58"/>
     <path d="M382 591l126 126 247-263" stroke-width="86"/>
   </g>
-  <circle cx="814" cy="603" r="93" fill="#FFFFFF" fill-opacity=".96"/>
-  <circle cx="814" cy="603" r="62" fill="#32FFAE" filter="url(#greenGlow)"/>
-  <circle cx="793" cy="581" r="17" fill="#FFFFFF" fill-opacity=".78"/>
+  <circle cx="814" cy="603" r="93" fill="#EFF8FF"/>
+  <circle cx="814" cy="603" r="58" fill="#12CFC5"/>
 </svg>

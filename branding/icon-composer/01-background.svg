@@ -1,4 +1,3 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
-  <defs><linearGradient id="bg" x1="90" y1="55" x2="935" y2="970" gradientUnits="userSpaceOnUse"><stop stop-color="#0B2D88"/><stop offset=".52" stop-color="#087DD1"/><stop offset="1" stop-color="#35E2F1"/></linearGradient><radialGradient id="shine" cx="0" cy="0" r="1" gradientTransform="translate(292 170) rotate(48) scale(690)"><stop stop-color="#FFFFFF" stop-opacity=".24"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/></radialGradient></defs>
-  <rect width="1024" height="1024" fill="url(#bg)"/><rect width="1024" height="1024" fill="url(#shine)"/>
+  <rect width="1024" height="1024" fill="#08236B"/>
 </svg>
