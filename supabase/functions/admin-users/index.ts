@@ -40,14 +40,18 @@ Deno.serve(async (request) => {
       : { data: [] };
     const byUser = new Map((subscriptions || []).map((subscription) => [subscription.user_id, subscription]));
 
-    const { data: allProfiles } = await admin.from('profiles').select('access_status, role, trial_ends_at');
+    const [{ data: allProfiles }, { data: allCurrentSubscriptions }] = await Promise.all([
+      admin.from('profiles').select('id, access_status, role, trial_ends_at'),
+      admin.from('subscriptions').select('user_id, status').eq('is_current', true),
+    ]);
+    const paidUsers = new Set((allCurrentSubscriptions || []).filter((item) => item.status === 'authorized').map((item) => item.user_id));
     const metrics = (allProfiles || []).reduce(
       (result, profile) => {
         result.total += profile.role === 'user' ? 1 : 0;
         if (profile.role === 'user' && profile.access_status === 'active') result.active += 1;
         if (profile.role === 'user' && profile.access_status === 'past_due') result.pastDue += 1;
         if (profile.role === 'user' && profile.access_status === 'suspended') result.suspended += 1;
-        if (profile.role === 'user' && Date.parse(profile.trial_ends_at || '') > Date.now()) result.trial += 1;
+        if (profile.role === 'user' && !paidUsers.has(profile.id) && Date.parse(profile.trial_ends_at || '') > Date.now()) result.trial += 1;
         return result;
       },
       { total: 0, active: 0, trial: 0, pastDue: 0, suspended: 0 },
