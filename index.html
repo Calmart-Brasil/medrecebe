@@ -17,7 +17,7 @@
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
     <link rel="icon" sizes="192x192" href="assets/icon-192.png" />
-    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="styles.css?v=2" />
   </head>
   <body>
     <noscript>Ative o JavaScript para usar o MedRecebe Beta.</noscript>
@@ -25,7 +25,7 @@
     <section class="login-shell" id="login-view" aria-labelledby="login-title">
       <div class="login-brand">
         <img src="assets/icon-192.png" alt="" width="92" height="92" />
-        <span class="beta-badge">BETA LOCAL</span>
+        <span class="beta-badge">ACESSO BETA</span>
         <h1 id="login-title">MedRecebe</h1>
         <p>Seus atendimentos. Seus repasses. Tudo conferido.</p>
       </div>
@@ -33,7 +33,7 @@
       <form class="panel login-card" id="login-form">
         <div>
           <h2 id="auth-title">Boas-vindas</h2>
-          <p class="muted" id="auth-description">Entre para testar o fluxo do aplicativo no seu iPhone.</p>
+          <p class="muted" id="auth-description">Entre com o CPF e a senha cadastrados neste aparelho.</p>
         </div>
         <div class="register-fields" id="register-fields" hidden>
           <label>Nome completo<input autocomplete="name" id="auth-name" placeholder="Dra. Maria Silva" /></label>
@@ -50,8 +50,6 @@
         <span><strong>Avaliar com dados fictícios</strong><small>Entra automaticamente e preserva o beta no seu aparelho.</small></span>
         <b>Usar demo</b>
       </button>
-
-      <p class="login-privacy">Beta local: os dados ficam neste navegador. Não registre informações reais de pacientes.</p>
     </section>
 
     <section class="app-shell" id="app-view" hidden>
@@ -59,7 +57,7 @@
         <button class="icon-button" id="header-action" aria-label="Abrir menu" type="button">☰</button>
         <div>
           <strong id="header-title">Início</strong>
-          <small>BETA LOCAL</small>
+          <small>ACESSO BETA</small>
         </div>
         <button class="feedback-shortcut" id="feedback-shortcut" type="button" aria-label="Enviar feedback">♡</button>
       </header>
@@ -89,7 +87,7 @@
       </nav>
       <div class="drawer-profile">
         <span class="avatar" id="drawer-avatar">M</span>
-        <span><strong id="drawer-name">Médico</strong><small id="drawer-email">Beta local</small></span>
+        <span><strong id="drawer-name">Médico</strong><small id="drawer-email">Dados neste aparelho</small></span>
         <button id="logout-button" type="button">Sair</button>
       </div>
     </aside>
@@ -97,6 +95,6 @@
     <div id="modal-root"></div>
     <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
-    <script src="app.js" defer></script>
+    <script src="app.js?v=2" defer></script>
   </body>
 </html>

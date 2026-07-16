@@ -2,7 +2,7 @@
   "id": "./",
   "name": "MedRecebe Beta",
   "short_name": "MedRecebe",
-  "description": "Beta local para registrar atendimentos, acompanhar repasses e testar o MedRecebe.",
+  "description": "Beta instalável para registrar atendimentos, acompanhar repasses e testar o MedRecebe.",
   "lang": "pt-BR",
   "start_url": "./?source=homescreen",
   "scope": "./",

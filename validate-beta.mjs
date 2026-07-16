@@ -44,7 +44,16 @@ for (const marker of [
   'prepareReconciliationEmail',
   'feedback-form',
   'localStorage',
+  'isValidCpf',
+  'requestPersistentStorage',
 ]) assert.ok(app.includes(marker), `app.js sem: ${marker}`);
+
+assert.ok(
+  app.indexOf('const DEFAULT_MESSAGE') < app.indexOf('let appState = loadState();'),
+  'appState só pode ser carregado depois da mensagem padrão usada pelo estado vazio',
+);
+assert.ok(!html.includes('Beta local:'), 'o aviso antigo de beta local não deve aparecer na entrada');
+assert.ok(html.includes('styles.css?v=2') && html.includes('app.js?v=2'), 'os arquivos corrigidos precisam de cache busting');
 
 for (const marker of ['install', 'activate', 'fetch', 'caches.open']) {
   assert.ok(worker.includes(marker), `sw.js sem: ${marker}`);

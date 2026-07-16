@@ -7,13 +7,11 @@ Aplicativo para médicos registrarem atendimentos, preverem repasses e preparare
 - A raiz contém o beta web instalável (PWA) publicado pelo GitHub Pages.
 - [`mobile/`](mobile/README.md) contém o MVP iOS em Expo, preparado para EAS Build e TestFlight.
 
-## Link planejado
-
-Depois da publicação no GitHub Pages, o endereço será:
+## Acesso beta
 
 `https://calmart-brasil.github.io/medrecebe/`
 
-O beta é público, mas os dados inseridos ficam somente no navegador do tester.
+O beta é público, mas cada conta e seus dados ficam somente no aparelho em que o acesso foi criado. Fechar o Safari ou o atalho não apaga as informações.
 
 ## Instalação no iPhone
 
@@ -27,7 +25,7 @@ O beta é público, mas os dados inseridos ficam somente no navegador do tester.
 - CPF: `529.982.247-25`
 - Senha: `Teste@123`
 
-Também é possível criar uma conta de teste. Conta, senha, cadastros, fotos e atendimentos ficam somente no armazenamento local daquele navegador/aparelho.
+Também é possível fazer o primeiro acesso com nome, e-mail, CPF válido e uma senha de pelo menos oito caracteres. Conta, senha protegida por hash, cadastros, fotos e atendimentos permanecem no armazenamento local daquele aparelho.
 
 ## Feedback
 

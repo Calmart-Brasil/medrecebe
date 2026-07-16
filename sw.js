@@ -1,9 +1,9 @@
-const CACHE_NAME = 'medrecebe-beta-v1';
+const CACHE_NAME = 'medrecebe-beta-v2';
 const APP_SHELL = [
   './',
   './index.html',
-  './styles.css',
-  './app.js',
+  './styles.css?v=2',
+  './app.js?v=2',
   './manifest.webmanifest',
   './assets/icon-192.png',
   './assets/icon-512.png',

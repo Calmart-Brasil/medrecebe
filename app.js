@@ -9,7 +9,6 @@ const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const screen = $('#screen');
 const modalRoot = $('#modal-root');
 
-let appState = loadState();
 let authMode = 'login';
 let currentRoute = 'home';
 let selectedWorkplaceId = '';
@@ -48,6 +47,8 @@ Peço a confirmação do recebimento e a previsão de regularização.
 Atenciosamente,
 {{medico}}`;
 
+let appState = loadState();
+
 function emptyState() {
   return {
     account: null,
@@ -78,6 +79,24 @@ function saveState() {
     return true;
   } catch {
     showToast('O armazenamento local está cheio. Remova fotos antigas e tente novamente.');
+    return false;
+  }
+}
+
+async function requestPersistentStorage() {
+  try {
+    if (navigator.storage?.persist) await navigator.storage.persist();
+  } catch {
+    // Alguns navegadores não oferecem persistência explícita; o localStorage continua entre acessos.
+  }
+}
+
+function activateSession() {
+  try {
+    localStorage.setItem(SESSION_KEY, 'active');
+    return true;
+  } catch {
+    showToast('Não foi possível manter a sessão neste aparelho. Verifique as permissões do navegador.');
     return false;
   }
 }
@@ -305,7 +324,7 @@ function showApp() {
   $('#login-view').hidden = true;
   $('#app-view').hidden = false;
   $('#drawer-name').textContent = appState.profile?.name || 'Médico';
-  $('#drawer-email').textContent = appState.profile?.email || 'Beta local';
+  $('#drawer-email').textContent = appState.profile?.email || 'Dados neste aparelho';
   $('#drawer-avatar').textContent = (appState.profile?.name || 'M').trim().charAt(0).toUpperCase();
   navigate(currentRoute);
 }
@@ -492,7 +511,7 @@ function renderFeedback() {
 }
 
 function renderAccount() {
-  screen.innerHTML = `<div class="screen-stack">${pageHeading('Perfil local', 'Conta e instalação', 'Gerencie os dados deste beta e instale o atalho na Tela de Início.')}<div class="card card-head"><span class="avatar">${escapeHtml((appState.profile?.name || 'M').charAt(0))}</span><div><h3>${escapeHtml(appState.profile?.name || 'Médico')}</h3><p>${formatCpf(appState.profile?.cpf || '')}<br/>${escapeHtml(appState.profile?.email || '')}</p></div></div><h2 class="section-title">Instalação</h2><div class="card install-card"><span class="install-icon">${isStandalone() ? '✓' : '⇧'}</span><div><strong>${isStandalone() ? 'Beta instalado' : 'Adicionar à Tela de Início'}</strong><p>${isStandalone() ? 'Você está usando o modo aplicativo.' : 'Abra no Safari e instale o atalho para usar offline.'}</p></div>${isStandalone() ? '' : '<button class="link-button" data-action="install" type="button">Ver passos</button>'}</div><h2 class="section-title">Privacidade e suporte</h2><div class="card account-links"><a class="account-link" href="./privacidade.html" target="_blank" rel="noopener">Política de Privacidade <span>›</span></a><a class="account-link" href="./suporte.html" target="_blank" rel="noopener">Ajuda e suporte <span>›</span></a></div><button class="button secondary" data-action="logout" type="button">Sair</button><button class="button danger" data-action="delete-beta-data" type="button">Excluir conta e dados deste beta</button><p class="muted" style="text-align:center;font-size:9px">MedRecebe • Beta web local 1.0</p></div>`;
+  screen.innerHTML = `<div class="screen-stack">${pageHeading('Perfil neste aparelho', 'Conta e instalação', 'Gerencie seu acesso e instale o atalho na Tela de Início.')}<div class="card card-head"><span class="avatar">${escapeHtml((appState.profile?.name || 'M').charAt(0))}</span><div><h3>${escapeHtml(appState.profile?.name || 'Médico')}</h3><p>${formatCpf(appState.profile?.cpf || '')}<br/>${escapeHtml(appState.profile?.email || '')}</p></div></div><div class="notice success"><strong>Dados salvos neste aparelho</strong><br/>Fechar o MedRecebe ou o Safari não apaga sua conta, seus cadastros ou atendimentos.</div><h2 class="section-title">Instalação</h2><div class="card install-card"><span class="install-icon">${isStandalone() ? '✓' : '⇧'}</span><div><strong>${isStandalone() ? 'Beta instalado' : 'Adicionar à Tela de Início'}</strong><p>${isStandalone() ? 'Você está usando o modo aplicativo.' : 'Abra no Safari e instale o atalho para usar offline.'}</p></div>${isStandalone() ? '' : '<button class="link-button" data-action="install" type="button">Ver passos</button>'}</div><h2 class="section-title">Privacidade e suporte</h2><div class="card account-links"><a class="account-link" href="./privacidade.html" target="_blank" rel="noopener">Política de Privacidade <span>›</span></a><a class="account-link" href="./suporte.html" target="_blank" rel="noopener">Ajuda e suporte <span>›</span></a></div><button class="button secondary" data-action="logout" type="button">Sair</button><button class="button danger" data-action="delete-beta-data" type="button">Excluir conta e dados deste beta</button><p class="muted" style="text-align:center;font-size:9px">MedRecebe • Beta web 1.1</p></div>`;
 }
 
 function openInstallModal() {
@@ -605,8 +624,8 @@ function bindEvents() {
     const register = authMode === 'register';
     $('#register-fields').hidden = !register;
     $('#auth-title').textContent = register ? 'Criar meu acesso' : 'Boas-vindas';
-    $('#auth-description').textContent = register ? 'Sua conta ficará somente neste aparelho.' : 'Entre para testar o fluxo do aplicativo no seu iPhone.';
-    $('#auth-submit').textContent = register ? 'Criar acesso' : 'Entrar';
+    $('#auth-description').textContent = register ? 'Cadastre seus dados reais. A conta permanecerá salva neste aparelho.' : 'Entre com o CPF e a senha cadastrados neste aparelho.';
+    $('#auth-submit').textContent = register ? 'Criar acesso e entrar' : 'Entrar';
     $('#auth-toggle').textContent = register ? 'Já tenho acesso' : 'Primeiro uso? Criar meu acesso';
     $('#demo-entry').hidden = register;
     $('#auth-password').autocomplete = register ? 'new-password' : 'current-password';
@@ -615,6 +634,7 @@ function bindEvents() {
 
   $('#login-form').addEventListener('submit', async (event) => {
     event.preventDefault();
+    void requestPersistentStorage();
     const cpf = onlyDigits($('#auth-cpf').value);
     const password = $('#auth-password').value;
     const error = $('#auth-error');
@@ -628,21 +648,21 @@ function bindEvents() {
       if (password.length < 8) return (error.textContent = 'A senha deve ter pelo menos oito caracteres.');
       const salt = id('salt');
       appState = { ...emptyState(), account: { cpf, salt, passwordHash: await hashPassword(password, salt) }, profile: { name, cpf, email } };
-      saveState();
+      if (!saveState()) return (error.textContent = 'Não foi possível salvar seu acesso neste aparelho. Verifique o espaço disponível e tente novamente.');
     } else {
       if (!appState.account) return (error.textContent = 'Acesso não encontrado. Crie seu acesso ou use a demonstração.');
       const hash = await hashPassword(password, appState.account.salt);
       if (cpf !== appState.account.cpf || hash !== appState.account.passwordHash) return (error.textContent = 'CPF ou senha incorretos.');
     }
-    localStorage.setItem(SESSION_KEY, 'active');
+    if (!activateSession()) return;
     showApp();
   });
 
   $('#demo-entry').addEventListener('click', async () => {
+    void requestPersistentStorage();
     const salt = id('demo-salt');
     appState = demoState(await hashPassword(DEMO_PASSWORD, salt), salt);
-    saveState();
-    localStorage.setItem(SESSION_KEY, 'active');
+    if (!saveState() || !activateSession()) return;
     showApp();
   });
 
