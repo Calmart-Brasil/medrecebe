@@ -31,7 +31,8 @@ Deno.serve(async (request) => {
     }
 
     const appUrl = Deno.env.get('APP_URL') || 'https://calmart-brasil.github.io/medrecebe/';
-    const functionUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/mercado-pago-webhook`;
+    const endDate = new Date();
+    endDate.setUTCFullYear(endDate.getUTCFullYear() + 10);
     const subscription = await mercadoPago<MercadoPagoSubscription>('/preapproval', {
       method: 'POST',
       body: JSON.stringify({
@@ -41,11 +42,11 @@ Deno.serve(async (request) => {
         auto_recurring: {
           frequency: 1,
           frequency_type: 'months',
+          end_date: endDate.toISOString(),
           transaction_amount: 29.9,
           currency_id: 'BRL',
         },
         back_url: `${appUrl}?billing=return`,
-        notification_url: functionUrl,
         status: 'pending',
       }),
     });
