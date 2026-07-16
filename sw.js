@@ -1,4 +1,4 @@
-const CACHE_NAME = 'medrecebe-app-v9';
+const CACHE_NAME = 'medrecebe-app-v10';
 const APP_SHELL = [
   './',
   './index.html',
@@ -37,14 +37,15 @@ self.addEventListener('fetch', (event) => {
   const requestUrl = new URL(event.request.url);
 
   if (requestUrl.pathname.endsWith('/runtime-config.js')) {
+    const canonicalConfig = new Request(new URL('./runtime-config.js', self.location).href);
     event.respondWith(
       fetch(event.request)
         .then((response) => {
           const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+          caches.open(CACHE_NAME).then((cache) => cache.put(canonicalConfig, copy));
           return response;
         })
-        .catch(() => caches.match(event.request)),
+        .catch(() => caches.match(canonicalConfig)),
     );
     return;
   }

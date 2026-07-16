@@ -121,7 +121,7 @@ for (const [name, document] of [['Landing', landing], ['Aplicativo', `${appHtml}
   }
 }
 
-for (const marker of ['install', 'activate', 'fetch', 'caches.open', 'medrecebe-app-v9', './app.html']) {
+for (const marker of ['install', 'activate', 'fetch', 'caches.open', 'medrecebe-app-v10', './app.html']) {
   assert.ok(worker.includes(marker), `sw.js sem: ${marker}`);
 }
 
