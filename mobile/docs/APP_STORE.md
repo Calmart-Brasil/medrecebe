@@ -8,8 +8,8 @@
 - Categoria primária sugerida: Finanças
 - Categoria secundária sugerida: Produtividade
 - Classificação etária provável: 4+
-- URL de suporte: `https://calmart.github.io/medrecebe/suporte.html`
-- URL de privacidade: `https://calmart.github.io/medrecebe/privacidade.html`
+- URL de suporte: `https://calmart-brasil.github.io/medrecebe/suporte.html`
+- URL de privacidade: `https://calmart-brasil.github.io/medrecebe/privacidade.html`
 
 Confirme a disponibilidade do nome e do Bundle ID no App Store Connect antes do primeiro build.
 

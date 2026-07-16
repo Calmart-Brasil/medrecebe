@@ -11,7 +11,7 @@ Aplicativo para médicos registrarem atendimentos, preverem repasses e preparare
 
 Depois da publicação no GitHub Pages, o endereço será:
 
-`https://calmart.github.io/medrecebe/`
+`https://calmart-brasil.github.io/medrecebe/`
 
 O beta é público, mas os dados inseridos ficam somente no navegador do tester.
 

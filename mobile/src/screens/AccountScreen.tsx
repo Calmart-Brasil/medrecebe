@@ -12,8 +12,8 @@ import {
 import { colors, radius } from '../theme';
 import type { UserProfile } from '../types';
 
-const PRIVACY_URL = 'https://calmart.github.io/medrecebe/privacidade.html';
-const SUPPORT_URL = 'https://calmart.github.io/medrecebe/suporte.html';
+const PRIVACY_URL = 'https://calmart-brasil.github.io/medrecebe/privacidade.html';
+const SUPPORT_URL = 'https://calmart-brasil.github.io/medrecebe/suporte.html';
 
 export function AccountScreen({
   profile,
