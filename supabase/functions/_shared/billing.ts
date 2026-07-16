@@ -1,8 +1,6 @@
 import { accessFromSubscription, mercadoPago, type MercadoPagoSubscription } from './mercado-pago.ts';
 import { adminClient } from './supabase.ts';
 
-const MONTHLY_AMOUNT = 29.9;
-
 interface MercadoPagoPayment {
   id?: string | number;
   status?: string;
@@ -73,22 +71,32 @@ export async function syncPayment(paymentId: string, expectedUserId = ''): Promi
   const userId = String(payment.external_reference || '');
   if (!userId) throw new Error('Pagamento sem external_reference');
   if (expectedUserId && userId !== expectedUserId) throw new Error('Pagamento não pertence ao usuário autenticado');
-  if (Number(payment.transaction_amount || 0) !== MONTHLY_AMOUNT) throw new Error('Valor do pagamento não corresponde ao plano MedRecebe');
+  const admin = adminClient();
+  const { data: current, error: currentError } = await admin
+    .from('subscriptions')
+    .select('id, provider_subscription_id, amount_cents')
+    .eq('user_id', userId)
+    .eq('is_current', true)
+    .maybeSingle();
+  assertNoError(currentError);
+  if (!current) throw new Error('Assinatura do pagamento não encontrada');
+  if (payment.preapproval_id && current.provider_subscription_id !== payment.preapproval_id) {
+    throw new Error('Pagamento não pertence à assinatura atual');
+  }
+  if (Number(payment.transaction_amount || 0) !== Number(current.amount_cents) / 100) {
+    throw new Error('Valor do pagamento não corresponde ao plano MedRecebe');
+  }
 
   const approved = payment.status === 'approved';
-  const admin = adminClient();
   const subscriptionUpdate: Record<string, string> = {
     status: approved ? 'authorized' : String(payment.status || 'rejected'),
   };
   if (approved) subscriptionUpdate.last_payment_at = String(payment.date_approved || payment.date_created || new Date().toISOString());
 
-  let updateQuery = admin
+  const { error: subscriptionError } = await admin
     .from('subscriptions')
-    .update(subscriptionUpdate)
-    .eq('user_id', userId)
-    .eq('is_current', true);
-  if (payment.preapproval_id) updateQuery = updateQuery.eq('provider_subscription_id', payment.preapproval_id);
-  const { error: subscriptionError } = await updateQuery;
+    .update({ ...subscriptionUpdate, provider_payment_id: String(payment.id || paymentId) })
+    .eq('id', current.id);
   assertNoError(subscriptionError);
 
   const { error: profileError } = await admin
@@ -99,7 +107,7 @@ export async function syncPayment(paymentId: string, expectedUserId = ''): Promi
   return payment;
 }
 
-export async function reconcileUserBilling(userId: string, preapprovalId: string, subscriptionCreatedAt = ''): Promise<void> {
+export async function reconcileUserBilling(userId: string, preapprovalId: string, subscriptionCreatedAt = '', expectedAmount = 29.9): Promise<void> {
   const subscription = await syncPreapproval(preapprovalId, userId);
   if (subscription.status !== 'pending') return;
 
@@ -112,7 +120,7 @@ export async function reconcileUserBilling(userId: string, preapprovalId: string
   const payments = await mercadoPago<MercadoPagoPaymentSearch>(`/v1/payments/search?${query.toString()}`);
   const subscriptionTime = Date.parse(subscriptionCreatedAt || '');
   const approved = (payments.results || []).find((payment) => {
-    if (payment.status !== 'approved' || Number(payment.transaction_amount || 0) !== MONTHLY_AMOUNT) return false;
+    if (payment.status !== 'approved' || Number(payment.transaction_amount || 0) !== expectedAmount) return false;
     if (payment.preapproval_id && payment.preapproval_id !== preapprovalId) return false;
     const paymentTime = Date.parse(payment.date_approved || payment.date_created || '');
     return !Number.isFinite(subscriptionTime) || (Number.isFinite(paymentTime) && paymentTime >= subscriptionTime - 300_000);

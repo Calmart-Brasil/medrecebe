@@ -1,122 +1,16 @@
-<!doctype html>
-<html lang="pt-BR">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Política de Privacidade | MedRecebe</title>
-    <meta name="description" content="Política de Privacidade do aplicativo MedRecebe." />
-    <style>
-      :root { --blue:#0377bf; --navy:#102b46; --ink:#17202a; --muted:#61707f; --line:#d9e4ec; --mist:#f5f8fb; }
-      * { box-sizing: border-box; }
-      body { margin:0; color:var(--ink); background:var(--mist); font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
-      header { background:var(--blue); color:#fff; }
-      nav, main { width:min(900px,calc(100% - 40px)); margin:auto; }
-      nav { min-height:76px; display:flex; align-items:center; justify-content:space-between; gap:20px; }
-      .brand { color:#fff; display:flex; align-items:center; gap:12px; text-decoration:none; font-weight:800; }
-      .brand img { width:46px; height:46px; border-radius:11px; }
-      nav > a:last-child { color:#fff; font-size:14px; }
-      main { margin-top:40px; margin-bottom:60px; background:#fff; border:1px solid var(--line); border-radius:20px; padding:clamp(24px,5vw,54px); }
-      h1,h2 { color:var(--navy); line-height:1.2; }
-      h1 { margin:0 0 8px; font-size:clamp(32px,6vw,48px); letter-spacing:-1px; }
-      h2 { margin-top:36px; font-size:22px; }
-      .updated { color:var(--muted); margin-bottom:30px; }
-      .notice { padding:16px; background:#f2faff; border:1px solid #bfe5fa; border-radius:12px; }
-      li { margin:8px 0; }
-      a { color:var(--blue); }
-      footer { color:var(--muted); text-align:center; padding:0 20px 40px; font-size:13px; }
-    </style>
-  </head>
-  <body>
-    <header>
-      <nav>
-        <a class="brand" href="index.html"><img src="assets/apple-touch-icon.png" alt="" /> MedRecebe</a>
-        <a href="suporte.html">Ajuda e suporte</a>
-      </nav>
-    </header>
-    <main>
-      <h1>Política de Privacidade</h1>
-      <p class="updated">MedRecebe • atualização: 16 de julho de 2026</p>
-      <p class="notice">
-        Esta política descreve o beta local e a infraestrutura de conta e assinatura que será ativada para a versão comercial. Cadastros financeiros e comprovantes continuam no aparelho; identidade, situação do acesso e cobrança podem ser processadas online.
-      </p>
-
-      <h2>1. Quem somos e finalidade do aplicativo</h2>
-      <p>
-        O MedRecebe ajuda profissionais de saúde a registrar atendimentos, calcular valores e datas previstas de repasse e preparar solicitações de conciliação. Para dúvidas sobre privacidade, escreva para <a href="mailto:feedback@medrecebe.com.br">feedback@medrecebe.com.br</a>.
-      </p>
-
-      <h2>2. Dados tratados</h2>
-      <p>Conforme o uso, o aplicativo trata:</p>
-      <ul>
-        <li>nome, CPF, e-mail e credencial de acesso;</li>
-        <li>locais de trabalho, modalidades, valores e regras de pagamento;</li>
-        <li>datas, valores, observações e situação dos atendimentos;</li>
-        <li>fotografias escolhidas pelo usuário como prova do atendimento;</li>
-        <li>endereços de e-mail dos canais de conciliação.</li>
-      </ul>
-      <p>
-        O usuário deve evitar fotografar ou escrever dados clínicos e informações de pacientes que não sejam estritamente necessários à comprovação do repasse. Um comprovante pode conter dados pessoais ou sensíveis e deve ser tratado com cuidado.
-      </p>
-
-      <h2>3. Onde os dados ficam no MVP</h2>
-      <p>
-        Nesta versão, os cadastros e atendimentos ficam no armazenamento local do aplicativo no iPhone. A credencial fica protegida pelo Keychain do iOS e os comprovantes ficam na área privada do aplicativo. O MedRecebe não recebe uma cópia desses dados em servidor nesta versão.
-      </p>
-
-      <h2>3.1. Beta web instalável</h2>
-      <p>
-        No beta acessado pelo Safari e adicionado à Tela de Início, conta, senha protegida por hash, cadastros, atendimentos, comprovantes e feedbacks preparados ficam no armazenamento local daquele aparelho. Fechar o Safari ou o MedRecebe não apaga essas informações. Não há sincronização ou recuperação em servidor; limpar os dados do site no Safari ou usar a opção de exclusão dentro do beta remove as informações. O service worker mantém apenas os arquivos necessários para abrir o aplicativo offline.
-      </p>
-
-      <h2>3.2. Conta online, painel e assinatura</h2>
-      <p>
-        Quando a infraestrutura comercial estiver ativada, nome, e-mail, identificador da conta, quatro últimos dígitos do CPF e situação do acesso serão armazenados no Supabase. O CPF completo é transformado no servidor em um hash com segredo antes da persistência. A senha é tratada pelo serviço de autenticação e não fica disponível no painel administrativo.
-      </p>
-      <p>
-        O Mercado Pago processará a assinatura recorrente, os dados do cartão, pagamentos, cancelamentos e reembolsos. O MedRecebe recebe identificadores e estados necessários para liberar ou bloquear o acesso, mas não recebe o número completo nem o código de segurança do cartão. Administradores autorizados podem consultar nome, e-mail, últimos dígitos do CPF, assinatura e situação do acesso; mudanças manuais ficam registradas em auditoria.
-      </p>
-
-      <h2>4. Câmera, fotos e biometria</h2>
-      <ul>
-        <li>A câmera e a biblioteca de fotos são acessadas somente quando o usuário decide adicionar um comprovante.</li>
-        <li>Face ID ou Touch ID são opcionais. A verificação é executada pelo iOS; o aplicativo não recebe nem armazena o rosto ou a impressão digital.</li>
-        <li>Face ID ou Touch ID não fazem parte do beta web local; estarão disponíveis na versão nativa distribuída pelo TestFlight.</li>
-        <li>Negar uma permissão não impede o uso das demais áreas que não dependem dela.</li>
-      </ul>
-
-      <h2>5. Conciliação por e-mail</h2>
-      <p>
-        O aplicativo prepara destinatário, assunto, mensagem e anexos e abre o compositor de e-mail do próprio iPhone. O usuário revisa e confirma o envio. O MVP não envia mensagens silenciosamente e não recebe a senha da conta de e-mail.
-      </p>
-      <p>
-        No beta web, o e-mail é preparado com a relação dos atendimentos e o valor devido, mas os comprovantes devem ser anexados manualmente no Mail. O formulário de feedback também abre o Mail e inclui contexto técnico básico do beta; o usuário sempre revisa e confirma o envio.
-      </p>
-
-      <h2>6. Compartilhamento, publicidade e rastreamento</h2>
-      <p>
-        O MVP não vende dados, não exibe publicidade e não realiza rastreamento entre aplicativos para publicidade. Quando a conta comercial estiver ativada, Supabase processará autenticação e banco e Mercado Pago processará cobrança recorrente. Ao enviar um e-mail, os dados escolhidos passam a ser tratados pelo provedor de e-mail e pelo destinatário conforme as respectivas políticas.
-      </p>
-
-      <h2>7. Retenção e exclusão</h2>
-      <p>
-        Os dados operacionais permanecem no iPhone enquanto o acesso estiver configurado. A opção de exclusão do aparelho apaga cadastros, atendimentos, configurações e comprovantes locais. Quando a conta online estiver ativada, a exclusão da identidade e da assinatura também poderá ser solicitada pelo suporte; a função de exclusão integral dentro do aplicativo será disponibilizada antes da versão final da App Store.
-      </p>
-
-      <h2>8. Segurança e limites</h2>
-      <p>
-        Adotamos recursos nativos do iOS para restringir o acesso local. Nenhum sistema é totalmente imune a falhas. O usuário deve proteger o iPhone com código e biometria, manter o sistema atualizado e evitar compartilhar comprovantes fora dos canais autorizados.
-      </p>
-
-      <h2>9. Direitos e contato</h2>
-      <p>
-        O usuário pode acessar, corrigir e excluir os dados diretamente no aplicativo. Para dúvidas, solicitações ou exercício de direitos previstos na LGPD, contate <a href="mailto:feedback@medrecebe.com.br">feedback@medrecebe.com.br</a>. Podemos solicitar informações mínimas para confirmar a identidade e proteger os dados.
-      </p>
-
-      <h2>10. Alterações</h2>
-      <p>
-        Esta política poderá mudar quando novas funções, integrações ou formas de armazenamento forem adotadas. A data da versão será atualizada e, quando necessário, o usuário será informado no aplicativo.
-      </p>
-    </main>
-    <footer>© 2026 MedRecebe. Gestão financeira para profissionais da saúde.</footer>
-  </body>
-</html>
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>Privacidade e LGPD | MedRecebe</title><meta name="description" content="Política de Privacidade e tratamento de dados do MedRecebe."/><link rel="stylesheet" href="legal.css?v=1"/><link rel="icon" href="assets/icon-192.png"/></head><body><header><nav class="legal-nav"><a class="brand" href="./"><img src="assets/icon-192.png" alt=""/>MedRecebe</a><a href="app.html">Entrar</a></nav></header><main>
+<h1>Política de Privacidade</h1><p class="updated">Versão vigente desde 16 de julho de 2026</p><p class="notice">Este aviso explica de forma objetiva quais dados o MedRecebe utiliza, por quê, por quanto tempo e como você pode exercer seus direitos.</p>
+<h2>1. Controlador e contato</h2><p>O MedRecebe é um serviço digital operado por Lucas Catarin, responsável pelas decisões sobre o tratamento dos dados da conta. Solicitações de privacidade e LGPD podem ser enviadas para <a href="mailto:lucas.catarin@calmart.com.br">lucas.catarin@calmart.com.br</a>. Esse canal também exerce a função de contato com titulares e com a ANPD nesta fase do serviço.</p>
+<h2>2. Finalidades do produto</h2><p>O MedRecebe permite ao profissional de saúde registrar atendimentos, regras de repasse, valores e datas previstas, acompanhar recebíveis e preparar solicitações de conciliação. O serviço não presta assistência médica, não acessa prontuários e não deve ser usado como prontuário eletrônico.</p>
+<h2>3. Dados tratados</h2><ul><li><strong>Conta:</strong> nome, e-mail, CPF e credencial de acesso. O CPF completo é transformado em hash no servidor; o painel mostra somente os quatro últimos dígitos.</li><li><strong>Assinatura:</strong> plano, identificadores do Mercado Pago, situação, datas e valores de cobrança, cancelamento e reembolso. O MedRecebe não recebe o número completo nem o código de segurança do cartão.</li><li><strong>Gestão:</strong> locais, modalidades, regras, valores, datas, observações e situação dos atendimentos.</li><li><strong>Comprovantes:</strong> fotografias escolhidas pelo usuário. Na versão atual, permanecem no aparelho e não entram na sincronização Web.</li><li><strong>Uso técnico:</strong> dados necessários à sessão, segurança, prevenção de fraude, diagnóstico de erro e auditoria administrativa.</li></ul>
+<h2>4. Bases e princípios</h2><p>Tratamos dados para executar o contrato e disponibilizar a conta, cumprir obrigações legais e regulatórias, prevenir fraude e exercer direitos. Quando aplicável, usamos legítimo interesse após avaliar necessidade e impacto. Observamos finalidade, adequação, necessidade, transparência, segurança, prevenção e não discriminação.</p>
+<h2>5. Dados de saúde e dever do usuário</h2><p class="warning notice">Fotos e observações podem revelar dados pessoais sensíveis. Registre apenas o mínimo indispensável para comprovar o atendimento. Evite nome do paciente, diagnóstico, prontuário, exames e qualquer informação clínica desnecessária.</p><p>O profissional é responsável pela legitimidade dos dados que decide inserir e pelos deveres de sigilo inerentes à sua atividade. O MedRecebe não solicita dados clínicos.</p>
+<h2>6. Onde os dados ficam</h2><ul><li>Supabase processa autenticação, perfis, situação do plano e, no Plano Web, os dados de gestão sincronizados.</li><li>Mercado Pago processa cartão, recorrência, cancelamentos e reembolsos.</li><li>GitHub Pages entrega os arquivos públicos do site.</li><li>O navegador ou aplicativo mantém sessão, preferências, cadastros locais e fotografias.</li></ul><p>Alguns prestadores podem processar dados fora do Brasil, com medidas contratuais e técnicas compatíveis com a legislação aplicável.</p>
+<h2>7. Plano Mobile e Plano Web</h2><p>No Plano Mobile, os dados operacionais permanecem no aparelho usado. No Plano Web, cadastros, regras, atendimentos e indicadores são sincronizados para uso no iPhone e no PC. Fotografias não são enviadas nessa sincronização e continuam apenas no aparelho de origem.</p>
+<h2>8. Retenção e eliminação</h2><p>Dados de conta e assinatura são mantidos durante a relação contratual e pelo período necessário ao cumprimento de obrigações legais, prevenção de fraude, auditoria e exercício de direitos. Dados operacionais sincronizados podem ser eliminados mediante solicitação, ressalvadas hipóteses legais de conservação. Excluir dados do aparelho não cancela automaticamente a assinatura; o cancelamento é feito em Conta e instalação.</p>
+<h2>9. Segurança</h2><p>Aplicamos controle de acesso, autenticação, restrição administrativa, registro de auditoria e segregação do processamento de pagamento. Nenhum sistema é totalmente imune. Proteja seus dispositivos, não compartilhe senha e comunique suspeitas de acesso indevido.</p>
+<h2>10. Direitos do titular</h2><p>Você pode pedir confirmação de tratamento, acesso, correção, informação sobre compartilhamento, portabilidade quando aplicável, anonimização, bloqueio ou eliminação de dados desnecessários, oposição, revisão de decisões automatizadas quando houver e revogação de consentimento. Podemos solicitar confirmação de identidade. Pedidos serão atendidos nos prazos legais.</p>
+<h2>11. Cookies e armazenamento essencial</h2><p>O serviço usa armazenamento do navegador e tecnologias equivalentes para manter login, preferências, funcionamento offline e segurança. Não utilizamos cookies de publicidade comportamental nesta versão.</p>
+<h2>12. Crianças e adolescentes</h2><p>O MedRecebe é destinado a profissionais maiores de 18 anos e não é direcionado a crianças ou adolescentes.</p>
+<h2>13. Incidentes e alterações</h2><p>Incidentes relevantes serão avaliados e comunicados aos titulares e à ANPD quando exigido. Esta política pode mudar com novas funções ou obrigações; a data da versão será atualizada e alterações materiais serão informadas no serviço.</p>
+<div class="legal-links"><a href="termos.html">Termos de Uso</a><a href="cancelamento.html">Cancelamento e reembolso</a><a href="suporte.html">Ajuda e suporte</a></div></main><footer>© 2026 MedRecebe.</footer></body></html>

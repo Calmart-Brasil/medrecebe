@@ -23,6 +23,9 @@ let editingModalityIndex = null;
 let attendanceDraft = null;
 let cloudAccount = null;
 let activeStateKey = APP_KEY;
+let selectedPlanCode = new URLSearchParams(window.location.search).get('plan') === 'web' ? 'web' : 'mobile';
+let cloudSyncTimer = 0;
+let cloudHydrating = false;
 
 const TITLES = {
   home: 'Início',
@@ -79,6 +82,7 @@ function loadState(storageKey = activeStateKey) {
 function saveState() {
   try {
     localStorage.setItem(activeStateKey, JSON.stringify(appState));
+    scheduleCloudSync();
     return true;
   } catch {
     showToast('O armazenamento local está cheio. Remova fotos antigas e tente novamente.');
@@ -321,8 +325,57 @@ function isCloudMode() {
   return Boolean(cloud?.isEnabled());
 }
 
+function cloudPlanCode() {
+  return cloudAccount?.subscription?.planCode || cloudAccount?.profile?.planCode || selectedPlanCode;
+}
+
+function isDesktopComputer() {
+  return window.matchMedia('(min-width: 900px) and (hover: hover) and (pointer: fine)').matches;
+}
+
+function planAllowsDevice() {
+  return !isDesktopComputer() || cloudPlanCode() === 'web' || cloudAccount?.profile?.role === 'admin';
+}
+
 function cloudAccessAllowed() {
-  return !isCloudMode() || cloudAccount?.profile?.role === 'admin' || cloudAccount?.profile?.accessStatus === 'active';
+  return !isCloudMode() || cloudAccount?.profile?.role === 'admin' || (cloudAccount?.profile?.accessStatus === 'active' && planAllowsDevice());
+}
+
+function cloudStatePayload() {
+  return { ...appState, account: null, cloudUserId: undefined, demo: false };
+}
+
+function scheduleCloudSync() {
+  if (cloudHydrating || !isCloudMode() || cloudPlanCode() !== 'web' || cloudAccount?.profile?.accessStatus !== 'active') return;
+  window.clearTimeout(cloudSyncTimer);
+  cloudSyncTimer = window.setTimeout(() => cloud.saveState(cloudStatePayload()).catch(() => {}), 1200);
+}
+
+async function hydrateCloudState() {
+  if (!isCloudMode() || cloudPlanCode() !== 'web' || cloudAccount?.profile?.accessStatus !== 'active') return;
+  cloudHydrating = true;
+  window.clearTimeout(cloudSyncTimer);
+  try {
+    const result = await cloud.loadState();
+    if (result.state) {
+      const localEvidence = new Map(appState.attendances.map((attendance) => [attendance.id, attendance.evidence]));
+      appState = {
+        ...emptyState(),
+        ...result.state,
+        profile: appState.profile,
+        cloudUserId: cloudAccount.profile.id,
+        attendances: (result.state.attendances || []).map((attendance) => ({ ...attendance, evidence: localEvidence.get(attendance.id) || '' })),
+      };
+      localStorage.setItem(activeStateKey, JSON.stringify(appState));
+      if (!$('#app-view').hidden) renderRoute();
+    } else {
+      await cloud.saveState(cloudStatePayload());
+    }
+  } catch {
+    showToast('A sincronização com o PC será retomada quando a conexão estiver disponível.');
+  } finally {
+    cloudHydrating = false;
+  }
 }
 
 function returnedFromMercadoPago() {
@@ -359,6 +412,8 @@ async function reconcileBillingReturn(initialAccount) {
 
 function applyCloudAccount(result, cpf = '') {
   cloudAccount = result;
+  selectedPlanCode = cloudPlanCode();
+  document.body.classList.toggle('web-plan', selectedPlanCode === 'web');
   activeStateKey = `${APP_KEY}.user.${result.profile.id}`;
   appState = loadState(activeStateKey);
   appState.profile = {
@@ -371,6 +426,7 @@ function applyCloudAccount(result, cpf = '') {
   activateSession();
   if (cloudAccessAllowed()) showApp();
   else showBilling();
+  void hydrateCloudState();
 }
 
 function showBilling() {
@@ -379,15 +435,25 @@ function showBilling() {
   $('#billing-view').hidden = false;
   closeDrawer();
   const status = cloudAccount?.profile?.accessStatus || 'pending_payment';
+  const desktopUpgrade = status === 'active' && !planAllowsDevice();
   const messages = {
-    pending_payment: ['Ative seu acesso para registrar atendimentos e acompanhar seus repasses.', 'Aguardando a assinatura mensal de R$ 29,90.'],
+    pending_payment: ['Ative seu acesso para registrar atendimentos e acompanhar seus repasses.', 'Escolha um plano e conclua a assinatura mensal no Mercado Pago.'],
     past_due: ['Não conseguimos confirmar a última mensalidade.', 'Atualize o pagamento no Mercado Pago para restabelecer o acesso.'],
     canceled: ['Sua assinatura não está ativa.', 'Faça uma nova assinatura para voltar a usar o MedRecebe.'],
     suspended: ['Este acesso foi suspenso pelo administrador.', 'Entre em contato com o suporte antes de tentar um novo pagamento.'],
   };
-  const [lead, detail] = messages[status] || messages.pending_payment;
+  const [lead, detail] = desktopUpgrade
+    ? ['Seu plano atual foi pensado para o iPhone.', 'Escolha o Plano Web para gerenciar os mesmos dados também pelo computador.']
+    : messages[status] || messages.pending_payment;
   $('#billing-lead').textContent = lead;
   $('#billing-status').textContent = detail;
+  $$('.billing-plan').forEach((button) => button.classList.toggle('selected', button.dataset.plan === selectedPlanCode));
+  $('#billing-price-value').textContent = selectedPlanCode === 'web' ? 'R$ 59,90' : 'R$ 29,90';
+  $('#billing-plan-name').textContent = selectedPlanCode === 'web' ? 'WEB + IPHONE' : 'IPHONE';
+  const changingPlan = cloudAccount?.subscription?.status === 'authorized' && cloudAccount.subscription.planCode !== selectedPlanCode;
+  $('#billing-subscribe').textContent = changingPlan
+    ? `Confirmar ${selectedPlanCode === 'web' ? 'Plano Web por R$ 59,90' : 'Plano Mobile por R$ 29,90'}`
+    : desktopUpgrade ? 'Ativar Plano Web' : 'Assinar com cartão';
   $('#billing-subscribe').hidden = status === 'suspended';
   $('#billing-refresh').hidden = status === 'suspended';
 }
@@ -474,7 +540,7 @@ function renderHome() {
   const firstName = (appState.profile?.name || 'Doutor(a)').split(/\s+/)[0];
   const install = isStandalone()
     ? ''
-    : `<div class="card install-card"><span class="install-icon">⇧</span><div><strong>Instale este beta</strong><p>Adicione à Tela de Início para abrir como aplicativo e usar offline.</p></div><button class="link-button" data-action="install" type="button">Como instalar</button></div>`;
+    : `<div class="card install-card"><span class="install-icon">⇧</span><div><strong>Instale o MedRecebe</strong><p>Adicione à Tela de Início para abrir como aplicativo e usar offline.</p></div><button class="link-button" data-action="install" type="button">Como instalar</button></div>`;
   const cards = active.length
     ? active
         .map((workplace) => {
@@ -491,7 +557,7 @@ function renderHome() {
     ${install}
     <div class="card summary-card"><span class="summary-main"><small>A RECEBER</small><strong>${currency(total)}</strong></span><span class="summary-count"><strong>${pending.length}</strong><small>atendimentos</small></span></div>
     <h2 class="section-title">Onde foi o atendimento?</h2><div class="location-list">${cards}</div>
-    ${appState.demo ? '<div class="notice warning demo-notice">Você está vendo dados fictícios. Use-os livremente para explorar o beta.</div>' : ''}
+    ${appState.demo ? '<div class="notice warning demo-notice">Você está vendo dados fictícios. Use-os livremente para explorar o MedRecebe.</div>' : ''}
   </div>`;
 }
 
@@ -519,7 +585,7 @@ function renderDashboard() {
     <div class="card summary-card"><div style="width:100%"><span class="summary-main"><small>TOTAL A RECEBER</small><strong>${currency(total)}</strong></span><div class="metrics"><span class="metric"><strong>${receivables.length}</strong><small>PENDENTES</small></span><span class="metric overdue"><strong>${overdue.length}</strong><small>VENCIDOS</small></span><span class="metric"><strong>${inReconciliation.length}</strong><small>EM CONCILIAÇÃO</small></span></div></div></div>
     <h2 class="section-title">Por local de trabalho</h2><div class="list">${workplaceCards || emptyCard('Ainda não há dados', 'Cadastre um local e comece a registrar atendimentos.')}</div>
     ${dueCards ? `<h2 class="section-title">Confirmar créditos</h2><div class="list">${dueCards}</div>` : ''}
-    <p class="muted" style="text-align:center;font-size:10px">Dias úteis consideram fins de semana. O beta não consulta feriados bancários.</p>
+    <p class="muted" style="text-align:center">Dias úteis consideram fins de semana. O aplicativo não consulta feriados bancários.</p>
   </div>`;
 }
 
@@ -567,7 +633,7 @@ function renderReconciliation() {
   const options = appState.workplaces.map((workplace) => `<option value="${workplace.id}" ${workplace.id === selectedChannelWorkplace ? 'selected' : ''}>${escapeHtml(workplace.name)}</option>`).join('');
   const groupCards = groups.map((group) => `<button class="card group-card ${group.id === selectedReconciliationGroup ? 'selected' : ''}" data-action="select-reconciliation" data-id="${group.id}" type="button"><span class="group-check">${group.id === selectedReconciliationGroup ? '✓' : ''}</span><span><h3>${escapeHtml(group.workplace.name)}</h3><p>${monthLabel(group.month)}</p><small>${group.attendances.length} atend. • ${group.attachments} comprov.</small></span><b>${currency(group.totalCents)}</b></button>`).join('');
   const selected = groups.find((group) => group.id === selectedReconciliationGroup);
-  screen.innerHTML = `<div class="screen-stack">${pageHeading('Conferência de pagamentos', 'Conciliação', 'Configure o canal, selecione um grupo vencido e abra a mensagem no seu e-mail.')}<h2 class="section-title">Canal oficial</h2>${channel ? `<form class="card settings" id="channel-form"><label>Local<select id="channel-workplace">${options}</select></label><label>E-mail oficial<input id="channel-email" type="email" value="${escapeHtml(channel.reconciliationEmail)}" placeholder="repasses@local.com.br"/></label><label>Cópia (opcional)<input id="channel-cc" value="${escapeHtml(channel.reconciliationCc || '')}" placeholder="gestor@local.com.br"/></label><label>Mensagem padrão<textarea id="channel-message">${escapeHtml(appState.reconciliationMessage)}</textarea></label><p class="field-hint">Tokens: {{local}}, {{periodo}}, {{quantidade}}, {{valor}}, {{detalhes}} e {{medico}}.</p><button class="button secondary small" type="submit">Salvar canal e mensagem</button></form>` : '<div class="notice warning">Cadastre um local antes de configurar a conciliação.</div>'}<h2 class="section-title">Grupos prontos para conciliar</h2><div class="list">${groupCards || emptyCard('Nenhum repasse vencido', 'Quando um grupo ultrapassar a data prevista sem baixa, ele aparecerá aqui.')}</div>${selected ? `<div class="card summary-card"><span class="summary-main"><small>SELECIONADO</small><strong>${currency(selected.totalCents)}</strong><small>${selected.attendances.length} atendimentos • ${monthLabel(selected.month)}</small></span></div><button class="button primary" data-action="open-reconciliation-email" type="button">Abrir solicitação no e-mail</button><div class="notice warning">Limitação deste beta web: o e-mail é preenchido, mas os comprovantes precisam ser anexados manualmente. O TestFlight usará anexos nativos.</div>` : ''}</div>`;
+  screen.innerHTML = `<div class="screen-stack">${pageHeading('Conferência de pagamentos', 'Conciliação', 'Configure o canal, selecione um grupo vencido e abra a mensagem no seu e-mail.')}<h2 class="section-title">Canal oficial</h2>${channel ? `<form class="card settings" id="channel-form"><label>Local<select id="channel-workplace">${options}</select></label><label>E-mail oficial<input id="channel-email" type="email" value="${escapeHtml(channel.reconciliationEmail)}" placeholder="repasses@local.com.br"/></label><label>Cópia (opcional)<input id="channel-cc" value="${escapeHtml(channel.reconciliationCc || '')}" placeholder="gestor@local.com.br"/></label><label>Mensagem padrão<textarea id="channel-message">${escapeHtml(appState.reconciliationMessage)}</textarea></label><p class="field-hint">Tokens: {{local}}, {{periodo}}, {{quantidade}}, {{valor}}, {{detalhes}} e {{medico}}.</p><button class="button secondary small" type="submit">Salvar canal e mensagem</button></form>` : '<div class="notice warning">Cadastre um local antes de configurar a conciliação.</div>'}<h2 class="section-title">Grupos prontos para conciliar</h2><div class="list">${groupCards || emptyCard('Nenhum repasse vencido', 'Quando um grupo ultrapassar a data prevista sem baixa, ele aparecerá aqui.')}</div>${selected ? `<div class="card summary-card"><span class="summary-main"><small>SELECIONADO</small><strong>${currency(selected.totalCents)}</strong><small>${selected.attendances.length} atendimentos • ${monthLabel(selected.month)}</small></span></div><button class="button primary" data-action="open-reconciliation-email" type="button">Abrir solicitação no e-mail</button><div class="notice warning">No navegador, o e-mail é preenchido, mas os comprovantes precisam ser anexados manualmente antes do envio.</div>` : ''}</div>`;
 }
 
 function reconciliationGroups() {
@@ -600,11 +666,17 @@ function renderAccount() {
     canceled: 'Assinatura cancelada',
   };
   const accessStatus = cloudAccount?.profile?.accessStatus;
+  const planCode = cloudPlanCode();
+  const trialEndsAt = cloudAccount?.profile?.trialEndsAt;
+  const trialDays = Math.max(0, Math.ceil((Date.parse(trialEndsAt || '') - Date.now()) / 86_400_000));
+  const isTrial = trialDays > 0 && cloudAccount?.subscription?.status !== 'authorized';
+  const planName = planCode === 'web' ? 'Plano Web' : 'Plano Mobile';
+  const planPrice = planCode === 'web' ? 'R$ 59,90' : 'R$ 29,90';
   const cloudSection = isCloudMode()
-    ? `<h2 class="section-title">Plano e acesso</h2><div class="card workplace-summary"><div class="card-head"><span class="round-icon">✓</span><div><h3>Plano Profissional</h3><p>R$ 29,90 por mês • Mercado Pago</p></div><span class="badge ${accessStatus === 'active' ? '' : 'inactive'}">${escapeHtml(subscriptionLabels[accessStatus] || 'Em configuração')}</span></div></div>`
+    ? `<h2 class="section-title">Plano e acesso</h2><div class="card workplace-summary"><div class="card-head"><span class="round-icon">✓</span><div><h3>${planName}</h3><p>${isTrial ? `Teste grátis • ${trialDays} dia${trialDays === 1 ? '' : 's'} restante${trialDays === 1 ? '' : 's'}` : `${planPrice} por mês • Mercado Pago`}</p></div><span class="badge ${accessStatus === 'active' ? '' : 'inactive'}">${isTrial ? 'Teste ativo' : escapeHtml(subscriptionLabels[accessStatus] || 'Em configuração')}</span></div>${planCode === 'mobile' ? '<button class="button secondary small" data-action="upgrade-web" type="button">Ativar gestão pelo PC</button>' : '<p class="field-hint">Cadastros, regras e atendimentos são sincronizados entre seus dispositivos. Fotos permanecem apenas no aparelho onde foram registradas.</p>'}</div><button class="button danger" data-action="cancel-subscription" type="button">${isTrial ? 'Encerrar teste gratuito' : 'Cancelar assinatura'}</button>`
     : '';
-  const deleteLabel = isCloudMode() ? 'Excluir dados salvos neste aparelho' : 'Excluir conta e dados deste beta';
-  screen.innerHTML = `<div class="screen-stack">${pageHeading('Perfil neste aparelho', 'Conta e instalação', 'Gerencie seu acesso e instale o atalho na Tela de Início.')}<div class="card card-head"><span class="avatar">${escapeHtml((appState.profile?.name || 'M').charAt(0))}</span><div><h3>${escapeHtml(appState.profile?.name || 'Médico')}</h3><p>${formatCpf(appState.profile?.cpf || '')}<br/>${escapeHtml(appState.profile?.email || '')}</p></div></div>${cloudSection}<div class="notice success"><strong>Dados salvos neste aparelho</strong><br/>Fechar o MedRecebe ou o Safari não apaga seus cadastros ou atendimentos.</div><h2 class="section-title">Instalação</h2><div class="card install-card"><span class="install-icon">${isStandalone() ? '✓' : '⇧'}</span><div><strong>${isStandalone() ? 'Beta instalado' : 'Adicionar à Tela de Início'}</strong><p>${isStandalone() ? 'Você está usando o modo aplicativo.' : 'Abra no Safari e instale o atalho para usar offline.'}</p></div>${isStandalone() ? '' : '<button class="link-button" data-action="install" type="button">Ver passos</button>'}</div><h2 class="section-title">Privacidade e suporte</h2><div class="card account-links"><a class="account-link" href="./privacidade.html" target="_blank" rel="noopener">Política de Privacidade <span>›</span></a><a class="account-link" href="./suporte.html" target="_blank" rel="noopener">Ajuda e suporte <span>›</span></a></div><button class="button secondary" data-action="logout" type="button">Sair</button><button class="button danger" data-action="delete-beta-data" type="button">${deleteLabel}</button><p class="muted" style="text-align:center;font-size:9px">MedRecebe • Beta web 1.2</p></div>`;
+  const deleteLabel = isCloudMode() ? 'Excluir dados salvos neste aparelho' : 'Excluir conta e dados locais';
+  screen.innerHTML = `<div class="screen-stack">${pageHeading('Perfil e assinatura', 'Conta e instalação', 'Gerencie seu plano, seus dados e a instalação do MedRecebe.')}<div class="card card-head"><span class="avatar">${escapeHtml((appState.profile?.name || 'M').charAt(0))}</span><div><h3>${escapeHtml(appState.profile?.name || 'Médico')}</h3><p>${formatCpf(appState.profile?.cpf || '')}<br/>${escapeHtml(appState.profile?.email || '')}</p></div></div>${cloudSection}<div class="notice success"><strong>${planCode === 'web' ? 'Sincronização protegida' : 'Dados salvos neste aparelho'}</strong><br/>${planCode === 'web' ? 'Registros de gestão ficam disponíveis no iPhone e no PC; comprovantes fotográficos continuam somente no aparelho.' : 'Fechar o MedRecebe ou o Safari não apaga seus cadastros ou atendimentos.'}</div><h2 class="section-title">Instalação</h2><div class="card install-card"><span class="install-icon">${isStandalone() ? '✓' : '⇧'}</span><div><strong>${isStandalone() ? 'MedRecebe instalado' : 'Adicionar à Tela de Início'}</strong><p>${isStandalone() ? 'Você está usando o modo aplicativo.' : 'Abra no Safari e instale o atalho para usar offline.'}</p></div>${isStandalone() ? '' : '<button class="link-button" data-action="install" type="button">Ver passos</button>'}</div><h2 class="section-title">Privacidade e suporte</h2><div class="card account-links"><a class="account-link" href="./privacidade.html" target="_blank" rel="noopener">Política de Privacidade <span>›</span></a><a class="account-link" href="./termos.html" target="_blank" rel="noopener">Termos de Uso <span>›</span></a><a class="account-link" href="./cancelamento.html" target="_blank" rel="noopener">Cancelamento e reembolso <span>›</span></a><a class="account-link" href="./suporte.html" target="_blank" rel="noopener">Ajuda e suporte <span>›</span></a></div><button class="button secondary" data-action="logout" type="button">Sair</button><button class="button danger" data-action="delete-beta-data" type="button">${deleteLabel}</button><p class="muted" style="text-align:center">MedRecebe • versão web 2.0</p></div>`;
 }
 
 function openInstallModal() {
@@ -710,26 +782,28 @@ function prepareReconciliationEmail() {
   window.location.href = `mailto:${encodeURIComponent(group.workplace.reconciliationEmail)}?subject=${encodeURIComponent(subject)}${cc}&body=${encodeURIComponent(body)}`;
 }
 
+function setAuthMode(mode) {
+  authMode = mode;
+  const register = authMode === 'register';
+  $('#register-fields').hidden = !register;
+  $('#auth-title').textContent = register ? 'Criar meu acesso' : 'Boas-vindas';
+  $('#auth-description').textContent = register
+    ? isCloudMode()
+      ? `Crie sua conta e teste o Plano ${selectedPlanCode === 'web' ? 'Web' : 'Mobile'} grátis por 7 dias, sem cartão.`
+      : 'Cadastre seus dados reais. A conta permanecerá salva neste aparelho.'
+    : isCloudMode()
+      ? 'Entre com o CPF e a senha da sua conta MedRecebe.'
+      : 'Entre com o CPF e a senha cadastrados neste aparelho.';
+  $('#auth-submit').textContent = register ? 'Começar teste grátis' : 'Entrar';
+  $('#auth-toggle').textContent = register ? 'Já tenho acesso' : 'Primeiro uso? Criar meu acesso';
+  $('#demo-entry').hidden = register || isCloudMode();
+  $('#auth-password').autocomplete = register ? 'new-password' : 'current-password';
+  $('#auth-error').textContent = '';
+}
+
 function bindEvents() {
   $('#auth-cpf').addEventListener('input', (event) => (event.target.value = formatCpf(event.target.value)));
-  $('#auth-toggle').addEventListener('click', () => {
-    authMode = authMode === 'login' ? 'register' : 'login';
-    const register = authMode === 'register';
-    $('#register-fields').hidden = !register;
-    $('#auth-title').textContent = register ? 'Criar meu acesso' : 'Boas-vindas';
-    $('#auth-description').textContent = register
-      ? isCloudMode()
-        ? 'Cadastre seus dados para criar sua conta MedRecebe.'
-        : 'Cadastre seus dados reais. A conta permanecerá salva neste aparelho.'
-      : isCloudMode()
-        ? 'Entre com o CPF e a senha da sua conta MedRecebe.'
-        : 'Entre com o CPF e a senha cadastrados neste aparelho.';
-    $('#auth-submit').textContent = register ? 'Criar acesso e entrar' : 'Entrar';
-    $('#auth-toggle').textContent = register ? 'Já tenho acesso' : 'Primeiro uso? Criar meu acesso';
-    $('#demo-entry').hidden = register || isCloudMode();
-    $('#auth-password').autocomplete = register ? 'new-password' : 'current-password';
-    $('#auth-error').textContent = '';
-  });
+  $('#auth-toggle').addEventListener('click', () => setAuthMode(authMode === 'login' ? 'register' : 'login'));
 
   $('#login-form').addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -750,7 +824,7 @@ function bindEvents() {
           if (!isValidCpf(cpf)) throw new Error('Informe um CPF válido.');
           if (!/^\S+@\S+\.\S+$/.test(email)) throw new Error('Informe um e-mail válido.');
           if (password.length < 8) throw new Error('A senha deve ter pelo menos oito caracteres.');
-          const result = await cloud.register({ name, email, cpf, password });
+          const result = await cloud.register({ name, email, cpf, password, planCode: selectedPlanCode });
           if (result.requiresEmailConfirmation) {
             authMode = 'login';
             $('#register-fields').hidden = true;
@@ -804,7 +878,7 @@ function bindEvents() {
     button.disabled = true;
     button.textContent = 'Abrindo Mercado Pago…';
     try {
-      const result = await cloud.createSubscription();
+      const result = await cloud.createSubscription(selectedPlanCode);
       if (result.active || result.adminAccess) {
         const restored = await cloud.restore();
         if (restored) applyCloudAccount(restored);
@@ -855,6 +929,34 @@ function handleClick(event) {
   const target = event.target.closest('[data-action]');
   if (!target) return;
   const { action, id: targetId, ids, index, value } = target.dataset;
+  if (action === 'select-plan') {
+    selectedPlanCode = target.dataset.plan === 'web' ? 'web' : 'mobile';
+    showBilling();
+  }
+  if (action === 'upgrade-web') {
+    selectedPlanCode = 'web';
+    showBilling();
+  }
+  if (action === 'cancel-subscription' && confirm('Cancelar o acesso? Se o pagamento tiver até 7 dias, o MedRecebe solicitará o reembolso integral automaticamente.')) {
+    target.disabled = true;
+    target.textContent = 'Cancelando…';
+    cloud.cancelSubscription()
+      .then(async (result) => {
+        const restored = await cloud.restore();
+        if (restored) applyCloudAccount(restored);
+        const message = result.refunded
+          ? 'Assinatura cancelada e reembolso solicitado ao Mercado Pago.'
+          : result.refundPending
+            ? 'Assinatura cancelada. O reembolso será conferido pelo suporte.'
+            : 'Assinatura cancelada. Não haverá novas cobranças.';
+        showToast(message);
+      })
+      .catch((error) => {
+        target.disabled = false;
+        target.textContent = 'Cancelar assinatura';
+        showToast(error instanceof Error ? error.message : 'Não foi possível cancelar agora.');
+      });
+  }
   if (action === 'install') openInstallModal();
   if (action === 'close-modal') modalRoot.innerHTML = '';
   if (action === 'new-workplace') newWorkplace();
@@ -895,7 +997,7 @@ function handleClick(event) {
     $$('.rating button').forEach((button) => button.classList.toggle('selected', Number(button.dataset.value) === feedbackRating));
   }
   if (action === 'logout') logout();
-  if (action === 'delete-beta-data' && confirm(isCloudMode() ? 'Excluir deste aparelho os cadastros, atendimentos, fotos e feedbacks?' : 'Excluir conta, cadastros, atendimentos, fotos e feedbacks deste beta?')) {
+  if (action === 'delete-beta-data' && confirm(isCloudMode() ? 'Excluir deste aparelho os cadastros, atendimentos, fotos e feedbacks?' : 'Excluir conta, cadastros, atendimentos, fotos e feedbacks locais?')) {
     localStorage.removeItem(activeStateKey);
     localStorage.removeItem(SESSION_KEY);
     appState = emptyState();
@@ -984,7 +1086,7 @@ function handleSubmit(event) {
     appState.feedbacks.push(feedback);
     saveState();
     const context = `\n\n--- Contexto automático ---\nNota: ${feedback.rating}/5\nÁrea: ${feedback.area}\nTela: ${currentRoute}\nLocais: ${appState.workplaces.length}\nAtendimentos: ${appState.attendances.length}\nModo instalado: ${isStandalone() ? 'sim' : 'não'}\nDispositivo: ${navigator.userAgent}\nContato: ${feedback.contact || 'não informado'}`;
-    window.location.href = `mailto:${FEEDBACK_EMAIL}?subject=${encodeURIComponent(`Feedback Beta MedRecebe — ${feedback.area} — ${feedback.rating}/5`)}&body=${encodeURIComponent(feedback.message + context)}`;
+    window.location.href = `mailto:${FEEDBACK_EMAIL}?subject=${encodeURIComponent(`Feedback MedRecebe — ${feedback.area} — ${feedback.rating}/5`)}&body=${encodeURIComponent(feedback.message + context)}`;
     renderFeedback();
   }
 }
@@ -1029,6 +1131,7 @@ function logout() {
 
 async function boot() {
   bindEvents();
+  if (new URLSearchParams(window.location.search).get('signup') === '1') setAuthMode('register');
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(() => {});
   window.addEventListener('beforeinstallprompt', (event) => {
     event.preventDefault();
@@ -1041,9 +1144,13 @@ async function boot() {
       const restored = await cloud.restore();
       if (restored && returnedFromMercadoPago()) await reconcileBillingReturn(restored);
       else if (restored) applyCloudAccount(restored);
-      else showLogin();
+      else {
+        showLogin();
+        if (new URLSearchParams(window.location.search).get('signup') === '1') setAuthMode('register');
+      }
     } catch {
       showLogin();
+      if (new URLSearchParams(window.location.search).get('signup') === '1') setAuthMode('register');
     }
     return;
   }

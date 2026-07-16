@@ -1,4 +1,4 @@
-name: Publicar beta web
+name: Publicar MedRecebe
 
 on:
   push:
@@ -30,7 +30,7 @@ jobs:
           SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
         run: |
           mkdir _site
-          cp index.html app.js cloud.js runtime-config.js styles.css sw.js manifest.webmanifest privacidade.html suporte.html admin.html admin.js admin.css .nojekyll _site/
+          cp index.html app.html landing.css legal.css termos.html cancelamento.html app.js cloud.js runtime-config.js styles.css sw.js manifest.webmanifest privacidade.html suporte.html admin.html admin.js admin.css .nojekyll _site/
           cp -R assets _site/assets
           node -e "const fs=require('fs');const config={supabaseUrl:process.env.SUPABASE_URL||'',supabasePublishableKey:process.env.SUPABASE_PUBLISHABLE_KEY||''};fs.writeFileSync('_site/runtime-config.js','window.MEDRECEBE_CONFIG = Object.freeze('+JSON.stringify(config,null,2)+');\n')"
 

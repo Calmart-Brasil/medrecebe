@@ -1,10 +1,17 @@
-const CACHE_NAME = 'medrecebe-beta-v5';
+const CACHE_NAME = 'medrecebe-app-v7';
 const APP_SHELL = [
   './',
   './index.html',
-  './styles.css?v=3',
-  './cloud.js?v=3',
-  './app.js?v=5',
+  './app.html',
+  './landing.css?v=1',
+  './styles.css?v=4',
+  './cloud.js?v=4',
+  './app.js?v=7',
+  './legal.css?v=1',
+  './termos.html',
+  './privacidade.html',
+  './cancelamento.html',
+  './suporte.html',
   './manifest.webmanifest',
   './assets/icon-192.png',
   './assets/icon-512.png',
@@ -43,14 +50,15 @@ self.addEventListener('fetch', (event) => {
   }
 
   if (event.request.mode === 'navigate') {
+    const fallback = requestUrl.pathname.endsWith('/app.html') ? './app.html' : './index.html';
     event.respondWith(
       fetch(event.request)
         .then((response) => {
           const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put('./index.html', copy));
+          caches.open(CACHE_NAME).then((cache) => cache.put(fallback, copy));
           return response;
         })
-        .catch(() => caches.match('./index.html')),
+        .catch(() => caches.match(fallback)),
     );
     return;
   }

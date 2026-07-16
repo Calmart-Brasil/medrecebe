@@ -107,7 +107,10 @@
     login,
     restore,
     logout,
-    createSubscription: () => authenticatedInvoke('create-subscription'),
+    createSubscription: (planCode) => authenticatedInvoke('create-subscription', { planCode }),
+    cancelSubscription: () => authenticatedInvoke('cancel-subscription'),
+    loadState: () => authenticatedInvoke('sync-state', { action: 'load' }),
+    saveState: (state) => authenticatedInvoke('sync-state', { action: 'save', state }),
     adminUsers: (input) => authenticatedInvoke('admin-users', input),
     adminUpdateUser: (input) => authenticatedInvoke('admin-update-user', input),
   });

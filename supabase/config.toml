@@ -20,3 +20,9 @@ verify_jwt = false
 
 [functions.admin-update-user]
 verify_jwt = false
+
+[functions.sync-state]
+verify_jwt = false
+
+[functions.cancel-subscription]
+verify_jwt = false
