@@ -1,65 +1,50 @@
 # MedRecebe
 
-Aplicativo para médicos registrarem atendimentos, preverem repasses e prepararem conciliações de pagamento.
+SaaS para médicos registrarem atendimentos, acompanharem repasses e prepararem conciliações de pagamento.
+
+## Produção
+
+- Site: `https://medrecebe.com.br/`
+- Aplicativo web/PWA: `https://medrecebe.com.br/app.html`
+- Painel administrativo: `https://medrecebe.com.br/admin.html`
+- Repositório: `https://github.com/Calmart-Brasil/medrecebe`
+
+## Produto
+
+- Teste gratuito de 7 dias, sem cartão.
+- Plano Mobile: R$ 29,90/mês, uso no iPhone/PWA.
+- Plano Web: R$ 59,90/mês, uso no iPhone e PC com sincronização dos dados de gestão.
+- Fotos de comprovantes permanecem no aparelho e não entram na sincronização Web.
+- Cobrança recorrente, cancelamento e reembolso processados pelo Mercado Pago.
 
 ## Estrutura
 
-- A raiz contém o beta web instalável (PWA) publicado pelo GitHub Pages.
-- [`admin.html`](admin.html) contém o painel administrativo protegido por função de servidor.
-- [`supabase/`](supabase/) contém banco, RLS e Edge Functions para autenticação, assinatura e administração.
-- [`branding/`](branding/) contém o master Liquid Glass e camadas para o Icon Composer.
-- [`mobile/`](mobile/README.md) contém o MVP iOS em Expo, preparado para EAS Build e TestFlight.
-
-## Acesso beta
-
-`https://calmart-brasil.github.io/medrecebe/`
-
-Sem configuração de backend, o beta continua no modo local. Com Supabase configurado, identidade e situação da assinatura passam a ser verificadas online; cadastros, fotos e atendimentos continuam separados por usuário no aparelho.
+- `index.html` e `landing.css`: página comercial.
+- `app.html`, `app.js`, `styles.css` e `cloud.js`: aplicação PWA.
+- `admin.html`, `admin.js` e `admin.css`: painel administrativo para PC.
+- `termos.html`, `privacidade.html`, `cancelamento.html` e `suporte.html`: documentos e suporte.
+- `supabase/`: banco, RLS e Edge Functions.
+- `docs/historias-usuario-lancamento.md`: jornadas e critérios de aceite.
+- `mobile/`: base do aplicativo iOS para TestFlight.
 
 ## Instalação no iPhone
 
-1. Abra o link no Safari.
+1. Abra `https://medrecebe.com.br/app.html` no Safari.
 2. Toque em Compartilhar.
 3. Escolha **Adicionar à Tela de Início**.
-4. Ative **Abrir como App da Web** e toque em **Adicionar**.
+4. Ative **Abrir como App da Web** e confirme.
 
-## Acesso de demonstração
+## Segurança e privacidade
 
-- CPF: `529.982.247-25`
-- Senha: `Teste@123`
-
-Também é possível fazer o primeiro acesso com nome, e-mail, CPF válido e uma senha de pelo menos oito caracteres. Conta, senha protegida por hash, cadastros, fotos e atendimentos permanecem no armazenamento local daquele aparelho.
-
-## Feedback
-
-O botão **Feedback** registra uma cópia local e abre o Mail com uma mensagem pronta para `feedback@medrecebe.com.br`. O tester revisa e confirma o envio.
-
-Antes de iniciar a rodada de testes, configure esse endereço como caixa ou encaminhamento no domínio `medrecebe.com.br`.
-
-## Limites deste beta
-
-- Não há sincronização entre aparelhos nem recuperação de senha.
-- Limpar os dados do Safari ou excluir os dados pelo app remove as informações do beta.
-- O acesso biométrico e o envio de anexos já estão previstos no aplicativo iOS nativo, mas não fazem parte desta versão web local.
-- Na conciliação, o beta prepara o e-mail; o tester anexa os comprovantes manualmente no Mail.
-
-## Assinatura e administração
-
-O fluxo comercial está preparado para R$ 29,90/mês pelo Mercado Pago, com checkout hospedado, webhook idempotente, liberação de acesso e painel administrativo. Consulte [`docs/BILLING_ADMIN.md`](docs/BILLING_ADMIN.md) antes de ativar credenciais de produção.
+O CPF completo é transformado em hash no servidor. O painel exibe somente os quatro últimos dígitos. Dados completos do cartão não passam pelo MedRecebe. No Plano Web, o servidor remove credenciais e fotografias antes de persistir o estado sincronizado.
 
 ## Validação
 
 ```bash
 node --check app.js
-node --check sw.js
+node --check cloud.js
+node --check admin.js
 node validate-beta.mjs
 ```
 
-Para validar o projeto iOS:
-
-```bash
-cd mobile
-npm install
-npm run check:project
-npm run test:rules
-```
+O workflow `.github/workflows/pages.yml` publica o conteúdo estático no GitHub Pages. As Edge Functions são implantadas pela Supabase CLI.
