@@ -1,0 +1,93 @@
+export type PaymentRuleKind =
+  | 'immediate'
+  | 'calendar_days'
+  | 'advance'
+  | 'first_business_day_next_month'
+  | 'last_business_day_next_month'
+  | 'weekly'
+  | 'custom';
+
+export type CustomRuleBasis = 'service_date' | 'end_of_week' | 'end_of_month';
+export type CustomRuleUnit = 'days' | 'weeks' | 'months';
+export type BusinessDayAdjustment =
+  | 'none'
+  | 'next_business_day'
+  | 'previous_business_day'
+  | 'first_business_day'
+  | 'last_business_day';
+
+export interface PaymentRule {
+  kind: PaymentRuleKind;
+  days?: number;
+  weekday?: number;
+  weekOffset?: number;
+  basis?: CustomRuleBasis;
+  offset?: number;
+  unit?: CustomRuleUnit;
+  adjustment?: BusinessDayAdjustment;
+  contractualText?: string;
+}
+
+export type ModalityType = 'plan' | 'private';
+
+export interface PaymentModality {
+  id: string;
+  name: string;
+  type: ModalityType;
+  amountCents: number;
+  rule: PaymentRule;
+  active: boolean;
+}
+
+export interface Workplace {
+  id: string;
+  name: string;
+  address: string;
+  reconciliationEmail: string;
+  reconciliationCc: string;
+  modalities: PaymentModality[];
+  active: boolean;
+}
+
+export type AttendanceStatus = 'pending' | 'in_reconciliation' | 'paid';
+
+export interface Attendance {
+  id: string;
+  workplaceId: string;
+  modalityId: string;
+  modalityName: string;
+  occurredAt: string;
+  dueAt: string;
+  amountCents: number;
+  evidenceUri: string;
+  notes: string;
+  status: AttendanceStatus;
+  createdAt: string;
+  reconciliationRequestedAt?: string;
+}
+
+export interface ReconciliationSettings {
+  defaultMessage: string;
+}
+
+export interface AppData {
+  workplaces: Workplace[];
+  attendances: Attendance[];
+  reconciliation: ReconciliationSettings;
+  isDemoData: boolean;
+}
+
+export interface UserProfile {
+  name: string;
+  cpf: string;
+  email: string;
+}
+
+export type AppRoute =
+  | { name: 'home' }
+  | { name: 'dashboard' }
+  | { name: 'workplaces' }
+  | { name: 'workplace_form'; workplaceId?: string }
+  | { name: 'attendance_form'; workplaceId: string }
+  | { name: 'reconciliation' }
+  | { name: 'account' };

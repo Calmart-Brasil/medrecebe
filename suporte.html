@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Suporte | MedRecebe</title>
+    <meta name="description" content="Ajuda e suporte para o aplicativo MedRecebe." />
+    <style>
+      :root { --blue:#0377bf; --navy:#102b46; --ink:#17202a; --muted:#61707f; --line:#d9e4ec; --mist:#f5f8fb; }
+      * { box-sizing:border-box; }
+      body { margin:0; color:var(--ink); background:var(--mist); font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+      header { background:var(--blue); color:#fff; }
+      nav,main { width:min(900px,calc(100% - 40px)); margin:auto; }
+      nav { min-height:76px; display:flex; align-items:center; justify-content:space-between; }
+      .brand { color:#fff; display:flex; align-items:center; gap:12px; text-decoration:none; font-weight:800; }
+      .brand img { width:46px; height:46px; border-radius:11px; }
+      nav > a:last-child { color:#fff; font-size:14px; }
+      main { padding:48px 0 70px; }
+      h1,h2 { color:var(--navy); line-height:1.2; }
+      h1 { margin:0 0 10px; font-size:clamp(34px,6vw,52px); letter-spacing:-1px; }
+      .lead { color:var(--muted); font-size:19px; max-width:680px; }
+      .grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; margin-top:34px; }
+      .card { background:#fff; border:1px solid var(--line); border-radius:16px; padding:24px; }
+      .card h2 { margin:0 0 9px; font-size:20px; }
+      .card p { color:var(--muted); margin:0; }
+      .contact { margin-top:18px; background:var(--navy); color:#fff; border-radius:18px; padding:28px; }
+      .contact h2 { color:#fff; margin-top:0; }
+      .button { display:inline-block; margin-top:8px; padding:12px 18px; border-radius:12px; background:#fff; color:var(--blue); text-decoration:none; font-weight:800; }
+      a { color:var(--blue); }
+      footer { color:var(--muted); text-align:center; padding:0 20px 40px; font-size:13px; }
+      @media (max-width:650px) { .grid { grid-template-columns:1fr; } }
+    </style>
+  </head>
+  <body>
+    <header>
+      <nav>
+        <a class="brand" href="index.html"><img src="assets/apple-touch-icon.png" alt="" /> MedRecebe</a>
+        <a href="privacidade.html">Privacidade</a>
+      </nav>
+    </header>
+    <main>
+      <h1>Ajuda e suporte</h1>
+      <p class="lead">Respostas rápidas para usar o MedRecebe no iPhone.</p>
+      <div class="grid">
+        <section class="card">
+          <h2>Instalar o beta web</h2>
+          <p>Abra o link no Safari, toque em Compartilhar → Adicionar à Tela de Início, ative “Abrir como App da Web” e toque em Adicionar.</p>
+        </section>
+        <section class="card">
+          <h2>Dados deste beta</h2>
+          <p>Conta, cadastros, atendimentos e fotos ficam somente neste aparelho. Não limpe os dados do Safari durante o teste; ainda não há sincronização ou recuperação.</p>
+        </section>
+        <section class="card">
+          <h2>Primeiro acesso</h2>
+          <p>Na tela de entrada, toque em “Criar meu acesso”, informe nome, e-mail, CPF e uma senha com pelo menos oito caracteres.</p>
+        </section>
+        <section class="card">
+          <h2>Face ID ou Touch ID</h2>
+          <p>Depois de entrar, abra Menu → Conta e segurança e ative a biometria. O recurso precisa estar configurado nos Ajustes do iPhone.</p>
+        </section>
+        <section class="card">
+          <h2>Novo atendimento</h2>
+          <p>Na tela inicial, toque no local, adicione o comprovante, escolha a modalidade, confira valor e data e toque em Salvar.</p>
+        </section>
+        <section class="card">
+          <h2>E-mail de conciliação</h2>
+          <p>Configure uma conta no app Mail do iPhone. Em Conciliação, cadastre o canal oficial, selecione o grupo vencido e revise a mensagem antes de enviar.</p>
+        </section>
+        <section class="card">
+          <h2>Excluir minha conta</h2>
+          <p>Abra Menu → Conta e segurança → Excluir conta e todos os dados. A ação remove deste iPhone acesso, cadastros, registros e comprovantes.</p>
+        </section>
+        <section class="card">
+          <h2>Privacidade</h2>
+          <p>Evite registrar dados clínicos desnecessários. Consulte a <a href="privacidade.html">Política de Privacidade</a> para saber como o MVP guarda os dados.</p>
+        </section>
+      </div>
+      <section class="contact">
+        <h2>Ainda precisa de ajuda?</h2>
+        <p>Descreva o modelo do iPhone, a versão do iOS e o que aconteceu. Não envie CPF, senha, comprovantes ou dados de pacientes.</p>
+        <a class="button" href="mailto:feedback@medrecebe.com.br?subject=Suporte%20MedRecebe">Falar com o suporte</a>
+      </section>
+    </main>
+    <footer>© 2026 MedRecebe. Gestão financeira para profissionais da saúde.</footer>
+  </body>
+</html>

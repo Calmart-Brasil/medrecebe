@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0377BF" />
+    <meta name="color-scheme" content="light" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="MedRecebe" />
+    <meta name="format-detection" content="telephone=no" />
+    <title>MedRecebe Beta</title>
+    <meta
+      name="description"
+      content="Beta instalável do MedRecebe para registrar atendimentos e validar o fluxo de repasses."
+    />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
+    <link rel="icon" sizes="192x192" href="assets/icon-192.png" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <noscript>Ative o JavaScript para usar o MedRecebe Beta.</noscript>
+
+    <section class="login-shell" id="login-view" aria-labelledby="login-title">
+      <div class="login-brand">
+        <img src="assets/icon-192.png" alt="" width="92" height="92" />
+        <span class="beta-badge">BETA LOCAL</span>
+        <h1 id="login-title">MedRecebe</h1>
+        <p>Seus atendimentos. Seus repasses. Tudo conferido.</p>
+      </div>
+
+      <form class="panel login-card" id="login-form">
+        <div>
+          <h2 id="auth-title">Boas-vindas</h2>
+          <p class="muted" id="auth-description">Entre para testar o fluxo do aplicativo no seu iPhone.</p>
+        </div>
+        <div class="register-fields" id="register-fields" hidden>
+          <label>Nome completo<input autocomplete="name" id="auth-name" placeholder="Dra. Maria Silva" /></label>
+          <label>E-mail<input autocomplete="email" id="auth-email" inputmode="email" placeholder="voce@exemplo.com" /></label>
+        </div>
+        <label>CPF<input autocomplete="username" id="auth-cpf" inputmode="numeric" maxlength="14" placeholder="000.000.000-00" required /></label>
+        <label>Senha<input autocomplete="current-password" id="auth-password" minlength="8" placeholder="Mínimo de 8 caracteres" type="password" required /></label>
+        <p class="form-error" id="auth-error" role="alert"></p>
+        <button class="button primary" id="auth-submit" type="submit">Entrar</button>
+        <button class="button text-button" id="auth-toggle" type="button">Primeiro uso? Criar meu acesso</button>
+      </form>
+
+      <button class="demo-entry" id="demo-entry" type="button">
+        <span><strong>Avaliar com dados fictícios</strong><small>Entra automaticamente e preserva o beta no seu aparelho.</small></span>
+        <b>Usar demo</b>
+      </button>
+
+      <p class="login-privacy">Beta local: os dados ficam neste navegador. Não registre informações reais de pacientes.</p>
+    </section>
+
+    <section class="app-shell" id="app-view" hidden>
+      <header class="app-header">
+        <button class="icon-button" id="header-action" aria-label="Abrir menu" type="button">☰</button>
+        <div>
+          <strong id="header-title">Início</strong>
+          <small>BETA LOCAL</small>
+        </div>
+        <button class="feedback-shortcut" id="feedback-shortcut" type="button" aria-label="Enviar feedback">♡</button>
+      </header>
+      <main id="screen" tabindex="-1"></main>
+      <nav class="bottom-nav" aria-label="Navegação rápida">
+        <button data-nav="home" type="button"><span>＋</span>Registrar</button>
+        <button data-nav="dashboard" type="button"><span>▦</span>Dashboard</button>
+        <button data-nav="feedback" type="button"><span>♡</span>Feedback</button>
+      </nav>
+    </section>
+
+    <div class="drawer-backdrop" id="drawer-backdrop" hidden></div>
+    <aside class="drawer" id="drawer" aria-label="Menu principal" aria-hidden="true">
+      <div class="drawer-brand">
+        <img src="assets/icon-192.png" alt="" width="48" height="48" />
+        <span><strong>MedRecebe</strong><small>Recebíveis médicos</small></span>
+        <button class="icon-button dark" id="drawer-close" aria-label="Fechar menu" type="button">×</button>
+      </div>
+      <nav>
+        <button data-nav="dashboard" type="button"><span>▦</span>Dashboard</button>
+        <button data-nav="workplaces" type="button"><span>⌂</span>Locais e repasses</button>
+        <button data-nav="reconciliation" type="button"><span>⇄</span>Conciliação</button>
+        <hr />
+        <button data-nav="home" type="button"><span>＋</span>Registrar atendimento</button>
+        <button data-nav="feedback" type="button"><span>♡</span>Enviar feedback</button>
+        <button data-nav="account" type="button"><span>○</span>Conta e instalação</button>
+      </nav>
+      <div class="drawer-profile">
+        <span class="avatar" id="drawer-avatar">M</span>
+        <span><strong id="drawer-name">Médico</strong><small id="drawer-email">Beta local</small></span>
+        <button id="logout-button" type="button">Sair</button>
+      </div>
+    </aside>
+
+    <div id="modal-root"></div>
+    <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+    <script src="app.js" defer></script>
+  </body>
+</html>

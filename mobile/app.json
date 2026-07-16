@@ -1,0 +1,57 @@
+{
+  "expo": {
+    "name": "MedRecebe",
+    "slug": "medrecebe",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "medrecebe",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.calmart.medrecebe",
+      "buildNumber": "1",
+      "config": {
+        "usesNonExemptEncryption": false
+      },
+      "infoPlist": {
+        "NSCameraUsageDescription": "O MedRecebe usa a câmera para fotografar o comprovante do atendimento.",
+        "NSPhotoLibraryUsageDescription": "O MedRecebe acessa suas fotos para anexar comprovantes de atendimento.",
+        "NSFaceIDUsageDescription": "O MedRecebe usa o Face ID para liberar seu acesso com segurança."
+      }
+    },
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "Permita o uso da câmera para registrar o comprovante do atendimento.",
+          "photosPermission": "Permita o acesso às fotos para selecionar um comprovante de atendimento.",
+          "microphonePermission": false
+        }
+      ],
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Permita que o MedRecebe use o Face ID para liberar seu acesso."
+        }
+      ],
+      [
+        "expo-secure-store",
+        {
+          "configureAndroidBackup": true,
+          "faceIDPermission": "Permita que o MedRecebe proteja seu acesso com o Face ID."
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#0377BF",
+          "image": "./assets/icon.png",
+          "imageWidth": 190,
+          "resizeMode": "contain"
+        }
+      ]
+    ]
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "id": "./",
+  "name": "MedRecebe Beta",
+  "short_name": "MedRecebe",
+  "description": "Beta local para registrar atendimentos, acompanhar repasses e testar o MedRecebe.",
+  "lang": "pt-BR",
+  "start_url": "./?source=homescreen",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F5F8FB",
+  "theme_color": "#0377BF",
+  "categories": ["finance", "productivity", "medical"],
+  "icons": [
+    {
+      "src": "./assets/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./assets/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
