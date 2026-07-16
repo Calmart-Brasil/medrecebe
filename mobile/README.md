@@ -6,11 +6,12 @@ Aplicativo React Native/Expo voltado primeiro ao iPhone para registrar atendimen
 
 - Login por CPF e senha, primeiro acesso local e desbloqueio opcional por Face ID/Touch ID.
 - Dashboard com quantidade, valor a receber, vencidos, conciliações, próxima data de crédito por local e baixa de grupos recebidos.
-- CRUD de locais e modalidades, com valor por atendimento e regra de pagamento.
+- CRUD de locais e modalidades, com CNPJ e Razão Social do pagador, valor por atendimento e regra de pagamento.
 - Regras à vista, antecipada, em dias corridos, primeiro/último dia útil do mês seguinte, dia da semana seguinte e personalizada estruturada.
 - Registro de atendimento com câmera ou galeria, modalidade, observação, valor e vencimento calculados.
 - Persistência local no SQLite; credenciais no Keychain; comprovantes na pasta privada do aplicativo.
 - Conciliação de grupos vencidos por local/mês, com mensagem parametrizada e anexos no compositor nativo do Mail.
+- Leitura de Nota Fiscal em PDF/XML pelo seletor de arquivos ou por Compartilhar/Abrir com, com comparação de CNPJ, Razão Social e valor contabilizado.
 - Exclusão de conta, dados e comprovantes pelo próprio aplicativo.
 
 ## Executar

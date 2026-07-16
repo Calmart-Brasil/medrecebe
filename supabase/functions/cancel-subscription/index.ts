@@ -37,8 +37,8 @@ Deno.serve(async (request) => {
     if (subscriptionError) throw subscriptionError;
 
     if (!subscription?.provider_subscription_id) {
-      await admin.from('profiles').update({ access_status: 'canceled', trial_ends_at: new Date().toISOString() }).eq('id', user.id);
-      return json(request, { canceled: true, refunded: false, trialCanceled: true });
+      await admin.from('profiles').update({ access_status: 'canceled', trial_ends_at: null }).eq('id', user.id);
+      return json(request, { canceled: true, refunded: false, noActiveCharge: true });
     }
 
     await mercadoPago(`/preapproval/${encodeURIComponent(subscription.provider_subscription_id)}`, {

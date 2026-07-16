@@ -1,6 +1,6 @@
 # Assinaturas e painel administrativo
 
-O MedRecebe oferece teste gratuito de 7 dias sem cartão, Plano Mobile de **R$ 29,90/mês** e Plano Web de **R$ 59,90/mês**. Checkout, recorrência, cancelamento e reembolso são processados pelo Mercado Pago. Identidade, acesso, sincronização e painel administrativo usam Supabase.
+O MedRecebe cobra no início do ciclo, oferece garantia de cancelamento com estorno integral em 7 dias, Plano Mobile de **R$ 29,90/mês** e Plano Web de **R$ 59,90/mês**. Checkout, recorrência, cancelamento e reembolso passam por um adaptador de provedor substituível. Identidade, acesso, sincronização e painel administrativo usam Supabase.
 
 ## Arquitetura
 
@@ -8,7 +8,7 @@ O MedRecebe oferece teste gratuito de 7 dias sem cartão, Plano Mobile de **R$ 2
 - Supabase Auth: sessão, confirmação de e-mail e recuperação futura.
 - Postgres + RLS: perfis, assinaturas, eventos, estado sincronizado e auditoria administrativa.
 - Edge Functions: cadastro, login, status, checkout, webhook, sincronização, cancelamento e administração.
-- Mercado Pago: token e assinatura secreta ficam apenas nas Edge Functions.
+- Provedor de pagamentos: token e assinatura secreta ficam apenas nas Edge Functions.
 
 O CPF completo não é gravado na tabela de perfis. O servidor persiste um SHA-256 com `CPF_PEPPER` e apenas os quatro últimos dígitos para suporte operacional.
 
@@ -24,9 +24,9 @@ supabase db push
 
 Ative proteção contra senhas vazadas, CAPTCHA no cadastro/login e configure SMTP próprio antes de abrir o cadastro público.
 
-## 2. Criar a integração Mercado Pago
+## 2. Configurar a integração de cobrança
 
-Na conta vendedora **Lucas Catarin**, acesse **Suas integrações**, crie uma aplicação chamada `MedRecebe` e obtenha primeiro as credenciais de teste. Não coloque Access Token em arquivos, GitHub Pages ou mensagens.
+Na conta comercial do provedor vigente, crie uma aplicação chamada `MedRecebe` e obtenha primeiro as credenciais de teste. Não coloque tokens de acesso em arquivos, GitHub Pages ou mensagens. O nome do provedor não deve aparecer na interface pública para permitir substituição futura.
 
 Configure os segredos diretamente no Supabase:
 
@@ -34,8 +34,7 @@ Configure os segredos diretamente no Supabase:
 supabase secrets set APP_ORIGINS=https://medrecebe.com.br,https://www.medrecebe.com.br,https://calmart-brasil.github.io
 supabase secrets set APP_URL=https://medrecebe.com.br/app.html
 supabase secrets set CPF_PEPPER=UMA_CHAVE_ALEATORIA_LONGA
-supabase secrets set MERCADO_PAGO_ACCESS_TOKEN=SEU_TOKEN
-supabase secrets set MERCADO_PAGO_WEBHOOK_SECRET=SEU_SEGREDO_DE_WEBHOOK
+# Configure também o token e o segredo de webhook exigidos pelo adaptador vigente.
 ```
 
 Implante as funções:
@@ -50,6 +49,7 @@ supabase functions deploy admin-users
 supabase functions deploy admin-update-user
 supabase functions deploy sync-state
 supabase functions deploy cancel-subscription
+supabase functions deploy analyze-invoice
 ```
 
 O endpoint de webhook será:
@@ -58,7 +58,7 @@ O endpoint de webhook será:
 https://SEU_PROJECT_REF.supabase.co/functions/v1/mercado-pago-webhook
 ```
 
-Ative os eventos `subscription_preapproval`, `subscription_authorized_payment` e `payment`. O status autenticado também reconcilia diretamente com a API do Mercado Pago, evitando dependência exclusiva do webhook.
+Ative os eventos de assinatura e pagamento exigidos pelo provedor. O status autenticado também reconcilia diretamente com a API de cobrança, evitando dependência exclusiva do webhook.
 
 ## 3. Conectar o GitHub Pages
 
@@ -84,7 +84,7 @@ Depois acesse `/admin.html`. O painel permite pesquisar usuários, liberar ou su
 ## 5. Regras de acesso
 
 - `pending_payment`: cadastrado, ainda sem assinatura aprovada.
-- `active`: teste vigente, assinatura autorizada ou liberação temporária por administrador.
+- `active`: assinatura autorizada ou liberação temporária por administrador.
 - `past_due`: cobrança recusada/pausada.
 - `suspended`: bloqueio manual administrativo.
 - `canceled`: assinatura cancelada.
@@ -93,7 +93,11 @@ O webhook é idempotente: eventos são guardados antes do processamento e tentat
 
 ## Cancelamento e reembolso
 
-`cancel-subscription` cancela a recorrência no Mercado Pago. Se o último pagamento tiver até 7 dias, localiza a transação pelo usuário, valor e data e solicita reembolso integral com chave de idempotência. Falhas de reembolso são devolvidas como pendência de conferência, sem reativar a recorrência.
+`cancel-subscription` cancela a recorrência no provedor vigente. Se o último pagamento tiver até 7 dias, localiza a transação pelo usuário, valor e data e solicita reembolso integral com chave de idempotência. Falhas de reembolso são devolvidas como pendência de conferência, sem reativar a recorrência.
+
+## Nota Fiscal
+
+`analyze-invoice` recebe PDF ou XML autenticado de até 5 MB, extrai texto sem armazenar o arquivo, identifica CNPJ e Razão Social e retorna os dados necessários para comparar o valor da nota com os atendimentos contabilizados.
 
 ## Plano Web
 
@@ -101,11 +105,11 @@ O webhook é idempotente: eventos são guardados antes do processamento e tentat
 
 ## App Store e TestFlight
 
-O Mercado Pago pode operar o checkout web. Para oferecer esse pagamento alternativo dentro do app distribuído no Brasil, será necessário solicitar o **StoreKit External Purchases or Offers Entitlement**, implementar as APIs/tela informativa exigidas pela Apple e limitar o recurso a iOS 26.5 ou posterior. Em TestFlight, transações de teste do pagamento alternativo devem ocorrer sem custo.
+O provedor vigente pode operar o checkout web. Para oferecer pagamento externo dentro do app distribuído no Brasil, será necessário solicitar o **StoreKit External Purchases or Offers Entitlement**, implementar as APIs/tela informativa exigidas pela Apple e respeitar as versões e storefronts elegíveis. Em TestFlight, transações de teste do pagamento alternativo devem ocorrer sem custo.
 
 Antes da App Store final, escolha uma das estratégias:
 
-1. StoreKit auto-renovável como compra principal e Mercado Pago apenas na web; ou
-2. Mercado Pago no iOS brasileiro com entitlement, relatórios e comissões de compra externa.
+1. StoreKit auto-renovável como compra principal e provedor externo apenas na web; ou
+2. provedor externo no iOS brasileiro com entitlement, relatórios e comissões de compra externa.
 
 Não habilite cobrança produtiva no TestFlight sem concluir essa decisão e revisar requisitos fiscais, cancelamento, reembolso e LGPD.

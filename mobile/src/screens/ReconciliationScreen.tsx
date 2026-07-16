@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import * as DocumentPicker from 'expo-document-picker';
 import * as MailComposer from 'expo-mail-composer';
 
 import { Button, Card, Chip, EmptyState, Eyebrow, Field, InlineNotice, PageTitle, Screen, SectionTitle } from '../components/ui';
 import { formatCurrency, formatDate, isPastOrToday } from '../services/paymentRules';
+import type { InvoiceSource } from '../services/invoice';
 import { colors, radius } from '../theme';
 import type { AppData, Attendance, UserProfile, Workplace } from '../types';
 
@@ -58,11 +60,13 @@ export function ReconciliationScreen({
   profile,
   onSaveSettings,
   onMarkRequested,
+  onImportInvoice,
 }: {
   data: AppData;
   profile: UserProfile;
   onSaveSettings: (workplace: Workplace, message: string) => void;
   onMarkRequested: (attendanceIds: string[]) => void;
+  onImportInvoice: (source: InvoiceSource) => Promise<void>;
 }) {
   const groups = useMemo(() => buildGroups(data), [data]);
   const [channelWorkplaceId, setChannelWorkplaceId] = useState(data.workplaces[0]?.id ?? '');
@@ -72,6 +76,8 @@ export function ReconciliationScreen({
   const [message, setMessage] = useState(data.reconciliation.defaultMessage);
   const [selectedGroupId, setSelectedGroupId] = useState(groups[0]?.id ?? '');
   const [sending, setSending] = useState(false);
+  const [importingInvoice, setImportingInvoice] = useState(false);
+  const latestInvoice = data.invoices[0];
 
   useEffect(() => {
     setRecipient(channelWorkplace?.reconciliationEmail ?? '');
@@ -101,6 +107,24 @@ export function ReconciliationScreen({
       message.trim(),
     );
     Alert.alert('Configuração salva', 'O canal e a mensagem padrão foram atualizados.');
+  };
+
+  const pickInvoice = async () => {
+    setImportingInvoice(true);
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        copyToCacheDirectory: true,
+        multiple: false,
+        type: ['application/pdf', 'application/xml', 'text/xml'],
+      });
+      if (result.canceled || !result.assets[0]) return;
+      const asset = result.assets[0];
+      await onImportInvoice({ uri: asset.uri, fileName: asset.name, mimeType: asset.mimeType });
+    } catch (error) {
+      Alert.alert('Não foi possível ler a Nota Fiscal', error instanceof Error ? error.message : 'Tente novamente com o PDF ou XML original.');
+    } finally {
+      setImportingInvoice(false);
+    }
   };
 
   const send = async () => {
@@ -166,6 +190,41 @@ export function ReconciliationScreen({
           Conciliação
         </PageTitle>
       </View>
+
+      <SectionTitle>Conferir Nota Fiscal</SectionTitle>
+      <Card style={styles.invoiceCard}>
+        <Text style={styles.invoiceTitle}>Envie o PDF ou XML recebido</Text>
+        <Text style={styles.invoiceDescription}>
+          O MedRecebe identifica CNPJ e Razão Social do pagador e compara o valor da nota com os atendimentos contabilizados.
+        </Text>
+        <Button compact loading={importingInvoice} onPress={() => void pickInvoice()} title="Selecionar Nota Fiscal" />
+        <Text style={styles.invoiceHint}>No iPhone, você também pode abrir o arquivo pelo e-mail e escolher MedRecebe no menu Compartilhar.</Text>
+      </Card>
+
+      {latestInvoice ? (
+        <Card style={latestInvoice.status === 'matched' ? [styles.invoiceResult, styles.invoiceResultMatched] : styles.invoiceResult}>
+          <View style={styles.summaryRow}>
+            <Text style={styles.invoiceResultTitle}>
+              {latestInvoice.status === 'matched' ? 'Valores coincidem' : latestInvoice.status === 'divergent' ? 'Divergência encontrada' : latestInvoice.status === 'group_not_found' ? 'Pagador identificado' : 'Pagador não identificado'}
+            </Text>
+            <Text style={styles.invoiceBadge}>{latestInvoice.status === 'matched' ? 'CONCILIADO' : 'REVISAR'}</Text>
+          </View>
+          <Text style={styles.invoiceFile}>{latestInvoice.fileName}{latestInvoice.workplaceName ? ` • ${latestInvoice.workplaceName}` : ''}</Text>
+          <View style={styles.invoiceValues}>
+            <View><Text style={styles.invoiceValueLabel}>VALOR DA NOTA</Text><Text style={styles.invoiceValue}>{latestInvoice.amountCents === null ? 'Não identificado' : formatCurrency(latestInvoice.amountCents)}</Text></View>
+            <View><Text style={styles.invoiceValueLabel}>CONTABILIZADO</Text><Text style={styles.invoiceValue}>{latestInvoice.expectedCents === null ? '—' : formatCurrency(latestInvoice.expectedCents)}</Text></View>
+          </View>
+          <Text style={styles.invoiceHint}>
+            {latestInvoice.status === 'divergent'
+              ? `Diferença de ${formatCurrency(Math.abs(latestInvoice.differenceCents ?? 0))}. Revise antes de solicitar a conferência.`
+              : latestInvoice.status === 'payer_not_matched'
+                ? 'Confira se CNPJ e Razão Social estão iguais ao documento.'
+                : latestInvoice.status === 'group_not_found'
+                  ? 'Não há grupo vencido deste local para comparar.'
+                  : 'A Nota Fiscal corresponde ao total contabilizado do grupo.'}
+          </Text>
+        </Card>
+      ) : null}
 
       <SectionTitle>Canal oficial</SectionTitle>
       {data.workplaces.length === 0 ? (
@@ -272,6 +331,18 @@ export function ReconciliationScreen({
 
 const styles = StyleSheet.create({
   heading: { gap: 7 },
+  invoiceCard: { gap: 12 },
+  invoiceTitle: { color: colors.navy, fontSize: 17, fontWeight: '800' },
+  invoiceDescription: { color: colors.muted, fontSize: 14, lineHeight: 21 },
+  invoiceHint: { color: colors.muted, fontSize: 12, lineHeight: 18 },
+  invoiceResult: { backgroundColor: '#FFF8E9', borderColor: '#F2C979', gap: 10 },
+  invoiceResultMatched: { backgroundColor: colors.greenSoft, borderColor: '#8ED8B1' },
+  invoiceResultTitle: { color: colors.navy, flex: 1, fontSize: 17, fontWeight: '900' },
+  invoiceBadge: { color: colors.blue700, fontSize: 10, fontWeight: '900' },
+  invoiceFile: { color: colors.muted, fontSize: 12 },
+  invoiceValues: { flexDirection: 'row', justifyContent: 'space-between' },
+  invoiceValueLabel: { color: colors.muted, fontSize: 9, fontWeight: '800' },
+  invoiceValue: { color: colors.navy, fontSize: 17, fontWeight: '900' },
   settingsCard: { gap: 15 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   groups: { gap: 10 },

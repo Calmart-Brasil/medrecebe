@@ -17,7 +17,7 @@ export async function mercadoPago<T>(path: string, init: RequestInit = {}): Prom
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const message = payload?.message || payload?.error || `Mercado Pago respondeu ${response.status}`;
+    const message = payload?.message || payload?.error || `O provedor de pagamentos respondeu ${response.status}`;
     throw new Error(message);
   }
   return payload as T;

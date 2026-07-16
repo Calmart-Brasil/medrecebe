@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Image, StyleSheet, Text, View } from 'react-native';
 import * as SplashScreen from 'expo-splash-screen';
+import { useIncomingShare } from 'expo-sharing';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
@@ -17,6 +18,7 @@ import { WorkplaceFormScreen } from './src/screens/WorkplaceFormScreen';
 import { WorkplacesScreen } from './src/screens/WorkplacesScreen';
 import { DEMO_CPF, deleteLocalAccount } from './src/services/auth';
 import { clearEvidence } from './src/services/evidence';
+import { analyzeInvoiceSource, reconcileInvoice, type InvoiceSource } from './src/services/invoice';
 import { colors } from './src/theme';
 import type { AppData, AppRoute, Attendance, UserProfile, Workplace } from './src/types';
 
@@ -40,6 +42,8 @@ export default function App() {
   const [route, setRoute] = useState<AppRoute>({ name: 'home' });
   const [drawerVisible, setDrawerVisible] = useState(false);
   const [loadingData, setLoadingData] = useState(false);
+  const processedShare = useRef('');
+  const { clearSharedPayloads, resolvedSharedPayloads } = useIncomingShare();
 
   const authenticate = async (authenticatedProfile: UserProfile) => {
     setLoadingData(true);
@@ -62,6 +66,41 @@ export default function App() {
       Alert.alert('Falha ao salvar', 'A alteração está na tela, mas não foi gravada neste iPhone. Tente novamente.');
     });
   };
+
+  const importInvoice = async (source: InvoiceSource) => {
+    if (!data) throw new Error('Entre na sua conta antes de abrir a Nota Fiscal.');
+    const analysis = await analyzeInvoiceSource(source);
+    const invoice = reconcileInvoice(analysis, data);
+    commit({ ...data, invoices: [invoice, ...data.invoices].slice(0, 30) });
+    setRoute({ name: 'reconciliation' });
+    Alert.alert(
+      invoice.status === 'matched' ? 'Nota Fiscal conciliada' : 'Nota Fiscal lida',
+      invoice.status === 'matched'
+        ? 'O pagador foi identificado e o valor coincide com os atendimentos contabilizados.'
+        : invoice.status === 'divergent'
+          ? 'O pagador foi identificado, mas há diferença entre a nota e o total contabilizado.'
+          : 'Revise o CNPJ, a Razão Social e os grupos vencidos deste local.',
+    );
+  };
+
+  useEffect(() => {
+    if (!profile || !data) return;
+    const payload = resolvedSharedPayloads.find((item) => item.contentType === 'file' && item.contentUri);
+    if (!payload?.contentUri) return;
+    const key = `${payload.contentUri}:${payload.contentSize ?? ''}`;
+    if (processedShare.current === key) return;
+    processedShare.current = key;
+    void importInvoice({
+      uri: payload.contentUri,
+      fileName: payload.originalName || 'nota-fiscal',
+      mimeType: payload.contentMimeType,
+    })
+      .then(() => clearSharedPayloads())
+      .catch((error) => {
+        processedShare.current = '';
+        Alert.alert('Não foi possível ler a Nota Fiscal', error instanceof Error ? error.message : 'Tente novamente com o PDF ou XML original.');
+      });
+  }, [profile, data, resolvedSharedPayloads, clearSharedPayloads]);
 
   const upsertWorkplace = (workplace: Workplace) => {
     if (!data) return;
@@ -170,6 +209,7 @@ export default function App() {
         return (
           <ReconciliationScreen
             data={data}
+            onImportInvoice={importInvoice}
             onMarkRequested={(ids) => {
               const requestedAt = new Date().toISOString();
               commit({

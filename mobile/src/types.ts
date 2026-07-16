@@ -43,10 +43,31 @@ export interface Workplace {
   id: string;
   name: string;
   address: string;
+  payerCnpj: string;
+  payerLegalName: string;
   reconciliationEmail: string;
   reconciliationCc: string;
   modalities: PaymentModality[];
   active: boolean;
+}
+
+export type InvoiceReconciliationStatus = 'matched' | 'divergent' | 'payer_not_matched' | 'group_not_found';
+
+export interface InvoiceReconciliation {
+  id: string;
+  fileName: string;
+  invoiceNumber: string;
+  issuedAt: string;
+  amountCents: number | null;
+  cnpjs: string[];
+  legalNames: string[];
+  workplaceId: string;
+  workplaceName: string;
+  groupId: string;
+  expectedCents: number | null;
+  differenceCents: number | null;
+  status: InvoiceReconciliationStatus;
+  analyzedAt: string;
 }
 
 export type AttendanceStatus = 'pending' | 'in_reconciliation' | 'paid';
@@ -73,6 +94,7 @@ export interface ReconciliationSettings {
 export interface AppData {
   workplaces: Workplace[];
   attendances: Attendance[];
+  invoices: InvoiceReconciliation[];
   reconciliation: ReconciliationSettings;
   isDemoData: boolean;
 }

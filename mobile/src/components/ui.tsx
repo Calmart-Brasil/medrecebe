@@ -224,8 +224,6 @@ export function InlineNotice({
   );
 }
 
-export const uiStyles = styles;
-
 const styles = StyleSheet.create({
   topSafeArea: { backgroundColor: colors.blue700 },
   topBar: {
@@ -332,3 +330,5 @@ const styles = StyleSheet.create({
   noticeText_warning: { color: colors.amber },
   noticeText_success: { color: colors.green },
 });
+
+export const uiStyles = styles;

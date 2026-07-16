@@ -80,7 +80,7 @@ Deno.serve(async (request) => {
         status: 'pending',
       }),
     });
-    if (!subscription.init_point) throw new Error('O Mercado Pago não retornou o link de pagamento');
+    if (!subscription.init_point) throw new Error('O provedor não retornou o link de pagamento');
 
     await admin.from('subscriptions').update({ is_current: false }).eq('user_id', user.id).eq('is_current', true);
     const { error: insertError } = await admin.from('subscriptions').insert({

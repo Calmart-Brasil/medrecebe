@@ -24,8 +24,10 @@ Deno.serve(async (request) => {
     if (lookupError || !previous) return publicError(request, 'Usuário não encontrado.', 404);
     if (previous.role === 'admin') return publicError(request, 'Contas administrativas não podem ser alteradas por esta tela.', 403);
 
-    const changes: Record<string, string> = { access_status: accessStatus };
-    if (accessStatus === 'active') changes.trial_ends_at = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+    const changes: Record<string, string | null> = {
+      access_status: accessStatus,
+      manual_access_until: accessStatus === 'active' ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() : null,
+    };
     const { data: updated, error: updateError } = await admin
       .from('profiles')
       .update(changes)

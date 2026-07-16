@@ -109,6 +109,7 @@
     logout,
     createSubscription: (planCode) => authenticatedInvoke('create-subscription', { planCode }),
     cancelSubscription: () => authenticatedInvoke('cancel-subscription'),
+    analyzeInvoice: (input) => authenticatedInvoke('analyze-invoice', input),
     loadState: () => authenticatedInvoke('sync-state', { action: 'load' }),
     saveState: (state) => authenticatedInvoke('sync-state', { action: 'save', state }),
     adminUsers: (input) => authenticatedInvoke('admin-users', input),

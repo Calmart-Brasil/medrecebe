@@ -1,194 +1,160 @@
-# Histórias do usuário — lançamento oficial MedRecebe
+# Histórias de usuário — contratação e conciliação por Nota Fiscal
 
-Versão: 16/07/2026
+## Jornada 1 — Descoberta e contratação
 
-## Jornada 1 — Descoberta e teste
+### US-01 — Entender o benefício
 
-### US-01 — Entender a proposta antes de criar conta
-
-Como médico, quero entender quais problemas o MedRecebe resolve e quais são seus limites, para decidir se faz sentido testá-lo.
+Como médico, quero compreender como o MedRecebe identifica atrasos e divergências, para decidir se a plataforma serve à minha rotina.
 
 Critérios de aceite:
 
-- A página explica atrasos, valores divergentes, atendimentos não localizados e regras de repasse.
-- A página não promete recuperar dinheiro nem garantir pagamento.
-- Planos, valores, teste, cancelamento, privacidade e suporte aparecem antes do cadastro.
+- A página apresenta problemas reais de repasse, os dois planos, valores, garantia, cancelamento, privacidade e limitações.
+- A conciliação por Nota Fiscal explica CNPJ, Razão Social e comparação de valores sem prometer que o pagador quitará a dívida.
+- O nome do operador e a marca do provedor de pagamentos não aparecem na comunicação pública.
 
-### US-02 — Começar o teste sem cartão
+### US-02 — Contratar antes de acessar
 
-Como novo usuário, quero testar por 7 dias sem cadastrar cartão, para avaliar o produto sem risco de cobrança inesperada.
-
-Critérios de aceite:
-
-- O cadastro inicia o período de 7 dias e libera o plano escolhido.
-- Nenhuma cobrança é criada durante o teste sem ação expressa do usuário.
-- A conta mostra a data ou os dias restantes.
-- Encerrar o teste bloqueia o acesso e não solicita reembolso, pois não houve cobrança.
-
-## Jornada 2 — Conta e acesso
-
-### US-03 — Criar acesso com CPF real
-
-Como médico, quero criar conta com nome, e-mail, CPF e senha, para acessar meu ambiente com segurança.
+Como novo usuário, quero criar minha conta e concluir a contratação, para acessar o plano escolhido imediatamente após a confirmação.
 
 Critérios de aceite:
 
-- CPF inválido, senha curta e e-mail inválido são recusados com mensagem clara.
-- CPF completo não fica disponível no painel administrativo.
-- CPF ou e-mail já cadastrados não criam conta duplicada.
-- A sessão persiste entre fechamentos normais do navegador.
+- O cadastro cria a conta com acesso `pending_payment`.
+- Nenhuma função paga é liberada antes de assinatura autorizada ou liberação administrativa.
+- O retorno do checkout consulta o servidor e libera o acesso sem depender exclusivamente do webhook.
+- Falha ou demora na confirmação apresenta “Já paguei — verificar acesso” sem apagar a conta.
 
-### US-04 — Recuperar o acesso após login
+### US-03 — Usar a garantia de 7 dias
 
-Como usuário existente, quero entrar com CPF e senha e ver o status correto do teste ou assinatura.
-
-Critérios de aceite:
-
-- Teste válido libera o aplicativo.
-- Teste expirado apresenta os planos sem apagar os dados locais.
-- Pagamento aprovado libera acesso mesmo que o webhook esteja atrasado.
-- Conta suspensa não revela se o CPF existe.
-
-## Jornada 3 — Cadastro e atendimento
-
-### US-05 — Configurar local e modalidade
-
-Como médico, quero cadastrar cada local, modalidade, valor e regra, para calcular o repasse previsto corretamente.
+Como consumidor, quero cancelar dentro dos 7 primeiros dias, para receber o estorno integral sem falar com vendedor.
 
 Critérios de aceite:
 
-- Um local precisa de pelo menos uma modalidade.
-- Valores precisam ser positivos.
-- Regra personalizada exige texto contratual e parâmetros calculáveis.
-- O usuário pode editar, desativar e reativar sem perder o histórico.
+- O prazo conta do último pagamento aprovado.
+- O cancelamento encerra a recorrência antes de solicitar o reembolso.
+- O pedido de reembolso usa chave de idempotência.
+- Falha do provedor retorna `refundPending`; a interface não afirma que o estorno concluiu.
+- Depois de 7 dias, o cancelamento impede cobranças futuras, observadas as exceções legais.
+
+## Jornada 2 — Cadastro financeiro
+
+### US-04 — Cadastrar o pagador corretamente
+
+Como médico, quero informar o local de trabalho, o CNPJ e a Razão Social do pagador, para que a Nota Fiscal seja associada com segurança.
+
+Critérios de aceite:
+
+- Nome do local, CNPJ válido, Razão Social e pelo menos uma modalidade são obrigatórios.
+- O CNPJ é salvo somente com 14 dígitos e exibido formatado.
+- CNPJ e Razão Social aparecem no resumo do cadastro.
+- Cadastros antigos recebem campos vazios e exigem complementação antes da próxima edição.
+
+### US-05 — Registrar modalidades e regras
+
+Como médico, quero registrar plano/particular, valor e regra de vencimento, para calcular automaticamente o recebível.
+
+Critérios de aceite:
+
+- Cada modalidade contém tipo, valor positivo, regra e status.
+- Regras personalizadas guardam data-base, deslocamento, unidade, ajuste de dia útil e texto contratual.
+- O usuário confere o exemplo de vencimento antes de salvar uma regra personalizada.
 
 ### US-06 — Registrar atendimento
 
-Como médico, quero fotografar a prova, classificar a modalidade e salvar uma observação, para manter uma memória do serviço prestado.
+Como médico, quero anexar a prova, selecionar a modalidade e salvar, para incluir valor e vencimento no Dashboard.
 
 Critérios de aceite:
 
-- O registro exige local, modalidade, data e comprovante.
-- A data de crédito e o valor são exibidos antes de salvar.
-- A foto é comprimida e permanece no aparelho.
-- Falha de armazenamento não cria registro parcial.
+- O local precisa estar ativo e ter modalidade ativa.
+- A foto é opcional, comprimida e preservada no aparelho.
+- O registro salva data, modalidade, valor, vencimento, observação e situação.
 
-## Jornada 4 — Dashboard e conciliação
+## Jornada 3 — Nota Fiscal e conciliação
 
-### US-07 — Ver recebíveis por local e vencimento
+### US-07 — Selecionar Nota Fiscal no aplicativo
 
-Como médico, quero visualizar valores em aberto e datas previstas, para priorizar conferências.
-
-Critérios de aceite:
-
-- Totais excluem itens marcados como recebidos.
-- Grupos mostram quantidade, local, data e valor.
-- Marcar como recebido exige confirmação.
-- Cálculos informam a limitação referente a feriados e regras excepcionais.
-
-### US-08 — Preparar uma conciliação
-
-Como médico, quero selecionar atendimentos vencidos e abrir uma mensagem padronizada, para cobrar o canal oficial com contexto suficiente.
+Como médico, quero escolher um PDF ou XML na tela de Conciliação, para conferir o documento recebido.
 
 Critérios de aceite:
 
-- Somente itens vencidos e não recebidos entram no grupo.
-- Destinatário, assunto, período, quantidade e valor são revisáveis.
-- O envio só ocorre após confirmação no aplicativo de e-mail.
-- A versão web informa que anexos devem ser adicionados manualmente.
+- O seletor aceita PDF/XML de até 5 MB.
+- O arquivo é processado para extração e não é incorporado à sincronização dos dados de gestão.
+- PDF sem texto legível orienta o usuário a usar o XML ou PDF digital original.
 
-## Jornada 5 — Planos e dispositivos
+### US-08 — Abrir Nota Fiscal pelo e-mail no iPhone
 
-### US-09 — Usar o Plano Mobile
-
-Como usuário do Plano Mobile, quero instalar o MedRecebe no iPhone e manter meus registros no aparelho.
+Como médico, quero usar Compartilhar/Abrir com no arquivo recebido, para enviar a Nota Fiscal diretamente ao MedRecebe.
 
 Critérios de aceite:
 
-- O atalho abre diretamente em `app.html`.
-- Fechar o aplicativo não apaga os registros.
-- O acesso amplo pelo PC informa claramente a necessidade do Plano Web.
+- O binário iOS inclui uma Share Extension para um arquivo.
+- O aplicativo aceita PDF/XML e mantém o compartilhamento pendente até o usuário entrar.
+- Depois da leitura, a tela de Conciliação é aberta com o resultado.
+- A extensão é validada em uma nova compilação TestFlight; o atalho PWA não substitui essa capacidade nativa.
 
-### US-10 — Usar o Plano Web
+### US-09 — Identificar o pagador
 
-Como usuário do Plano Web, quero acessar cadastros e indicadores no iPhone e no PC, para administrar minha rotina em tela ampla.
-
-Critérios de aceite:
-
-- O layout se adapta ao computador com fontes e largura adequadas.
-- Locais, regras, atendimentos e indicadores sincronizam após autenticação.
-- Fotos e credenciais são removidas do estado enviado ao servidor.
-- Falha de rede mantém o estado local e informa que a sincronização será retomada.
-
-## Jornada 6 — Pagamento, cancelamento e reembolso
-
-### US-11 — Assinar depois do teste
-
-Como usuário que decidiu continuar, quero escolher Mobile ou Web e pagar pelo Mercado Pago, para liberar o plano sem espera.
+Como médico, quero que o sistema confirme CNPJ e Razão Social, para evitar associação da nota ao local errado.
 
 Critérios de aceite:
 
-- O checkout recebe o valor do plano escolhido.
-- O retorno possui URL válida e inicia reconciliação automática.
-- O servidor consulta o Mercado Pago e não depende apenas do webhook.
-- Assinatura aprovada aparece como `authorized` e acesso `active` no painel.
+- A associação automática exige o CNPJ válido presente no documento e a Razão Social normalizada presente no texto.
+- Apenas CNPJ ou apenas nome não basta para conciliar automaticamente.
+- Sem correspondência, o resultado informa “Pagador não identificado” e orienta revisar o cadastro.
 
-### US-12 — Cancelar sem falar com vendedor
+### US-10 — Comparar o valor da Nota Fiscal
 
-Como assinante, quero cancelar dentro da conta, para impedir novas cobranças sem burocracia.
-
-Critérios de aceite:
-
-- A ação exige confirmação explícita.
-- A recorrência é cancelada no Mercado Pago antes da atualização local.
-- O banco registra data e status do cancelamento.
-- Uma falha apresenta mensagem clara e não afirma que o cancelamento foi concluído.
-
-### US-13 — Receber estorno no prazo de arrependimento
-
-Como consumidor que cancelou em até 7 dias da contratação, quero que o reembolso integral seja solicitado automaticamente.
+Como médico, quero comparar o valor da nota ao grupo de atendimentos vencidos, para identificar divergências rapidamente.
 
 Critérios de aceite:
 
-- O pagamento é localizado pelo identificador da conta, status e valor do plano.
-- A solicitação usa chave de idempotência para evitar reembolso duplicado.
-- O resultado informa reembolso solicitado ou necessidade de conferência.
-- O texto explica que o prazo de crédito depende do Mercado Pago e do emissor.
+- O sistema escolhe o grupo do pagador com valor mais próximo.
+- Igualdade em centavos produz `matched`.
+- Diferença produz `divergent` e mostra o valor absoluto da divergência.
+- Nota Fiscal não marca o grupo como pago; a baixa continua exigindo confirmação do crédito.
 
-## Jornada 7 — Administração e privacidade
+### US-11 — Solicitar conferência
 
-### US-14 — Administrar usuários
-
-Como administrador, quero ver plano, teste, assinatura e acesso, para identificar pendências sem ver CPF completo nem cartão.
+Como médico, quero abrir o e-mail oficial com valores e comprovantes, para pedir regularização do repasse.
 
 Critérios de aceite:
 
-- Métricas separam usuários ativos, em teste, inadimplentes e suspensos.
-- A tabela mostra Mobile/Web e status da assinatura.
-- Mudanças manuais exigem confirmação e geram auditoria.
-- Conta administrativa não pode ser suspensa nessa tela.
+- A mensagem usa local, período, quantidade, valor, detalhes e médico.
+- O usuário revisa destinatários, mensagem e anexos antes de enviar.
+- O status muda para “em conciliação” somente após confirmação de envio no aplicativo nativo.
 
-### US-15 — Exercer direitos de dados
+## Jornada 4 — Administração e continuidade
 
-Como titular, quero saber quais dados são tratados e como pedir acesso, correção ou exclusão.
+### US-12 — Gerenciar acesso pelo PC
+
+Como administrador, quero ver plano, assinatura, garantia e acesso, para resolver pendências sem expor CPF completo nem cartão.
 
 Critérios de aceite:
 
-- A Política de Privacidade identifica controlador, finalidades, operadores, retenção, direitos e canal.
-- Cancelar assinatura e excluir dados são apresentados como ações distintas.
-- O usuário é orientado a não inserir dados clínicos desnecessários.
+- Métricas mostram usuários, ativos, dentro da garantia, inadimplentes e suspensos.
+- O painel exibe somente os quatro últimos dígitos do CPF.
+- Mudanças administrativas geram auditoria.
 
-## Matriz de prevenção de inconsistências
+### US-13 — Alternar provedor de cobrança
 
-| Situação | Regra |
+Como operador, quero trocar o provedor de pagamentos sem reescrever textos públicos, para preservar a jornada e a marca MedRecebe.
+
+Critérios de aceite:
+
+- Interface e políticas usam “provedor de pagamentos” ou “meio de pagamento”.
+- A integração fica isolada nas funções de checkout, webhook, reconciliação, cancelamento e reembolso.
+- A troca preserva os estados internos `pending`, `authorized`, `past_due`, `canceled` e `refunded`.
+
+## Matriz de inconsistências evitadas
+
+| Situação | Comportamento esperado |
 |---|---|
-| Webhook falha | `account-status` reconcilia diretamente com Mercado Pago. |
-| Retorno do checkout demora | App faz tentativas curtas e oferece verificação manual. |
-| Pagamento de valor diferente | Servidor rejeita a liberação se não corresponder ao plano atual. |
-| Reembolso repetido | Chave de idempotência usa o ID interno da assinatura. |
-| Teste expira | Acesso muda para pagamento pendente sem apagar os dados. |
-| Plano Mobile aberto no PC | Exibe upgrade; não perde registros. |
-| Sincronização indisponível | Mantém dados locais e tenta novamente depois. |
-| Foto no Plano Web | Nunca é incluída no estado sincronizado. |
-| Cancelamento falha no provedor | Banco não confirma cancelamento e usuário recebe erro. |
-| Usuário limpa dados do navegador | Políticas deixam claro o risco do armazenamento local. |
+| Cadastro concluído, pagamento não confirmado | Conta existe, acesso permanece pendente e dados não são apagados. |
+| Pagamento aprovado, webhook atrasado | Consulta autenticada reconcilia diretamente com o provedor. |
+| Cancelamento repetido | Operação idempotente, sem reembolso duplicado. |
+| Nota contém CNPJ de várias empresas | Associação exige também a Razão Social cadastrada. |
+| Nota e contabilizado divergem | Mostra diferença; não marca como pago. |
+| PDF é apenas imagem | Solicita XML/PDF digital; não inventa dados. |
+| Arquivo compartilhado antes do login | Mantém pendente e processa após autenticação. |
+| Cadastro antigo sem CNPJ/Razão Social | Exibe ausência e exige complementação ao editar. |
+| Plano Mobile aberto em PC | Oferece Plano Web sem apagar dados. |
+| Provedor de cobrança muda | Comunicação pública e estados internos permanecem estáveis. |
