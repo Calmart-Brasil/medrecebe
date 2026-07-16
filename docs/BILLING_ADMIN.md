@@ -1,13 +1,13 @@
 # Assinaturas e painel administrativo
 
-Esta implementação prepara o MedRecebe para uma assinatura mensal de **R$ 29,90**, com checkout hospedado e cobrança recorrente processada pelo Mercado Pago. O controle de identidade, status de acesso, webhook e painel administrativo usa Supabase.
+O MedRecebe oferece teste gratuito de 7 dias sem cartão, Plano Mobile de **R$ 29,90/mês** e Plano Web de **R$ 59,90/mês**. Checkout, recorrência, cancelamento e reembolso são processados pelo Mercado Pago. Identidade, acesso, sincronização e painel administrativo usam Supabase.
 
 ## Arquitetura
 
 - GitHub Pages: PWA e painel `admin.html`; contém somente URL e chave pública do Supabase.
 - Supabase Auth: sessão, confirmação de e-mail e recuperação futura.
-- Postgres + RLS: perfis, assinaturas, eventos de cobrança e auditoria administrativa.
-- Edge Functions: cadastro por CPF, login por CPF, checkout, webhook e comandos administrativos.
+- Postgres + RLS: perfis, assinaturas, eventos, estado sincronizado e auditoria administrativa.
+- Edge Functions: cadastro, login, status, checkout, webhook, sincronização, cancelamento e administração.
 - Mercado Pago: token e assinatura secreta ficam apenas nas Edge Functions.
 
 O CPF completo não é gravado na tabela de perfis. O servidor persiste um SHA-256 com `CPF_PEPPER` e apenas os quatro últimos dígitos para suporte operacional.
@@ -31,8 +31,8 @@ Na conta vendedora **Lucas Catarin**, acesse **Suas integrações**, crie uma ap
 Configure os segredos diretamente no Supabase:
 
 ```bash
-supabase secrets set APP_ORIGINS=https://calmart-brasil.github.io,https://medrecebe.com.br,https://www.medrecebe.com.br
-supabase secrets set APP_URL=https://calmart-brasil.github.io/medrecebe/
+supabase secrets set APP_ORIGINS=https://medrecebe.com.br,https://www.medrecebe.com.br,https://calmart-brasil.github.io
+supabase secrets set APP_URL=https://medrecebe.com.br/app.html
 supabase secrets set CPF_PEPPER=UMA_CHAVE_ALEATORIA_LONGA
 supabase secrets set MERCADO_PAGO_ACCESS_TOKEN=SEU_TOKEN
 supabase secrets set MERCADO_PAGO_WEBHOOK_SECRET=SEU_SEGREDO_DE_WEBHOOK
@@ -48,6 +48,8 @@ supabase functions deploy create-subscription
 supabase functions deploy mercado-pago-webhook
 supabase functions deploy admin-users
 supabase functions deploy admin-update-user
+supabase functions deploy sync-state
+supabase functions deploy cancel-subscription
 ```
 
 O endpoint de webhook será:
@@ -56,7 +58,7 @@ O endpoint de webhook será:
 https://SEU_PROJECT_REF.supabase.co/functions/v1/mercado-pago-webhook
 ```
 
-Ative os eventos `subscription_preapproval`, `subscription_authorized_payment` e `payment`. Valide com usuários e cartões de teste antes de trocar para o token produtivo.
+Ative os eventos `subscription_preapproval`, `subscription_authorized_payment` e `payment`. O status autenticado também reconcilia diretamente com a API do Mercado Pago, evitando dependência exclusiva do webhook.
 
 ## 3. Conectar o GitHub Pages
 
@@ -82,12 +84,20 @@ Depois acesse `/admin.html`. O painel permite pesquisar usuários, liberar ou su
 ## 5. Regras de acesso
 
 - `pending_payment`: cadastrado, ainda sem assinatura aprovada.
-- `active`: acesso liberado pelo webhook ou por administrador.
+- `active`: teste vigente, assinatura autorizada ou liberação temporária por administrador.
 - `past_due`: cobrança recusada/pausada.
 - `suspended`: bloqueio manual administrativo.
 - `canceled`: assinatura cancelada.
 
 O webhook é idempotente: eventos são guardados antes do processamento e tentativas repetidas não duplicam a atualização.
+
+## Cancelamento e reembolso
+
+`cancel-subscription` cancela a recorrência no Mercado Pago. Se o último pagamento tiver até 7 dias, localiza a transação pelo usuário, valor e data e solicita reembolso integral com chave de idempotência. Falhas de reembolso são devolvidas como pendência de conferência, sem reativar a recorrência.
+
+## Plano Web
+
+`sync-state` aceita somente contas do Plano Web ativas. Credenciais, campos internos e fotografias são removidos antes do `upsert` em `user_app_states`. Fotos permanecem no aparelho de origem.
 
 ## App Store e TestFlight
 
