@@ -1,7 +1,8 @@
 export function allowedOrigin(request: Request): string {
-  const configured = Deno.env.get('APP_ORIGIN') || 'https://calmart-brasil.github.io';
+  const configured = Deno.env.get('APP_ORIGINS') || Deno.env.get('APP_ORIGIN') || 'https://calmart-brasil.github.io';
+  const allowed = configured.split(',').map((value) => value.trim().replace(/\/$/, '')).filter(Boolean);
   const origin = request.headers.get('origin') || '';
-  return origin === configured || origin === `${configured}/medrecebe` ? origin : configured;
+  return allowed.includes(origin) ? origin : allowed[0];
 }
 
 export function corsHeaders(request: Request): HeadersInit {

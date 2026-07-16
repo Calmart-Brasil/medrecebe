@@ -31,7 +31,7 @@ Na conta vendedora **Lucas Catarin**, acesse **Suas integrações**, crie uma ap
 Configure os segredos diretamente no Supabase:
 
 ```bash
-supabase secrets set APP_ORIGIN=https://calmart-brasil.github.io
+supabase secrets set APP_ORIGINS=https://calmart-brasil.github.io,https://medrecebe.com.br,https://www.medrecebe.com.br
 supabase secrets set APP_URL=https://calmart-brasil.github.io/medrecebe/
 supabase secrets set CPF_PEPPER=UMA_CHAVE_ALEATORIA_LONGA
 supabase secrets set MERCADO_PAGO_ACCESS_TOKEN=SEU_TOKEN
