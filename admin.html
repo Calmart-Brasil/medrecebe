@@ -33,6 +33,7 @@
         <div class="mfa-methods" id="admin-mfa-methods">
           <button class="secondary" id="admin-mfa-email" type="button">Confirmar por e-mail</button>
           <button class="secondary" id="admin-mfa-authenticator" type="button" hidden>Usar App Authenticator</button>
+          <button class="primary" id="admin-mfa-enroll" type="button" hidden>Configurar App Authenticator</button>
         </div>
         <form class="mfa-code-form" id="admin-mfa-code-form" hidden>
           <label>Código de confirmação<input id="admin-mfa-code" inputmode="numeric" autocomplete="one-time-code" maxlength="8" placeholder="000000" required /></label>
@@ -79,6 +80,6 @@
 
     <script>document.write('<script src="runtime-config.js?v=' + Date.now() + '"><\/script>');</script>
     <script src="cloud.js?v=5"></script>
-    <script src="admin.js?v=3" defer></script>
+    <script src="admin.js?v=4" defer></script>
   </body>
 </html>
