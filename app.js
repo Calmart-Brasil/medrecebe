@@ -325,6 +325,38 @@ function cloudAccessAllowed() {
   return !isCloudMode() || cloudAccount?.profile?.role === 'admin' || cloudAccount?.profile?.accessStatus === 'active';
 }
 
+function returnedFromMercadoPago() {
+  const parameters = new URLSearchParams(window.location.search);
+  return parameters.has('preapproval_id') || window.location.search.includes('billing=return');
+}
+
+function clearBillingReturnUrl() {
+  const cleanUrl = new URL(window.location.href);
+  cleanUrl.search = '';
+  cleanUrl.hash = '';
+  window.history.replaceState({}, document.title, cleanUrl.toString());
+}
+
+async function reconcileBillingReturn(initialAccount) {
+  let restored = initialAccount;
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    if (attempt > 0) {
+      $('#billing-status').textContent = 'Pagamento recebido. Confirmando a liberação do seu acesso…';
+      await new Promise((resolve) => window.setTimeout(resolve, 1500 * attempt));
+      restored = await cloud.restore();
+    }
+    if (restored) applyCloudAccount(restored);
+    if (cloudAccessAllowed()) {
+      clearBillingReturnUrl();
+      showToast('Pagamento confirmado. Seu acesso está liberado.');
+      return true;
+    }
+  }
+  showBilling();
+  $('#billing-status').textContent = 'Seu pagamento foi recebido e continua sendo confirmado. Use “Já paguei” para tentar novamente.';
+  return false;
+}
+
 function applyCloudAccount(result, cpf = '') {
   cloudAccount = result;
   activeStateKey = `${APP_KEY}.user.${result.profile.id}`;
@@ -1007,7 +1039,8 @@ async function boot() {
     $('#auth-description').textContent = 'Entre com o CPF e a senha da sua conta MedRecebe.';
     try {
       const restored = await cloud.restore();
-      if (restored) applyCloudAccount(restored);
+      if (restored && returnedFromMercadoPago()) await reconcileBillingReturn(restored);
+      else if (restored) applyCloudAccount(restored);
       else showLogin();
     } catch {
       showLogin();

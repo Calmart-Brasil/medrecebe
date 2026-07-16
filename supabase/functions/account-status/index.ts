@@ -1,3 +1,4 @@
+import { reconcileUserBilling } from '../_shared/billing.ts';
 import { json, options, publicError } from '../_shared/http.ts';
 import { adminClient, authenticatedUser } from '../_shared/supabase.ts';
 
@@ -9,19 +10,42 @@ Deno.serve(async (request) => {
   try {
     const user = await authenticatedUser(request);
     const admin = adminClient();
-    const { data: profile, error } = await admin
+    let { data: profile, error } = await admin
       .from('profiles')
       .select('id, full_name, email, cpf_last4, role, access_status')
       .eq('id', user.id)
       .single();
     if (error || !profile) return publicError(request, 'Conta não encontrada.', 404);
 
-    const { data: subscription } = await admin
+    let { data: subscription } = await admin
       .from('subscriptions')
-      .select('id, status, amount_cents, currency, current_period_end, last_payment_at')
+      .select('id, status, amount_cents, currency, current_period_end, last_payment_at, provider_subscription_id, created_at')
       .eq('user_id', user.id)
       .eq('is_current', true)
       .maybeSingle();
+
+    if (profile.role !== 'admin' && subscription?.provider_subscription_id) {
+      try {
+        await reconcileUserBilling(user.id, subscription.provider_subscription_id, subscription.created_at);
+        const [profileResult, subscriptionResult] = await Promise.all([
+          admin
+            .from('profiles')
+            .select('id, full_name, email, cpf_last4, role, access_status')
+            .eq('id', user.id)
+            .single(),
+          admin
+            .from('subscriptions')
+            .select('id, status, amount_cents, currency, current_period_end, last_payment_at, provider_subscription_id, created_at')
+            .eq('user_id', user.id)
+            .eq('is_current', true)
+            .maybeSingle(),
+        ]);
+        if (profileResult.data) profile = profileResult.data;
+        if (subscriptionResult.data) subscription = subscriptionResult.data;
+      } catch (reconciliationError) {
+        console.error('account-status reconciliation', reconciliationError);
+      }
+    }
 
     return json(request, {
       profile: {

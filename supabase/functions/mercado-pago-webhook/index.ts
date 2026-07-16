@@ -1,6 +1,7 @@
 import { WebhookSignatureValidator } from 'npm:mercadopago@2';
 
-import { mercadoPago, accessFromSubscription, type MercadoPagoSubscription } from '../_shared/mercado-pago.ts';
+import { syncPayment, syncPreapproval } from '../_shared/billing.ts';
+import { mercadoPago } from '../_shared/mercado-pago.ts';
 import { adminClient } from '../_shared/supabase.ts';
 
 interface WebhookBody {
@@ -11,51 +12,18 @@ interface WebhookBody {
   data?: { id?: string | number };
 }
 
-async function syncPreapproval(preapprovalId: string): Promise<void> {
-  const admin = adminClient();
-  const subscription = await mercadoPago<MercadoPagoSubscription>(`/preapproval/${encodeURIComponent(preapprovalId)}`);
-  const userId = subscription.external_reference;
-  if (!userId) throw new Error('Assinatura sem external_reference');
-  const accessStatus = accessFromSubscription(subscription.status);
-
-  const { data: current } = await admin
-    .from('subscriptions')
-    .select('id')
-    .eq('provider_subscription_id', subscription.id)
-    .maybeSingle();
-
-  if (current) {
-    await admin
-      .from('subscriptions')
-      .update({
-        status: subscription.status,
-        current_period_end: subscription.next_payment_date || null,
-      })
-      .eq('id', current.id);
-  } else {
-    await admin.from('subscriptions').update({ is_current: false }).eq('user_id', userId).eq('is_current', true);
-    await admin.from('subscriptions').insert({
-      user_id: userId,
-      provider_subscription_id: subscription.id,
-      status: subscription.status,
-      current_period_end: subscription.next_payment_date || null,
-    });
-  }
-
-  await admin.from('profiles').update({ access_status: accessStatus }).eq('id', userId);
-}
-
 async function syncAuthorizedPayment(paymentId: string): Promise<void> {
   const admin = adminClient();
   const payment = await mercadoPago<Record<string, unknown>>(`/authorized_payments/${encodeURIComponent(paymentId)}`);
   const preapprovalId = String(payment.preapproval_id || '');
   if (!preapprovalId) throw new Error('Fatura sem preapproval_id');
   const approved = payment.status === 'approved' || payment.status === 'processed';
-  const { data: subscription } = await admin
+  const { data: subscription, error: subscriptionError } = await admin
     .from('subscriptions')
     .select('id, user_id')
     .eq('provider_subscription_id', preapprovalId)
     .maybeSingle();
+  if (subscriptionError) throw subscriptionError;
   if (!subscription) {
     await syncPreapproval(preapprovalId);
     return;
@@ -64,14 +32,13 @@ async function syncAuthorizedPayment(paymentId: string): Promise<void> {
     status: approved ? 'authorized' : String(payment.status || 'rejected'),
   };
   if (approved) subscriptionUpdate.last_payment_at = String(payment.date_created || new Date().toISOString());
-  await admin
-    .from('subscriptions')
-    .update(subscriptionUpdate)
-    .eq('id', subscription.id);
-  await admin
+  const { error: updateError } = await admin.from('subscriptions').update(subscriptionUpdate).eq('id', subscription.id);
+  if (updateError) throw updateError;
+  const { error: profileError } = await admin
     .from('profiles')
     .update({ access_status: approved ? 'active' : 'past_due' })
     .eq('id', subscription.user_id);
+  if (profileError) throw profileError;
 }
 
 Deno.serve(async (request) => {
@@ -79,26 +46,44 @@ Deno.serve(async (request) => {
   const url = new URL(request.url);
   const body = (await request.json().catch(() => ({}))) as WebhookBody;
   const dataId = String(url.searchParams.get('data.id') || url.searchParams.get('data_id') || body.data?.id || '');
+  const eventType = String(body.type || url.searchParams.get('type') || 'unknown');
   const xSignature = request.headers.get('x-signature') || '';
   const xRequestId = request.headers.get('x-request-id') || '';
   const secret = Deno.env.get('MERCADO_PAGO_WEBHOOK_SECRET') || '';
+  let signatureValid = false;
 
   try {
     if (!secret || !dataId || !xSignature || !xRequestId) throw new Error('Assinatura do webhook ausente');
-    WebhookSignatureValidator.validate({ xSignature, xRequestId, dataId, secret });
+    const validation = WebhookSignatureValidator.validate({ xSignature, xRequestId, dataId, secret });
+    if (validation === false) throw new Error('Assinatura do webhook inválida');
+    signatureValid = true;
   } catch (error) {
     console.error('mercado-pago-webhook signature', error);
-    return new Response('Unauthorized', { status: 401 });
   }
 
-  const eventType = String(body.type || url.searchParams.get('type') || 'unknown');
+  // Uma notificação de pagamento também é autenticada consultando o ID diretamente
+  // na conta Mercado Pago do MedRecebe. Isso mantém a liberação disponível caso a
+  // entrega use uma assinatura desatualizada, sem confiar nos dados recebidos no body.
+  let paymentAlreadySynced = false;
+  if (!signatureValid) {
+    if (eventType !== 'payment' || !dataId) return new Response('Unauthorized', { status: 401 });
+    try {
+      await syncPayment(dataId);
+      paymentAlreadySynced = true;
+    } catch (error) {
+      console.error('mercado-pago-webhook payment verification', error);
+      return new Response('Unauthorized', { status: 401 });
+    }
+  }
+
   const providerEventId = `${eventType}:${dataId}:${body.action || body.id || body.date_created || xRequestId}`;
   const admin = adminClient();
-  const { data: existing } = await admin
+  const { data: existing, error: existingError } = await admin
     .from('billing_events')
     .select('id, processed_at')
     .eq('provider_event_id', providerEventId)
     .maybeSingle();
+  if (existingError) return new Response('Could not inspect event', { status: 500 });
   if (existing?.processed_at) return new Response('ok', { status: 200 });
 
   if (!existing) {
@@ -113,21 +98,7 @@ Deno.serve(async (request) => {
   try {
     if (eventType === 'subscription_preapproval') await syncPreapproval(dataId);
     else if (eventType === 'subscription_authorized_payment') await syncAuthorizedPayment(dataId);
-    else if (eventType === 'payment') {
-      const payment = await mercadoPago<Record<string, unknown>>(`/v1/payments/${encodeURIComponent(dataId)}`);
-      const userId = String(payment.external_reference || '');
-      if (userId) {
-        const approved = payment.status === 'approved';
-        await admin.from('profiles').update({ access_status: approved ? 'active' : 'past_due' }).eq('id', userId);
-        if (approved) {
-          await admin
-            .from('subscriptions')
-            .update({ last_payment_at: String(payment.date_approved || new Date().toISOString()) })
-            .eq('user_id', userId)
-            .eq('is_current', true);
-        }
-      }
-    }
+    else if (eventType === 'payment' && !paymentAlreadySynced) await syncPayment(dataId);
 
     await admin
       .from('billing_events')
