@@ -13,6 +13,7 @@ Deno.serve(async (request) => {
     const email = String(body.email || '').trim().toLowerCase();
     const cpf = onlyDigits(String(body.cpf || ''));
     const password = String(body.password || '');
+    const planCode = body.planCode === 'web' ? 'web' : 'mobile';
 
     if (fullName.length < 3) return publicError(request, 'Informe seu nome completo.');
     if (!isValidCpf(cpf)) return publicError(request, 'Informe um CPF válido.');
@@ -34,12 +35,16 @@ Deno.serve(async (request) => {
       return publicError(request, 'Já existe uma conta para este e-mail.', 409);
     }
 
+    const trialEndsAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
     const { error: profileError } = await admin.from('profiles').insert({
       id: auth.user.id,
       full_name: fullName,
       email,
       cpf_hash: digest,
       cpf_last4: cpf.slice(-4),
+      selected_plan: planCode,
+      trial_ends_at: trialEndsAt,
+      access_status: 'active',
     });
     if (profileError) {
       await admin.auth.admin.deleteUser(auth.user.id);
@@ -61,7 +66,9 @@ Deno.serve(async (request) => {
         email,
         cpfLast4: cpf.slice(-4),
         role: 'user',
-        accessStatus: 'pending_payment',
+        accessStatus: 'active',
+        planCode,
+        trialEndsAt,
       },
       subscription: null,
     }, 201);

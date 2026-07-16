@@ -17,7 +17,7 @@ Deno.serve(async (request) => {
     const digest = await cpfHash(cpf);
     const { data: profile } = await admin
       .from('profiles')
-      .select('id, full_name, email, cpf_last4, role, access_status')
+      .select('id, full_name, email, cpf_last4, role, access_status, selected_plan, trial_ends_at')
       .eq('cpf_hash', digest)
       .maybeSingle();
 
@@ -31,10 +31,19 @@ Deno.serve(async (request) => {
 
     const { data: subscription } = await admin
       .from('subscriptions')
-      .select('id, status, amount_cents, currency, current_period_end, last_payment_at')
+      .select('id, status, amount_cents, currency, current_period_end, last_payment_at, plan_code')
       .eq('user_id', profile.id)
       .eq('is_current', true)
       .maybeSingle();
+
+    const trialActive = profile.role !== 'admin' && subscription?.status !== 'authorized' && Date.parse(profile.trial_ends_at || '') > Date.now();
+    const shouldEvaluateAccess = profile.role !== 'admin' && !['suspended', 'canceled', 'past_due'].includes(profile.access_status);
+    const effectiveAccess = shouldEvaluateAccess
+      ? subscription?.status === 'authorized' || trialActive ? 'active' : 'pending_payment'
+      : profile.access_status;
+    if (effectiveAccess !== profile.access_status) {
+      await admin.from('profiles').update({ access_status: effectiveAccess }).eq('id', profile.id);
+    }
 
     return json(request, {
       session: {
@@ -48,7 +57,9 @@ Deno.serve(async (request) => {
         email: profile.email,
         cpfLast4: profile.cpf_last4,
         role: profile.role,
-        accessStatus: profile.access_status,
+        accessStatus: effectiveAccess,
+        planCode: profile.selected_plan,
+        trialEndsAt: profile.trial_ends_at,
       },
       subscription: subscription
         ? {
@@ -58,6 +69,7 @@ Deno.serve(async (request) => {
             currency: subscription.currency,
             currentPeriodEnd: subscription.current_period_end,
             lastPaymentAt: subscription.last_payment_at,
+            planCode: subscription.plan_code,
           }
         : null,
     });
