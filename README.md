@@ -11,11 +11,12 @@ SaaS para médicos registrarem atendimentos, acompanharem repasses e prepararem 
 
 ## Produto
 
-- Teste gratuito de 7 dias, sem cartão.
+- Cobrança no início do ciclo, com garantia de cancelamento e estorno integral em 7 dias.
 - Plano Mobile: R$ 29,90/mês, uso no iPhone/PWA.
 - Plano Web: R$ 59,90/mês, uso no iPhone e PC com sincronização dos dados de gestão.
 - Fotos de comprovantes permanecem no aparelho e não entram na sincronização Web.
-- Cobrança recorrente, cancelamento e reembolso processados pelo Mercado Pago.
+- Cobrança recorrente, cancelamento e reembolso processados pelo provedor de pagamentos vigente.
+- Conciliação de Nota Fiscal em PDF/XML por CNPJ, Razão Social e valor contabilizado.
 
 ## Estrutura
 

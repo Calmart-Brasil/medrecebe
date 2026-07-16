@@ -108,4 +108,4 @@ to authenticated
 using (public.is_admin());
 
 comment on table public.profiles is 'Perfis do MedRecebe. O CPF completo não é persistido: apenas hash com pepper e últimos quatro dígitos.';
-comment on table public.subscriptions is 'Estado espelhado das assinaturas recorrentes do Mercado Pago.';
+comment on table public.subscriptions is 'Estado espelhado das assinaturas recorrentes do provedor de pagamentos.';

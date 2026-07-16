@@ -35,7 +35,6 @@ Deno.serve(async (request) => {
       return publicError(request, 'Já existe uma conta para este e-mail.', 409);
     }
 
-    const trialEndsAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
     const { error: profileError } = await admin.from('profiles').insert({
       id: auth.user.id,
       full_name: fullName,
@@ -43,8 +42,8 @@ Deno.serve(async (request) => {
       cpf_hash: digest,
       cpf_last4: cpf.slice(-4),
       selected_plan: planCode,
-      trial_ends_at: trialEndsAt,
-      access_status: 'active',
+      trial_ends_at: null,
+      access_status: 'pending_payment',
     });
     if (profileError) {
       await admin.auth.admin.deleteUser(auth.user.id);
@@ -66,9 +65,9 @@ Deno.serve(async (request) => {
         email,
         cpfLast4: cpf.slice(-4),
         role: 'user',
-        accessStatus: 'active',
+        accessStatus: 'pending_payment',
         planCode,
-        trialEndsAt,
+        trialEndsAt: null,
       },
       subscription: null,
     }, 201);

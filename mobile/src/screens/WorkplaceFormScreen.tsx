@@ -14,6 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button, Card, Chip, Field, InlineNotice, PageTitle, Screen, SectionTitle } from '../components/ui';
 import { createId } from '../data/store';
+import { cnpjDigits, formatCnpj, isValidCnpj } from '../services/invoice';
 import {
   calculateDueDate,
   describePaymentRule,
@@ -288,6 +289,8 @@ export function WorkplaceFormScreen({
 }) {
   const [name, setName] = useState(workplace?.name ?? '');
   const [address, setAddress] = useState(workplace?.address ?? '');
+  const [payerLegalName, setPayerLegalName] = useState(workplace?.payerLegalName ?? '');
+  const [payerCnpj, setPayerCnpj] = useState(formatCnpj(workplace?.payerCnpj ?? ''));
   const [email, setEmail] = useState(workplace?.reconciliationEmail ?? '');
   const [cc, setCc] = useState(workplace?.reconciliationCc ?? '');
   const [active, setActive] = useState(workplace?.active ?? true);
@@ -298,6 +301,14 @@ export function WorkplaceFormScreen({
   const save = () => {
     if (!name.trim()) {
       setError('Informe o nome do local de trabalho.');
+      return;
+    }
+    if (payerLegalName.trim().length < 3) {
+      setError('Informe a Razão Social do pagador.');
+      return;
+    }
+    if (!isValidCnpj(payerCnpj)) {
+      setError('Informe um CNPJ válido do pagador.');
       return;
     }
     if (email.trim() && !/^\S+@\S+\.\S+$/.test(email.trim())) {
@@ -313,6 +324,8 @@ export function WorkplaceFormScreen({
       id: workplace?.id ?? createId('work'),
       name: name.trim(),
       address: address.trim(),
+      payerCnpj: cnpjDigits(payerCnpj),
+      payerLegalName: payerLegalName.trim(),
       reconciliationEmail: email.trim().toLowerCase(),
       reconciliationCc: cc.trim().toLowerCase(),
       modalities,
@@ -348,6 +361,20 @@ export function WorkplaceFormScreen({
 
         <Card style={styles.formCard}>
           <Field label="Nome do local" onChangeText={setName} placeholder="Ex.: Clínica Horizonte" value={name} />
+          <Field
+            label="Razão Social do pagador"
+            onChangeText={setPayerLegalName}
+            placeholder="Razão Social exibida na Nota Fiscal"
+            value={payerLegalName}
+          />
+          <Field
+            hint="O CNPJ e a Razão Social identificam automaticamente o pagador na Nota Fiscal."
+            keyboardType="number-pad"
+            label="CNPJ do pagador"
+            onChangeText={(value) => setPayerCnpj(formatCnpj(value))}
+            placeholder="00.000.000/0000-00"
+            value={payerCnpj}
+          />
           <Field label="Endereço (opcional)" onChangeText={setAddress} placeholder="Rua, número e cidade" value={address} />
           <Field
             autoCapitalize="none"

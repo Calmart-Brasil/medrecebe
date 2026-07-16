@@ -17,6 +17,11 @@ assert.equal(appJson.expo.ios.bundleIdentifier, 'com.calmart.medrecebe');
 assert.equal(appJson.expo.ios.supportsTablet, false);
 assert.ok(appJson.expo.plugins.some((entry) => entry[0] === 'expo-local-authentication'));
 assert.ok(appJson.expo.plugins.some((entry) => entry[0] === 'expo-image-picker'));
+const sharingPlugin = appJson.expo.plugins.find((entry) => Array.isArray(entry) && entry[0] === 'expo-sharing');
+assert.ok(sharingPlugin?.[1]?.ios?.enabled, 'A Share Extension do iOS precisa estar habilitada.');
+assert.equal(sharingPlugin?.[1]?.ios?.activationRule?.supportsFileWithMaxCount, 1, 'A extensão deve receber uma Nota Fiscal por vez.');
+assert.ok(packageJson.dependencies['expo-document-picker'], 'O seletor de documentos precisa estar instalado.');
+assert.ok(packageJson.dependencies.unpdf, 'A leitura local de PDF precisa estar instalada.');
 
 const icon = readFileSync(join(root, 'assets', 'icon.png'));
 assert.equal(icon.readUInt32BE(16), 1024, 'O ícone deve ter 1024 px de largura.');

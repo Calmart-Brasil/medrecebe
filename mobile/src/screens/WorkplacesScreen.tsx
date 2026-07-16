@@ -1,6 +1,7 @@
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Button, Card, EmptyState, Eyebrow, PageTitle, Screen, SectionTitle } from '../components/ui';
+import { formatCnpj } from '../services/invoice';
 import { describePaymentRule, formatCurrency } from '../services/paymentRules';
 import { colors, radius } from '../theme';
 import type { Workplace } from '../types';
@@ -53,6 +54,8 @@ export function WorkplacesScreen({
                 </View>
                 <View style={styles.cardCopy}>
                   <Text style={styles.name}>{workplace.name}</Text>
+                  <Text numberOfLines={1} style={styles.legalName}>{workplace.payerLegalName || 'Razão Social não informada'}</Text>
+                  <Text style={styles.cnpj}>{workplace.payerCnpj ? `CNPJ ${formatCnpj(workplace.payerCnpj)}` : 'CNPJ não informado'}</Text>
                   <Text numberOfLines={1} style={styles.address}>
                     {workplace.address || 'Endereço não informado'}
                   </Text>
@@ -108,6 +111,8 @@ const styles = StyleSheet.create({
   iconText: { color: colors.blue700, fontSize: 18 },
   cardCopy: { flex: 1, gap: 2 },
   name: { color: colors.navy, fontSize: 17, fontWeight: '800' },
+  legalName: { color: colors.ink, fontSize: 12, fontWeight: '700' },
+  cnpj: { color: colors.blue700, fontSize: 11, fontWeight: '700' },
   address: { color: colors.muted, fontSize: 12 },
   status: { backgroundColor: colors.greenSoft, borderRadius: radius.pill, paddingHorizontal: 9, paddingVertical: 5 },
   statusInactive: { backgroundColor: colors.mist },

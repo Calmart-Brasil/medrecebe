@@ -37,20 +37,21 @@ async function loadUsers() {
     const result = await cloud.adminUsers({ search: $('#admin-search').value.trim(), page: 1, perPage: 100 });
     $('#metric-total').textContent = result.metrics.total;
     $('#metric-active').textContent = result.metrics.active;
-    $('#metric-trial').textContent = result.metrics.trial;
+    $('#metric-guarantee').textContent = result.metrics.guarantee;
     $('#metric-past-due').textContent = result.metrics.pastDue;
     $('#metric-suspended').textContent = result.metrics.suspended;
     $('#admin-empty').hidden = result.users.length > 0;
     $('#admin-users').innerHTML = result.users.map((user) => {
       const subscription = user.subscription?.status || 'sem assinatura';
       const plan = user.planCode === 'web' ? 'Web' : 'Mobile';
-      const trial = Date.parse(user.trialEndsAt || '') > Date.now() && user.subscription?.status !== 'authorized';
+      const guarantee = user.subscription?.status === 'authorized' && Date.parse(user.subscription?.last_payment_at || '') >= Date.now() - 7 * 86_400_000;
+      const manualAccess = Date.parse(user.manualAccessUntil || '') > Date.now();
       const actions = user.role === 'admin'
         ? '<span class="pill">Administrador</span>'
         : user.accessStatus === 'active'
           ? `<button class="danger" data-user-action="suspended" data-user-id="${user.id}" data-user-name="${escapeHtml(user.fullName)}">Suspender</button>`
           : `<button class="primary" data-user-action="active" data-user-id="${user.id}" data-user-name="${escapeHtml(user.fullName)}">Liberar acesso</button>`;
-      return `<tr><td><span class="user-cell"><strong>${escapeHtml(user.fullName)}</strong><small>${escapeHtml(user.email)}</small></span></td><td>•••.${escapeHtml(user.cpfLast4)}</td><td><span class="pill">${plan}${trial ? ' • teste' : ''}</span></td><td><span class="pill">${escapeHtml(subscription)}</span></td><td><span class="pill ${user.accessStatus}">${escapeHtml(statusLabels[user.accessStatus] || user.accessStatus)}</span></td><td>${date(user.createdAt)}</td><td><span class="actions">${actions}</span></td></tr>`;
+      return `<tr><td><span class="user-cell"><strong>${escapeHtml(user.fullName)}</strong><small>${escapeHtml(user.email)}</small></span></td><td>•••.${escapeHtml(user.cpfLast4)}</td><td><span class="pill">${plan}${guarantee ? ' • garantia' : ''}${manualAccess ? ' • liberação admin' : ''}</span></td><td><span class="pill">${escapeHtml(subscription)}</span></td><td><span class="pill ${user.accessStatus}">${escapeHtml(statusLabels[user.accessStatus] || user.accessStatus)}</span></td><td>${date(user.createdAt)}</td><td><span class="actions">${actions}</span></td></tr>`;
     }).join('');
     status.textContent = `${result.count} usuário(s) encontrado(s).`;
   } catch (error) {

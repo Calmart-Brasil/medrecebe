@@ -37,6 +37,7 @@ export function emptyData(): AppData {
   return {
     workplaces: [],
     attendances: [],
+    invoices: [],
     reconciliation: { defaultMessage: DEFAULT_RECONCILIATION_MESSAGE },
     isDemoData: false,
   };
@@ -85,6 +86,8 @@ function createDemoData(): AppData {
       id: 'work-clinica-demo',
       name: 'Clínica Horizonte',
       address: 'Av. Paulista, 1000 — São Paulo/SP',
+      payerCnpj: '12345678000195',
+      payerLegalName: 'Clínica Horizonte Serviços Médicos Ltda.',
       reconciliationEmail: 'financeiro@clinicahorizonte.exemplo',
       reconciliationCc: '',
       modalities: clinicModalities,
@@ -94,6 +97,8 @@ function createDemoData(): AppData {
       id: 'work-hospital-demo',
       name: 'Hospital São Lucas',
       address: 'Rua das Flores, 240 — São Paulo/SP',
+      payerCnpj: '11222333000181',
+      payerLegalName: 'Hospital São Lucas S.A.',
       reconciliationEmail: 'repasses@saolucas.exemplo',
       reconciliationCc: '',
       modalities: hospitalModalities,
@@ -132,6 +137,7 @@ function createDemoData(): AppData {
       makeAttendance('att-demo-3', workplaces[1]!.id, hospitalModalities[0]!, 12),
       makeAttendance('att-demo-4', workplaces[1]!.id, hospitalModalities[1]!, 8),
     ],
+    invoices: [],
     reconciliation: { defaultMessage: DEFAULT_RECONCILIATION_MESSAGE },
     isDemoData: true,
   };
@@ -142,7 +148,18 @@ export async function loadAppData(cpf: string, useDemoData: boolean): Promise<Ap
   if (stored) {
     try {
       const parsed = JSON.parse(stored) as AppData;
-      if (Array.isArray(parsed.workplaces) && Array.isArray(parsed.attendances)) return parsed;
+      if (Array.isArray(parsed.workplaces) && Array.isArray(parsed.attendances)) {
+        return {
+          ...emptyData(),
+          ...parsed,
+          invoices: Array.isArray(parsed.invoices) ? parsed.invoices : [],
+          workplaces: parsed.workplaces.map((workplace) => ({
+            ...workplace,
+            payerCnpj: workplace.payerCnpj || '',
+            payerLegalName: workplace.payerLegalName || '',
+          })),
+        };
+      }
     } catch {
       // A base inválida é substituída por uma estrutura íntegra abaixo.
     }

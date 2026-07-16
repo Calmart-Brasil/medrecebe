@@ -15,6 +15,7 @@ let currentRoute = 'home';
 let selectedWorkplaceId = '';
 let selectedReconciliationGroup = '';
 let selectedChannelWorkplace = '';
+let selectedInvoiceId = '';
 let feedbackRating = 5;
 let deferredInstallPrompt = null;
 let toastTimer = 0;
@@ -61,6 +62,7 @@ function emptyState() {
     profile: null,
     workplaces: [],
     attendances: [],
+    invoices: [],
     reconciliationMessage: DEFAULT_MESSAGE,
     feedbacks: [],
     demo: false,
@@ -142,6 +144,40 @@ function isValidCpf(value) {
     return result === 10 ? 0 : result;
   };
   return digit(9) === Number(cpf[9]) && digit(10) === Number(cpf[10]);
+}
+
+function cnpjDigits(value = '') {
+  return String(value).replace(/\D/g, '').slice(0, 14);
+}
+
+function formatCnpj(value = '') {
+  return cnpjDigits(value)
+    .replace(/^(\d{2})(\d)/, '$1.$2')
+    .replace(/^(\d{2})\.(\d{3})(\d)/, '$1.$2.$3')
+    .replace(/\.(\d{3})(\d)/, '.$1/$2')
+    .replace(/(\d{4})(\d)/, '$1-$2');
+}
+
+function isValidCnpj(value) {
+  const cnpj = cnpjDigits(value);
+  if (cnpj.length !== 14 || /^(\d)\1{13}$/.test(cnpj)) return false;
+  const calculate = (length) => {
+    const weights = length === 12 ? [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2] : [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+    const sum = weights.reduce((total, weight, index) => total + Number(cnpj[index]) * weight, 0);
+    const remainder = sum % 11;
+    return remainder < 2 ? 0 : 11 - remainder;
+  };
+  return calculate(12) === Number(cnpj[12]) && calculate(13) === Number(cnpj[13]);
+}
+
+function normalizeLegalName(value = '') {
+  return String(value)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase()
+    .replace(/\b(SA|S A|LTDA|EIRELI|ME|EPP)\b/g, '')
+    .replace(/[^A-Z0-9]/gi, '')
+    .toUpperCase();
 }
 
 async function hashPassword(password, salt) {
@@ -265,6 +301,8 @@ function demoState(passwordHash, salt) {
       id: 'work-clinica-demo',
       name: 'Clínica Horizonte',
       address: 'Av. Paulista, 1000 — São Paulo/SP',
+      payerCnpj: '12345678000195',
+      payerLegalName: 'Clínica Horizonte Serviços Médicos Ltda.',
       reconciliationEmail: 'financeiro@clinicahorizonte.exemplo',
       reconciliationCc: '',
       active: true,
@@ -277,6 +315,8 @@ function demoState(passwordHash, salt) {
       id: 'work-hospital-demo',
       name: 'Hospital São Lucas',
       address: 'Rua das Flores, 240 — São Paulo/SP',
+      payerCnpj: '11222333000181',
+      payerLegalName: 'Hospital São Lucas S.A.',
       reconciliationEmail: 'repasses@saolucas.exemplo',
       reconciliationCc: '',
       active: true,
@@ -378,7 +418,7 @@ async function hydrateCloudState() {
   }
 }
 
-function returnedFromMercadoPago() {
+function returnedFromCheckout() {
   const parameters = new URLSearchParams(window.location.search);
   return parameters.has('preapproval_id') || window.location.search.includes('billing=return');
 }
@@ -437,8 +477,8 @@ function showBilling() {
   const status = cloudAccount?.profile?.accessStatus || 'pending_payment';
   const desktopUpgrade = status === 'active' && !planAllowsDevice();
   const messages = {
-    pending_payment: ['Ative seu acesso para registrar atendimentos e acompanhar seus repasses.', 'Escolha um plano e conclua a assinatura mensal no Mercado Pago.'],
-    past_due: ['Não conseguimos confirmar a última mensalidade.', 'Atualize o pagamento no Mercado Pago para restabelecer o acesso.'],
+    pending_payment: ['Ative seu acesso para registrar atendimentos e acompanhar seus repasses.', 'Escolha um plano e conclua a contratação mensal.'],
+    past_due: ['Não conseguimos confirmar a última mensalidade.', 'Atualize o pagamento para restabelecer o acesso.'],
     canceled: ['Sua assinatura não está ativa.', 'Faça uma nova assinatura para voltar a usar o MedRecebe.'],
     suspended: ['Este acesso foi suspenso pelo administrador.', 'Entre em contato com o suporte antes de tentar um novo pagamento.'],
   };
@@ -453,7 +493,7 @@ function showBilling() {
   const changingPlan = cloudAccount?.subscription?.status === 'authorized' && cloudAccount.subscription.planCode !== selectedPlanCode;
   $('#billing-subscribe').textContent = changingPlan
     ? `Confirmar ${selectedPlanCode === 'web' ? 'Plano Web por R$ 59,90' : 'Plano Mobile por R$ 29,90'}`
-    : desktopUpgrade ? 'Ativar Plano Web' : 'Assinar com cartão';
+    : desktopUpgrade ? 'Ativar Plano Web' : 'Continuar';
   $('#billing-subscribe').hidden = status === 'suspended';
   $('#billing-refresh').hidden = status === 'suspended';
 }
@@ -606,7 +646,7 @@ function renderWorkplaces() {
   const cards = appState.workplaces
     .map((workplace) => {
       const modes = workplace.modalities.slice(0, 3).map((modality) => `<div class="modality-line"><span><strong>${escapeHtml(modality.name)}</strong><small>${escapeHtml(describeRule(modality.rule))}</small></span><b>${currency(modality.amountCents)}</b></div>`).join('');
-      return `<article class="card workplace-summary"><div class="card-head"><span class="round-icon">⌂</span><div><h3>${escapeHtml(workplace.name)}</h3><p>${escapeHtml(workplace.address || 'Endereço não informado')}</p></div><span class="badge ${workplace.active ? '' : 'inactive'}">${workplace.active ? 'Ativo' : 'Inativo'}</span></div><div class="modality-lines">${modes || '<p class="muted">Nenhuma modalidade cadastrada.</p>'}</div><div class="row-actions"><button class="danger-link" data-action="toggle-workplace" data-id="${workplace.id}" type="button">${workplace.active ? 'Desativar' : 'Reativar'}</button><button class="button secondary small" data-action="edit-workplace" data-id="${workplace.id}" type="button">Editar cadastro</button></div></article>`;
+      return `<article class="card workplace-summary"><div class="card-head"><span class="round-icon">⌂</span><div><h3>${escapeHtml(workplace.name)}</h3><p>${escapeHtml(workplace.payerLegalName || 'Razão Social não informada')}<br/>${workplace.payerCnpj ? `CNPJ ${formatCnpj(workplace.payerCnpj)}` : 'CNPJ não informado'}<br/>${escapeHtml(workplace.address || 'Endereço não informado')}</p></div><span class="badge ${workplace.active ? '' : 'inactive'}">${workplace.active ? 'Ativo' : 'Inativo'}</span></div><div class="modality-lines">${modes || '<p class="muted">Nenhuma modalidade cadastrada.</p>'}</div><div class="row-actions"><button class="danger-link" data-action="toggle-workplace" data-id="${workplace.id}" type="button">${workplace.active ? 'Desativar' : 'Reativar'}</button><button class="button secondary small" data-action="edit-workplace" data-id="${workplace.id}" type="button">Editar cadastro</button></div></article>`;
     })
     .join('');
   screen.innerHTML = `<div class="screen-stack">${pageHeading('Cadastros', 'Locais e repasses', 'Configure locais, modalidades, valores e regras de crédito.')}<button class="button primary" data-action="new-workplace" type="button">Adicionar local de trabalho</button><h2 class="section-title">Locais cadastrados</h2><div class="list">${cards || emptyCard('Comece pelo primeiro local', 'Cada local pode ter várias modalidades e prazos diferentes.')}</div></div>`;
@@ -625,6 +665,86 @@ function renderAttendance() {
   screen.innerHTML = `<form class="screen-stack" id="attendance-form">${pageHeading('Novo registro', workplace.name, 'Adicione o comprovante e classifique a modalidade do repasse.')}<label>Data do atendimento<input id="attendance-date" type="date" value="${attendanceDraft.occurredAt}" required/></label><h2 class="section-title">Comprovante</h2><div class="attendance-photo">${photo}</div><h2 class="section-title">Modalidade de repasse</h2><div class="choice-list">${choices}</div><label>Observação (opcional)<textarea id="attendance-notes" placeholder="Inclua somente informações necessárias.">${escapeHtml(attendanceDraft.notes)}</textarea></label>${modality ? `<div class="card summary-card"><span class="summary-main"><small>VALOR CONTABILIZADO</small><strong>${currency(modality.amountCents)}</strong></span><span class="summary-count"><small>CRÉDITO</small><strong style="font-size:14px">${displayDate(dueAt)}</strong></span></div>` : ''}<div class="action-grid"><button class="button secondary" data-action="cancel-attendance" type="button">Cancelar</button><button class="button primary" type="submit">Salvar</button></div></form>`;
 }
 
+function legalNameMatches(registeredName, extractedNames = []) {
+  const registered = normalizeLegalName(registeredName);
+  return Boolean(registered) && extractedNames.some((name) => {
+    const extracted = normalizeLegalName(name);
+    return extracted.length >= 6 && (extracted.includes(registered) || registered.includes(extracted));
+  });
+}
+
+function recordInvoiceAnalysis(analysis) {
+  const extractedCnpjs = Array.isArray(analysis.cnpjs) ? analysis.cnpjs.map(cnpjDigits) : [];
+  const matchedPayerIds = Array.isArray(analysis.matchedPayerIds) ? analysis.matchedPayerIds : [];
+  const workplace = appState.workplaces.find((item) => matchedPayerIds.includes(item.id))
+    || appState.workplaces.find((item) => extractedCnpjs.includes(cnpjDigits(item.payerCnpj)) && legalNameMatches(item.payerLegalName, analysis.legalNames));
+  const groups = workplace ? reconciliationGroups().filter((group) => group.workplace.id === workplace.id) : [];
+  const amountCents = Number.isFinite(Number(analysis.amountCents)) ? Number(analysis.amountCents) : null;
+  const group = amountCents === null
+    ? groups[0]
+    : groups.sort((a, b) => Math.abs(a.totalCents - amountCents) - Math.abs(b.totalCents - amountCents))[0];
+  const differenceCents = group && amountCents !== null ? amountCents - group.totalCents : null;
+  const status = !workplace ? 'payer_not_matched' : !group ? 'group_not_found' : differenceCents === 0 ? 'matched' : 'divergent';
+  const record = {
+    id: id('invoice'),
+    fileName: String(analysis.fileName || 'Nota Fiscal'),
+    invoiceNumber: String(analysis.invoiceNumber || ''),
+    issuedAt: String(analysis.issuedAt || ''),
+    amountCents,
+    cnpjs: extractedCnpjs,
+    legalNames: Array.isArray(analysis.legalNames) ? analysis.legalNames.slice(0, 6) : [],
+    workplaceId: workplace?.id || '',
+    workplaceName: workplace?.name || '',
+    groupId: group?.id || '',
+    expectedCents: group?.totalCents ?? null,
+    differenceCents,
+    status,
+    analyzedAt: new Date().toISOString(),
+  };
+  appState.invoices = [record, ...(appState.invoices || [])].slice(0, 30);
+  selectedInvoiceId = record.id;
+  if (group) selectedReconciliationGroup = group.id;
+  saveState();
+  return record;
+}
+
+function invoiceCard(invoice) {
+  if (!invoice) return '';
+  const status = {
+    matched: ['success', 'Valores coincidem', 'A Nota Fiscal corresponde ao total contabilizado do grupo selecionado.'],
+    divergent: ['warning', 'Divergência encontrada', `A Nota Fiscal difere ${currency(Math.abs(invoice.differenceCents || 0))} do total contabilizado.`],
+    group_not_found: ['warning', 'Pagador identificado', 'O local foi encontrado, mas não há grupo vencido para comparar.'],
+    payer_not_matched: ['warning', 'Pagador não identificado', 'Confira se o CNPJ e a Razão Social do pagador estão iguais ao documento.'],
+  }[invoice.status] || ['warning', 'Conferência pendente', 'Revise os dados extraídos.'];
+  return `<article class="card workplace-summary"><div class="card-head"><span class="round-icon">NF</span><div><h3>${escapeHtml(status[1])}</h3><p>${escapeHtml(invoice.fileName)}${invoice.invoiceNumber ? ` • Nota ${escapeHtml(invoice.invoiceNumber)}` : ''}${invoice.workplaceName ? `<br/>${escapeHtml(invoice.workplaceName)}` : ''}</p></div><span class="badge ${status[0] === 'success' ? '' : 'inactive'}">${status[0] === 'success' ? 'CONCILIADO' : 'REVISAR'}</span></div><div class="value-row"><span><small>VALOR DA NOTA</small><strong>${invoice.amountCents === null ? 'Não identificado' : currency(invoice.amountCents)}</strong></span><span><small>CONTABILIZADO</small><b>${invoice.expectedCents === null ? '—' : currency(invoice.expectedCents)}</b></span></div><p class="field-hint">${escapeHtml(status[2])}</p></article>`;
+}
+
+function fileAsBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || '').split(',').pop() || '');
+    reader.onerror = () => reject(new Error('Não foi possível ler o arquivo.'));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function analyzeInvoiceFile(file) {
+  const name = String(file?.name || 'nota-fiscal');
+  const extension = name.split('.').pop()?.toLowerCase();
+  if (!['pdf', 'xml'].includes(extension) && !['application/pdf', 'text/xml', 'application/xml'].includes(file.type)) {
+    throw new Error('Escolha uma Nota Fiscal em PDF ou XML.');
+  }
+  if (file.size > 5 * 1024 * 1024) throw new Error('Escolha um arquivo de até 5 MB.');
+  if (!isCloudMode()) throw new Error('A leitura automática requer uma conta MedRecebe conectada.');
+  const analysis = await cloud.analyzeInvoice({
+    fileName: name,
+    mimeType: file.type || (extension === 'xml' ? 'application/xml' : 'application/pdf'),
+    dataBase64: await fileAsBase64(file),
+    payers: appState.workplaces.map((workplace) => ({ id: workplace.id, cnpj: cnpjDigits(workplace.payerCnpj), legalName: workplace.payerLegalName })),
+  });
+  return recordInvoiceAnalysis(analysis);
+}
+
 function renderReconciliation() {
   const groups = reconciliationGroups();
   if (!selectedChannelWorkplace) selectedChannelWorkplace = appState.workplaces[0]?.id || '';
@@ -633,7 +753,8 @@ function renderReconciliation() {
   const options = appState.workplaces.map((workplace) => `<option value="${workplace.id}" ${workplace.id === selectedChannelWorkplace ? 'selected' : ''}>${escapeHtml(workplace.name)}</option>`).join('');
   const groupCards = groups.map((group) => `<button class="card group-card ${group.id === selectedReconciliationGroup ? 'selected' : ''}" data-action="select-reconciliation" data-id="${group.id}" type="button"><span class="group-check">${group.id === selectedReconciliationGroup ? '✓' : ''}</span><span><h3>${escapeHtml(group.workplace.name)}</h3><p>${monthLabel(group.month)}</p><small>${group.attendances.length} atend. • ${group.attachments} comprov.</small></span><b>${currency(group.totalCents)}</b></button>`).join('');
   const selected = groups.find((group) => group.id === selectedReconciliationGroup);
-  screen.innerHTML = `<div class="screen-stack">${pageHeading('Conferência de pagamentos', 'Conciliação', 'Configure o canal, selecione um grupo vencido e abra a mensagem no seu e-mail.')}<h2 class="section-title">Canal oficial</h2>${channel ? `<form class="card settings" id="channel-form"><label>Local<select id="channel-workplace">${options}</select></label><label>E-mail oficial<input id="channel-email" type="email" value="${escapeHtml(channel.reconciliationEmail)}" placeholder="repasses@local.com.br"/></label><label>Cópia (opcional)<input id="channel-cc" value="${escapeHtml(channel.reconciliationCc || '')}" placeholder="gestor@local.com.br"/></label><label>Mensagem padrão<textarea id="channel-message">${escapeHtml(appState.reconciliationMessage)}</textarea></label><p class="field-hint">Tokens: {{local}}, {{periodo}}, {{quantidade}}, {{valor}}, {{detalhes}} e {{medico}}.</p><button class="button secondary small" type="submit">Salvar canal e mensagem</button></form>` : '<div class="notice warning">Cadastre um local antes de configurar a conciliação.</div>'}<h2 class="section-title">Grupos prontos para conciliar</h2><div class="list">${groupCards || emptyCard('Nenhum repasse vencido', 'Quando um grupo ultrapassar a data prevista sem baixa, ele aparecerá aqui.')}</div>${selected ? `<div class="card summary-card"><span class="summary-main"><small>SELECIONADO</small><strong>${currency(selected.totalCents)}</strong><small>${selected.attendances.length} atendimentos • ${monthLabel(selected.month)}</small></span></div><button class="button primary" data-action="open-reconciliation-email" type="button">Abrir solicitação no e-mail</button><div class="notice warning">No navegador, o e-mail é preenchido, mas os comprovantes precisam ser anexados manualmente antes do envio.</div>` : ''}</div>`;
+  const latestInvoice = (appState.invoices || []).find((invoice) => invoice.id === selectedInvoiceId) || appState.invoices?.[0];
+  screen.innerHTML = `<div class="screen-stack">${pageHeading('Conferência de pagamentos', 'Conciliação', 'Envie uma Nota Fiscal para identificar o pagador e comparar automaticamente os valores.')}<h2 class="section-title">Conferir Nota Fiscal</h2><div class="card settings"><p>Selecione o PDF ou XML recebido. O arquivo é lido para extrair CNPJ, Razão Social e valor; depois, o MedRecebe compara esses dados com o cadastro e os atendimentos contabilizados.</p><label class="button primary file-button">Selecionar Nota Fiscal<input id="invoice-file" type="file" accept="application/pdf,application/xml,text/xml,.pdf,.xml"/></label><p class="field-hint">O arquivo é processado para a conferência e não é incorporado à sincronização dos dados de gestão.</p></div>${invoiceCard(latestInvoice)}<h2 class="section-title">Canal oficial</h2>${channel ? `<form class="card settings" id="channel-form"><label>Local<select id="channel-workplace">${options}</select></label><label>E-mail oficial<input id="channel-email" type="email" value="${escapeHtml(channel.reconciliationEmail)}" placeholder="repasses@local.com.br"/></label><label>Cópia (opcional)<input id="channel-cc" value="${escapeHtml(channel.reconciliationCc || '')}" placeholder="gestor@local.com.br"/></label><label>Mensagem padrão<textarea id="channel-message">${escapeHtml(appState.reconciliationMessage)}</textarea></label><p class="field-hint">Tokens: {{local}}, {{periodo}}, {{quantidade}}, {{valor}}, {{detalhes}} e {{medico}}.</p><button class="button secondary small" type="submit">Salvar canal e mensagem</button></form>` : '<div class="notice warning">Cadastre um local antes de configurar a conciliação.</div>'}<h2 class="section-title">Grupos prontos para conciliar</h2><div class="list">${groupCards || emptyCard('Nenhum repasse vencido', 'Quando um grupo ultrapassar a data prevista sem baixa, ele aparecerá aqui.')}</div>${selected ? `<div class="card summary-card"><span class="summary-main"><small>SELECIONADO</small><strong>${currency(selected.totalCents)}</strong><small>${selected.attendances.length} atendimentos • ${monthLabel(selected.month)}</small></span></div><button class="button primary" data-action="open-reconciliation-email" type="button">Abrir solicitação no e-mail</button><div class="notice warning">No navegador, o e-mail é preenchido, mas os comprovantes precisam ser anexados manualmente antes do envio.</div>` : ''}</div>`;
 }
 
 function reconciliationGroups() {
@@ -667,13 +788,10 @@ function renderAccount() {
   };
   const accessStatus = cloudAccount?.profile?.accessStatus;
   const planCode = cloudPlanCode();
-  const trialEndsAt = cloudAccount?.profile?.trialEndsAt;
-  const trialDays = Math.max(0, Math.ceil((Date.parse(trialEndsAt || '') - Date.now()) / 86_400_000));
-  const isTrial = trialDays > 0 && cloudAccount?.subscription?.status !== 'authorized';
   const planName = planCode === 'web' ? 'Plano Web' : 'Plano Mobile';
   const planPrice = planCode === 'web' ? 'R$ 59,90' : 'R$ 29,90';
   const cloudSection = isCloudMode()
-    ? `<h2 class="section-title">Plano e acesso</h2><div class="card workplace-summary"><div class="card-head"><span class="round-icon">✓</span><div><h3>${planName}</h3><p>${isTrial ? `Teste grátis • ${trialDays} dia${trialDays === 1 ? '' : 's'} restante${trialDays === 1 ? '' : 's'}` : `${planPrice} por mês • Mercado Pago`}</p></div><span class="badge ${accessStatus === 'active' ? '' : 'inactive'}">${isTrial ? 'Teste ativo' : escapeHtml(subscriptionLabels[accessStatus] || 'Em configuração')}</span></div>${planCode === 'mobile' ? '<button class="button secondary small" data-action="upgrade-web" type="button">Ativar gestão pelo PC</button>' : '<p class="field-hint">Cadastros, regras e atendimentos são sincronizados entre seus dispositivos. Fotos permanecem apenas no aparelho onde foram registradas.</p>'}</div><button class="button danger" data-action="cancel-subscription" type="button">${isTrial ? 'Encerrar teste gratuito' : 'Cancelar assinatura'}</button>`
+    ? `<h2 class="section-title">Plano e acesso</h2><div class="card workplace-summary"><div class="card-head"><span class="round-icon">✓</span><div><h3>${planName}</h3><p>${planPrice} por mês</p></div><span class="badge ${accessStatus === 'active' ? '' : 'inactive'}">${escapeHtml(subscriptionLabels[accessStatus] || 'Em configuração')}</span></div>${planCode === 'mobile' ? '<button class="button secondary small" data-action="upgrade-web" type="button">Ativar gestão pelo PC</button>' : '<p class="field-hint">Cadastros, regras e atendimentos são sincronizados entre seus dispositivos.</p>'}</div><button class="button danger" data-action="cancel-subscription" type="button">Cancelar assinatura</button>`
     : '';
   const deleteLabel = isCloudMode() ? 'Excluir dados salvos neste aparelho' : 'Excluir conta e dados locais';
   screen.innerHTML = `<div class="screen-stack">${pageHeading('Perfil e assinatura', 'Conta e instalação', 'Gerencie seu plano, seus dados e a instalação do MedRecebe.')}<div class="card card-head"><span class="avatar">${escapeHtml((appState.profile?.name || 'M').charAt(0))}</span><div><h3>${escapeHtml(appState.profile?.name || 'Médico')}</h3><p>${formatCpf(appState.profile?.cpf || '')}<br/>${escapeHtml(appState.profile?.email || '')}</p></div></div>${cloudSection}<div class="notice success"><strong>${planCode === 'web' ? 'Sincronização protegida' : 'Dados salvos neste aparelho'}</strong><br/>${planCode === 'web' ? 'Registros de gestão ficam disponíveis no iPhone e no PC; comprovantes fotográficos continuam somente no aparelho.' : 'Fechar o MedRecebe ou o Safari não apaga seus cadastros ou atendimentos.'}</div><h2 class="section-title">Instalação</h2><div class="card install-card"><span class="install-icon">${isStandalone() ? '✓' : '⇧'}</span><div><strong>${isStandalone() ? 'MedRecebe instalado' : 'Adicionar à Tela de Início'}</strong><p>${isStandalone() ? 'Você está usando o modo aplicativo.' : 'Abra no Safari e instale o atalho para usar offline.'}</p></div>${isStandalone() ? '' : '<button class="link-button" data-action="install" type="button">Ver passos</button>'}</div><h2 class="section-title">Privacidade e suporte</h2><div class="card account-links"><a class="account-link" href="./privacidade.html" target="_blank" rel="noopener">Política de Privacidade <span>›</span></a><a class="account-link" href="./termos.html" target="_blank" rel="noopener">Termos de Uso <span>›</span></a><a class="account-link" href="./cancelamento.html" target="_blank" rel="noopener">Cancelamento e reembolso <span>›</span></a><a class="account-link" href="./suporte.html" target="_blank" rel="noopener">Ajuda e suporte <span>›</span></a></div><button class="button secondary" data-action="logout" type="button">Sair</button><button class="button danger" data-action="delete-beta-data" type="button">${deleteLabel}</button><p class="muted" style="text-align:center">MedRecebe • versão web 2.0</p></div>`;
@@ -689,7 +807,7 @@ function openInstallModal() {
 }
 
 function newWorkplace() {
-  draftWorkplace = { id: id('work'), name: '', address: '', reconciliationEmail: '', reconciliationCc: '', active: true, modalities: [] };
+  draftWorkplace = { id: id('work'), name: '', address: '', payerCnpj: '', payerLegalName: '', reconciliationEmail: '', reconciliationCc: '', active: true, modalities: [] };
   editingModalityIndex = null;
   renderWorkplaceModal();
 }
@@ -706,7 +824,7 @@ function renderWorkplaceModal() {
   const modalityRows = draftWorkplace.modalities.map((modality, index) => `<div class="editor-row"><span><strong>${escapeHtml(modality.name)} • ${currency(modality.amountCents)}</strong><small>${escapeHtml(describeRule(modality.rule))}</small></span><span><button data-action="edit-modality" data-index="${index}" type="button">Editar</button><button data-action="delete-modality" data-index="${index}" type="button">Excluir</button></span></div>`).join('');
   const editing = editingModalityIndex === null ? null : draftWorkplace.modalities[editingModalityIndex];
   const modality = editing || { name: '', type: 'plan', amountCents: 0, rule: { kind: 'calendar_days', days: 30 } };
-  modalRoot.innerHTML = `<div class="modal-wrap"><section class="modal-sheet" role="dialog" aria-modal="true"><header class="modal-header"><button data-action="close-modal" type="button">Cancelar</button><h2>${appState.workplaces.some((item) => item.id === draftWorkplace.id) ? 'Editar local' : 'Novo local'}</h2><button data-action="save-workplace" type="button">Salvar</button></header><div class="modal-body"><div class="form-grid"><label>Nome do local<input id="work-name" value="${escapeHtml(draftWorkplace.name)}" placeholder="Ex.: Clínica Horizonte"/></label><label>Endereço<input id="work-address" value="${escapeHtml(draftWorkplace.address)}" placeholder="Rua, número e cidade"/></label><label>E-mail oficial para conciliação<input id="work-email" type="email" value="${escapeHtml(draftWorkplace.reconciliationEmail)}" placeholder="financeiro@clinica.com.br"/></label><label>E-mail em cópia<input id="work-cc" value="${escapeHtml(draftWorkplace.reconciliationCc || '')}" placeholder="gestor@clinica.com.br"/></label></div><h3 class="section-title">Modalidades</h3><div class="modalities-editor">${modalityRows || '<div class="notice warning">Cadastre pelo menos uma modalidade.</div>'}</div><div class="modality-form"><h3>${editing ? 'Editar modalidade' : 'Adicionar modalidade'}</h3><label>Nome<input id="mod-name" value="${escapeHtml(modality.name)}" placeholder="Ex.: Unimed ou particular"/></label><div class="inline-grid"><label>Tipo<select id="mod-type"><option value="plan" ${modality.type === 'plan' ? 'selected' : ''}>Plano</option><option value="private" ${modality.type === 'private' ? 'selected' : ''}>Particular</option></select></label><label>Valor (R$)<input id="mod-value" inputmode="decimal" value="${modality.amountCents ? (modality.amountCents / 100).toFixed(2).replace('.', ',') : ''}" placeholder="0,00"/></label></div><label>Regra<select id="mod-rule">${ruleOptions(modality.rule.kind)}</select></label><div id="rule-fields">${ruleFields(modality.rule)}</div><button class="button secondary small" data-action="save-modality" type="button">${editing ? 'Atualizar modalidade' : 'Adicionar modalidade'}</button></div><div class="notice">Na regra personalizada, guarde o texto contratual e confira o exemplo de vencimento antes de salvar.</div></div></section></div>`;
+  modalRoot.innerHTML = `<div class="modal-wrap"><section class="modal-sheet" role="dialog" aria-modal="true"><header class="modal-header"><button data-action="close-modal" type="button">Cancelar</button><h2>${appState.workplaces.some((item) => item.id === draftWorkplace.id) ? 'Editar local' : 'Novo local'}</h2><button data-action="save-workplace" type="button">Salvar</button></header><div class="modal-body"><div class="form-grid"><label>Nome do local<input id="work-name" value="${escapeHtml(draftWorkplace.name)}" placeholder="Ex.: Clínica Horizonte"/></label><label>Razão Social do pagador<input id="work-legal-name" value="${escapeHtml(draftWorkplace.payerLegalName || '')}" placeholder="Razão Social exibida na Nota Fiscal"/></label><label>CNPJ do pagador<input id="work-cnpj" inputmode="numeric" maxlength="18" value="${formatCnpj(draftWorkplace.payerCnpj || '')}" placeholder="00.000.000/0000-00"/></label><label>Endereço<input id="work-address" value="${escapeHtml(draftWorkplace.address)}" placeholder="Rua, número e cidade"/></label><label>E-mail oficial para conciliação<input id="work-email" type="email" value="${escapeHtml(draftWorkplace.reconciliationEmail)}" placeholder="financeiro@clinica.com.br"/></label><label>E-mail em cópia<input id="work-cc" value="${escapeHtml(draftWorkplace.reconciliationCc || '')}" placeholder="gestor@clinica.com.br"/></label></div><div class="notice">O CNPJ e a Razão Social são usados para identificar automaticamente o pagador na Nota Fiscal.</div><h3 class="section-title">Modalidades</h3><div class="modalities-editor">${modalityRows || '<div class="notice warning">Cadastre pelo menos uma modalidade.</div>'}</div><div class="modality-form"><h3>${editing ? 'Editar modalidade' : 'Adicionar modalidade'}</h3><label>Nome<input id="mod-name" value="${escapeHtml(modality.name)}" placeholder="Ex.: Unimed ou particular"/></label><div class="inline-grid"><label>Tipo<select id="mod-type"><option value="plan" ${modality.type === 'plan' ? 'selected' : ''}>Plano</option><option value="private" ${modality.type === 'private' ? 'selected' : ''}>Particular</option></select></label><label>Valor (R$)<input id="mod-value" inputmode="decimal" value="${modality.amountCents ? (modality.amountCents / 100).toFixed(2).replace('.', ',') : ''}" placeholder="0,00"/></label></div><label>Regra<select id="mod-rule">${ruleOptions(modality.rule.kind)}</select></label><div id="rule-fields">${ruleFields(modality.rule)}</div><button class="button secondary small" data-action="save-modality" type="button">${editing ? 'Atualizar modalidade' : 'Adicionar modalidade'}</button></div><div class="notice">Na regra personalizada, guarde o texto contratual e confira o exemplo de vencimento antes de salvar.</div></div></section></div>`;
 }
 
 function ruleOptions(selected) {
@@ -728,6 +846,8 @@ function ruleFields(rule) {
 function preserveWorkplaceFields() {
   if (!draftWorkplace || !$('#work-name')) return;
   draftWorkplace.name = $('#work-name').value;
+  draftWorkplace.payerLegalName = $('#work-legal-name').value;
+  draftWorkplace.payerCnpj = cnpjDigits($('#work-cnpj').value);
   draftWorkplace.address = $('#work-address').value;
   draftWorkplace.reconciliationEmail = $('#work-email').value;
   draftWorkplace.reconciliationCc = $('#work-cc').value;
@@ -789,12 +909,12 @@ function setAuthMode(mode) {
   $('#auth-title').textContent = register ? 'Criar meu acesso' : 'Boas-vindas';
   $('#auth-description').textContent = register
     ? isCloudMode()
-      ? `Crie sua conta e teste o Plano ${selectedPlanCode === 'web' ? 'Web' : 'Mobile'} grátis por 7 dias, sem cartão.`
+      ? `Crie sua conta para contratar o Plano ${selectedPlanCode === 'web' ? 'Web' : 'Mobile'} com 7 dias de garantia.`
       : 'Cadastre seus dados reais. A conta permanecerá salva neste aparelho.'
     : isCloudMode()
       ? 'Entre com o CPF e a senha da sua conta MedRecebe.'
       : 'Entre com o CPF e a senha cadastrados neste aparelho.';
-  $('#auth-submit').textContent = register ? 'Começar teste grátis' : 'Entrar';
+  $('#auth-submit').textContent = register ? 'Criar acesso' : 'Entrar';
   $('#auth-toggle').textContent = register ? 'Já tenho acesso' : 'Primeiro uso? Criar meu acesso';
   $('#demo-entry').hidden = register || isCloudMode();
   $('#auth-password').autocomplete = register ? 'new-password' : 'current-password';
@@ -876,7 +996,7 @@ function bindEvents() {
   $('#billing-subscribe').addEventListener('click', async () => {
     const button = $('#billing-subscribe');
     button.disabled = true;
-    button.textContent = 'Abrindo Mercado Pago…';
+    button.textContent = 'Abrindo pagamento…';
     try {
       const result = await cloud.createSubscription(selectedPlanCode);
       if (result.active || result.adminAccess) {
@@ -889,7 +1009,7 @@ function bindEvents() {
     } catch (caught) {
       $('#billing-status').textContent = caught instanceof Error ? caught.message : 'Não foi possível abrir o pagamento.';
       button.disabled = false;
-      button.textContent = 'Assinar com cartão';
+      button.textContent = 'Continuar';
     }
   });
 
@@ -945,7 +1065,7 @@ function handleClick(event) {
         const restored = await cloud.restore();
         if (restored) applyCloudAccount(restored);
         const message = result.refunded
-          ? 'Assinatura cancelada e reembolso solicitado ao Mercado Pago.'
+          ? 'Assinatura cancelada e reembolso solicitado.'
           : result.refundPending
             ? 'Assinatura cancelada. O reembolso será conferido pelo suporte.'
             : 'Assinatura cancelada. Não haverá novas cobranças.';
@@ -1033,6 +1153,20 @@ function handleChange(event) {
     selectedChannelWorkplace = event.target.value;
     renderReconciliation();
   }
+  if (event.target.id === 'invoice-file' && event.target.files[0]) {
+    const file = event.target.files[0];
+    const button = event.target.closest('label');
+    if (button) button.textContent = 'Lendo Nota Fiscal…';
+    analyzeInvoiceFile(file)
+      .then((invoice) => {
+        renderReconciliation();
+        showToast(invoice.status === 'matched' ? 'Nota Fiscal conciliada com os atendimentos.' : 'Nota Fiscal lida. Revise o resultado da conferência.');
+      })
+      .catch((error) => {
+        renderReconciliation();
+        showToast(error instanceof Error ? error.message : 'Não foi possível ler a Nota Fiscal.');
+      });
+  }
   if (event.target.id === 'evidence-input' && event.target.files[0]) {
     const file = event.target.files[0];
     if (!file.type.startsWith('image/')) return showToast('Escolha uma imagem válida.');
@@ -1047,6 +1181,10 @@ function handleChange(event) {
 }
 
 function handleInput(event) {
+  if (event.target.id === 'work-cnpj') {
+    event.target.value = formatCnpj(event.target.value);
+    return;
+  }
   if (currentRoute !== 'attendance' || !attendanceDraft) return;
   if (event.target.id === 'attendance-date') attendanceDraft.occurredAt = event.target.value;
   if (event.target.id === 'attendance-notes') attendanceDraft.notes = event.target.value;
@@ -1109,6 +1247,8 @@ function saveModality() {
 function saveWorkplace() {
   preserveWorkplaceFields();
   if (!draftWorkplace.name.trim()) return showToast('Informe o nome do local.');
+  if (draftWorkplace.payerLegalName.trim().length < 3) return showToast('Informe a Razão Social do pagador.');
+  if (!isValidCnpj(draftWorkplace.payerCnpj)) return showToast('Informe um CNPJ válido do pagador.');
   if (!draftWorkplace.modalities.length) return showToast('Cadastre pelo menos uma modalidade.');
   const exists = appState.workplaces.some((item) => item.id === draftWorkplace.id);
   if (exists) appState.workplaces = appState.workplaces.map((item) => (item.id === draftWorkplace.id ? structuredClone(draftWorkplace) : item));
@@ -1142,7 +1282,7 @@ async function boot() {
     $('#auth-description').textContent = 'Entre com o CPF e a senha da sua conta MedRecebe.';
     try {
       const restored = await cloud.restore();
-      if (restored && returnedFromMercadoPago()) await reconcileBillingReturn(restored);
+      if (restored && returnedFromCheckout()) await reconcileBillingReturn(restored);
       else if (restored) applyCloudAccount(restored);
       else {
         showLogin();

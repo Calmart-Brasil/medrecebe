@@ -62,7 +62,7 @@ Deno.serve(async (request) => {
   }
 
   // Uma notificação de pagamento também é autenticada consultando o ID diretamente
-  // na conta Mercado Pago do MedRecebe. Isso mantém a liberação disponível caso a
+  // na conta do provedor de pagamentos. Isso mantém a liberação disponível caso a
   // entrega use uma assinatura desatualizada, sem confiar nos dados recebidos no body.
   let paymentAlreadySynced = false;
   if (!signatureValid) {

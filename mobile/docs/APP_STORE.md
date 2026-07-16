@@ -17,7 +17,7 @@ Confirme a disponibilidade do nome e do Bundle ID no App Store Connect antes do 
 
 ### O que testar
 
-> Cadastre um local e suas modalidades de repasse; registre um atendimento com comprovante; confira valor e vencimento no Dashboard; configure um canal oficial e abra uma conciliação por e-mail. Teste também a ativação do Face ID em Conta e segurança.
+> Cadastre um local com CNPJ e Razão Social do pagador e suas modalidades de repasse; registre um atendimento com comprovante; confira valor e vencimento no Dashboard; importe uma Nota Fiscal em PDF/XML pela Conciliação; teste também “Compartilhar → MedRecebe” a partir do Mail ou Arquivos, a mensagem de conciliação e a ativação do Face ID.
 
 ### Conta para revisão
 
@@ -26,7 +26,7 @@ Confirme a disponibilidade do nome e do Bundle ID no App Store Connect antes do 
 
 ### Notas ao revisor
 
-> O MedRecebe organiza recebíveis do próprio profissional. No MVP, os dados ficam no aparelho e o envio de conciliação sempre exige revisão e confirmação no compositor do Mail. A câmera é solicitada apenas ao adicionar o comprovante. O Face ID é opcional e pode ser ativado em Conta e segurança. A conta e todos os dados podem ser excluídos no mesmo menu.
+> O MedRecebe organiza recebíveis do próprio profissional. No MVP, os dados ficam no aparelho e o envio de conciliação sempre exige revisão e confirmação no compositor do Mail. A Nota Fiscal recebida pelo menu Compartilhar é lida para conferir CNPJ, Razão Social e valor, sem marcar o repasse como pago. A câmera é solicitada apenas ao adicionar o comprovante. O Face ID é opcional e pode ser ativado em Conta e segurança. A conta e todos os dados podem ser excluídos no mesmo menu.
 
 ## 3. Metadados sugeridos
 

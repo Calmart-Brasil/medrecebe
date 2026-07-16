@@ -2,7 +2,7 @@
   "expo": {
     "name": "MedRecebe",
     "slug": "medrecebe",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "medrecebe",
@@ -11,7 +11,7 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.calmart.medrecebe",
-      "buildNumber": "1",
+      "buildNumber": "2",
       "config": {
         "usesNonExemptEncryption": false
       },
@@ -50,6 +50,26 @@
           "image": "./assets/icon.png",
           "imageWidth": 190,
           "resizeMode": "contain"
+        }
+      ],
+      [
+        "expo-sharing",
+        {
+          "ios": {
+            "enabled": true,
+            "activationRule": {
+              "supportsFileWithMaxCount": 1
+            }
+          },
+          "android": {
+            "enabled": true,
+            "singleShareMimeTypes": [
+              "application/pdf",
+              "application/xml",
+              "text/xml"
+            ],
+            "multipleShareMimeTypes": []
+          }
         }
       ]
     ]

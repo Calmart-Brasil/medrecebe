@@ -12,7 +12,7 @@ Deno.serve(async (request) => {
     const admin = adminClient();
     let { data: profile, error } = await admin
       .from('profiles')
-      .select('id, full_name, email, cpf_last4, role, access_status, selected_plan, trial_ends_at')
+      .select('id, full_name, email, cpf_last4, role, access_status, selected_plan, manual_access_until')
       .eq('id', user.id)
       .single();
     if (error || !profile) return publicError(request, 'Conta não encontrada.', 404);
@@ -30,7 +30,7 @@ Deno.serve(async (request) => {
         const [profileResult, subscriptionResult] = await Promise.all([
           admin
             .from('profiles')
-            .select('id, full_name, email, cpf_last4, role, access_status, selected_plan, trial_ends_at')
+            .select('id, full_name, email, cpf_last4, role, access_status, selected_plan, manual_access_until')
             .eq('id', user.id)
             .single(),
           admin
@@ -47,10 +47,10 @@ Deno.serve(async (request) => {
       }
     }
 
-    const trialActive = profile.role !== 'admin' && subscription?.status !== 'authorized' && Date.parse(profile.trial_ends_at || '') > Date.now();
     const shouldEvaluateAccess = profile.role !== 'admin' && !['suspended', 'canceled', 'past_due'].includes(profile.access_status);
+    const manualAccessActive = profile.role !== 'admin' && Date.parse(profile.manual_access_until || '') > Date.now();
     const effectiveAccess = shouldEvaluateAccess
-      ? subscription?.status === 'authorized' || trialActive ? 'active' : 'pending_payment'
+      ? subscription?.status === 'authorized' || manualAccessActive ? 'active' : 'pending_payment'
       : profile.access_status;
     if (effectiveAccess !== profile.access_status) {
       await admin.from('profiles').update({ access_status: effectiveAccess }).eq('id', profile.id);
@@ -66,7 +66,7 @@ Deno.serve(async (request) => {
         role: profile.role,
         accessStatus: profile.access_status,
         planCode: profile.selected_plan,
-        trialEndsAt: profile.trial_ends_at,
+        manualAccessUntil: profile.manual_access_until,
       },
       subscription: subscription
         ? {
