@@ -73,7 +73,7 @@ async function sendEmailCode() {
     pendingMfaEmail = result.email;
     showMfaCode(`Enviamos uma confirmação para ${result.maskedEmail}. Abra o link da mensagem para liberar o painel automaticamente. Se o e-mail exibir um código, você também pode digitá-lo abaixo. A confirmação expira em 10 minutos.`);
   } catch (error) {
-    $('#admin-mfa-error').textContent = error instanceof Error ? error.message : 'Não foi possível enviar o código.';
+    $('#admin-mfa-error').textContent = `${error instanceof Error ? error.message : 'Não foi possível enviar agora.'} Aguarde alguns minutos ou configure o App Authenticator.`;
   }
 }
 
@@ -90,7 +90,7 @@ async function beginMfa(account) {
     totpFactors = [];
   }
   $('#admin-mfa-authenticator').hidden = totpFactors.length === 0;
-  if (!totpFactors.length) await sendEmailCode();
+  $('#admin-mfa-enroll').hidden = totpFactors.length > 0;
 }
 
 async function loadUsers() {
@@ -210,6 +210,10 @@ $('#admin-mfa-authenticator').addEventListener('click', () => {
   pendingMfaMode = 'totp';
   showMfaCode('Digite o código de seis dígitos exibido no seu App Authenticator.');
 });
+$('#admin-mfa-enroll').addEventListener('click', async () => {
+  await openMfaSettings();
+  await startTotpEnrollment();
+});
 $('#admin-mfa-code-form').addEventListener('submit', async (event) => {
   event.preventDefault();
   const button = $('#admin-mfa-submit');
@@ -288,7 +292,12 @@ $('#admin-modal-root').addEventListener('submit', async (event) => {
     try {
       await cloud.verifyTotp(enrollmentFactorId, $('#totp-enrollment-code').value);
       $('#admin-modal-root').innerHTML = '';
+      const account = await cloud.restore();
+      if (!account || account.profile.role !== 'admin') throw new Error('Sessão administrativa inválida.');
+      pendingAdminAccount = account;
+      showApp(account);
       $('#admin-status').textContent = 'App Authenticator configurado com sucesso.';
+      await loadUsers();
     } catch (caught) { $('#mfa-settings-error').textContent = caught instanceof Error ? caught.message : 'Código inválido.'; }
   }
 });
