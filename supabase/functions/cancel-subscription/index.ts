@@ -56,21 +56,26 @@ Deno.serve(async (request) => {
       const query = new URLSearchParams({ external_reference: user.id, sort: 'date_created', criteria: 'desc', limit: '10' });
       const payments = await mercadoPago<PaymentSearch>(`/v1/payments/search?${query.toString()}`);
       const expectedAmount = Number(subscription.amount_cents) / 100;
-      const payment = (payments.results || []).find((item) => item.status === 'approved' && Number(item.transaction_amount) === expectedAmount);
+      const payment = (payments.results || []).find((item) => {
+        const paymentTime = Date.parse(item.date_approved || item.date_created || '');
+        return item.status === 'approved'
+          && Number(item.transaction_amount) === expectedAmount
+          && Number.isFinite(paymentTime)
+          && paymentTime >= lastPaymentTime - 300_000;
+      });
       if (payment?.id) {
         providerPaymentId = String(payment.id);
         try {
           await mercadoPago(`/v1/payments/${encodeURIComponent(providerPaymentId)}/refunds`, {
             method: 'POST',
             headers: { 'X-Idempotency-Key': `medrecebe-cancel-${subscription.id}` },
-            body: '{}',
           });
           refunded = true;
         } catch (refundError) {
           console.error('cancel-subscription refund', refundError);
           refundPending = true;
         }
-      }
+      } else refundPending = true;
     }
 
     const now = new Date().toISOString();
