@@ -28,12 +28,13 @@ export interface PaymentRule {
   contractualText?: string;
 }
 
-export type ModalityType = 'plan' | 'private';
+export type ModalityType = 'plan' | 'private' | 'recurring' | 'custom';
 
 export interface PaymentModality {
   id: string;
   name: string;
   type: ModalityType;
+  customType?: string;
   amountCents: number;
   rule: PaymentRule;
   active: boolean;
@@ -77,11 +78,19 @@ export interface Attendance {
   workplaceId: string;
   modalityId: string;
   modalityName: string;
+  modalityType?: ModalityType;
   occurredAt: string;
   dueAt: string;
   amountCents: number;
+  baseAmountCents?: number;
   evidenceUri: string;
   notes: string;
+  patientReference?: string;
+  medication?: string;
+  includeConsultation?: boolean;
+  consultationModalityId?: string;
+  consultationModalityName?: string;
+  consultationAmountCents?: number;
   status: AttendanceStatus;
   createdAt: string;
   reconciliationRequestedAt?: string;

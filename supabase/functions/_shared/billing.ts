@@ -19,6 +19,18 @@ function assertNoError(error: unknown): void {
   if (error) throw error;
 }
 
+async function protectedAccessStatus(userId: string, fallback: 'active' | 'pending_payment' | 'past_due' | 'canceled'): Promise<string> {
+  const { data: profile } = await adminClient()
+    .from('profiles')
+    .select('access_status, suspension_scheduled_at, forced_suspension_at')
+    .eq('id', userId)
+    .maybeSingle();
+  if (profile?.forced_suspension_at || profile?.access_status === 'suspended') return 'suspended';
+  const suspensionTime = Date.parse(profile?.suspension_scheduled_at || '');
+  if (Number.isFinite(suspensionTime)) return suspensionTime > Date.now() ? 'active' : 'suspended';
+  return fallback;
+}
+
 export async function syncPreapproval(preapprovalId: string, expectedUserId = ''): Promise<MercadoPagoSubscription> {
   const admin = adminClient();
   const subscription = await mercadoPago<MercadoPagoSubscription>(`/preapproval/${encodeURIComponent(preapprovalId)}`);
@@ -60,7 +72,7 @@ export async function syncPreapproval(preapprovalId: string, expectedUserId = ''
 
   const { error: profileError } = await admin
     .from('profiles')
-    .update({ access_status: accessFromSubscription(subscription.status) })
+    .update({ access_status: await protectedAccessStatus(userId, accessFromSubscription(subscription.status)) })
     .eq('id', userId);
   assertNoError(profileError);
   return subscription;
@@ -99,9 +111,10 @@ export async function syncPayment(paymentId: string, expectedUserId = ''): Promi
     .eq('id', current.id);
   assertNoError(subscriptionError);
 
+  const billingAccess = approved ? 'active' : 'past_due';
   const { error: profileError } = await admin
     .from('profiles')
-    .update({ access_status: approved ? 'active' : 'past_due' })
+    .update({ access_status: await protectedAccessStatus(userId, billingAccess) })
     .eq('id', userId);
   assertNoError(profileError);
   return payment;

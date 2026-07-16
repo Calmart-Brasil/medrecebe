@@ -1,5 +1,5 @@
 import { json, options, publicError } from '../_shared/http.ts';
-import { adminClient, requireAdmin } from '../_shared/supabase.ts';
+import { adminClient, requireAdminMfa } from '../_shared/supabase.ts';
 
 Deno.serve(async (request) => {
   const preflight = options(request);
@@ -7,7 +7,7 @@ Deno.serve(async (request) => {
   if (request.method !== 'POST') return publicError(request, 'Método não permitido.', 405);
 
   try {
-    await requireAdmin(request);
+    await requireAdminMfa(request);
     const body = await request.json().catch(() => ({}));
     const search = String(body.search || '').trim().slice(0, 80);
     const safeSearch = search.replace(/[%_,().]/g, ' ').replace(/\s+/g, ' ').trim();
@@ -18,7 +18,7 @@ Deno.serve(async (request) => {
 
     let query = admin
       .from('profiles')
-      .select('id, full_name, email, cpf_last4, role, access_status, selected_plan, manual_access_until, created_at, updated_at', { count: 'exact' })
+      .select('id, full_name, email, cpf_last4, role, access_status, selected_plan, manual_access_until, manual_access_lifetime, suspension_scheduled_at, suspension_reason, forced_suspension_at, created_at, updated_at', { count: 'exact' })
       .order('created_at', { ascending: false })
       .range(from, from + perPage - 1);
     if (safeSearch) {
@@ -41,20 +41,22 @@ Deno.serve(async (request) => {
     const byUser = new Map((subscriptions || []).map((subscription) => [subscription.user_id, subscription]));
 
     const [{ data: allProfiles }, { data: allCurrentSubscriptions }] = await Promise.all([
-      admin.from('profiles').select('id, access_status, role'),
-      admin.from('subscriptions').select('user_id, status, last_payment_at').eq('is_current', true),
+      admin.from('profiles').select('id, access_status, role, manual_access_until, manual_access_lifetime, suspension_scheduled_at'),
+      admin.from('subscriptions').select('user_id, status').eq('is_current', true),
     ]);
-    const guaranteeUsers = new Set((allCurrentSubscriptions || []).filter((item) => item.status === 'authorized' && Date.parse(item.last_payment_at || '') >= Date.now() - 7 * 86_400_000).map((item) => item.user_id));
+    const paidUsers = new Set((allCurrentSubscriptions || []).filter((item) => item.status === 'authorized').map((item) => item.user_id));
     const metrics = (allProfiles || []).reduce(
       (result, profile) => {
         result.total += profile.role === 'user' ? 1 : 0;
         if (profile.role === 'user' && profile.access_status === 'active') result.active += 1;
         if (profile.role === 'user' && profile.access_status === 'past_due') result.pastDue += 1;
         if (profile.role === 'user' && profile.access_status === 'suspended') result.suspended += 1;
-        if (profile.role === 'user' && guaranteeUsers.has(profile.id)) result.guarantee += 1;
+        const freemium = profile.manual_access_lifetime || Date.parse(profile.manual_access_until || '') > Date.now();
+        if (profile.role === 'user' && freemium && !paidUsers.has(profile.id)) result.freemium += 1;
+        if (profile.role === 'user' && Date.parse(profile.suspension_scheduled_at || '') > Date.now()) result.scheduledSuspensions += 1;
         return result;
       },
-      { total: 0, active: 0, guarantee: 0, pastDue: 0, suspended: 0 },
+      { total: 0, active: 0, freemium: 0, scheduledSuspensions: 0, pastDue: 0, suspended: 0 },
     );
 
     return json(request, {
@@ -67,6 +69,10 @@ Deno.serve(async (request) => {
         accessStatus: profile.access_status,
         planCode: profile.selected_plan,
         manualAccessUntil: profile.manual_access_until,
+        manualAccessLifetime: profile.manual_access_lifetime,
+        suspensionScheduledAt: profile.suspension_scheduled_at,
+        suspensionReason: profile.suspension_reason,
+        forcedSuspensionAt: profile.forced_suspension_at,
         createdAt: profile.created_at,
         updatedAt: profile.updated_at,
         subscription: byUser.get(profile.id) || null,

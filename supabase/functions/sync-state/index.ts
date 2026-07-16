@@ -37,9 +37,6 @@ Deno.serve(async (request) => {
       .eq('id', user.id)
       .single();
     if (profileError || !profile) return publicError(request, 'Conta não encontrada.', 404);
-    if (profile.role !== 'admin' && profile.selected_plan !== 'web') {
-      return publicError(request, 'A sincronização entre dispositivos faz parte do Plano Web.', 403);
-    }
     if (profile.role !== 'admin' && profile.access_status !== 'active') {
       return publicError(request, 'Acesso inativo.', 403);
     }

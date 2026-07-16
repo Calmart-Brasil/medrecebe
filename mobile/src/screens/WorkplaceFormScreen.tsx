@@ -39,8 +39,6 @@ const RULE_OPTIONS: Array<{ kind: PaymentRuleKind; label: string }> = [
   { kind: 'advance', label: 'Antecipado' },
   { kind: 'first_business_day_next_month', label: '1º dia útil do mês seguinte' },
   { kind: 'last_business_day_next_month', label: 'Último dia útil do mês seguinte' },
-  { kind: 'weekly', label: 'Dia da semana seguinte' },
-  { kind: 'custom', label: 'Regra personalizada' },
 ];
 
 const BASIS_OPTIONS: Array<{ value: CustomRuleBasis; label: string }> = [
@@ -105,8 +103,8 @@ function ModalityEditor({
       setError('Informe um valor de repasse maior que zero.');
       return;
     }
-    if (draft.rule.kind === 'custom' && !draft.rule.contractualText?.trim()) {
-      setError('Na regra personalizada, registre também o texto acordado no contrato.');
+    if (draft.type === 'custom' && !draft.customType?.trim()) {
+      setError('Informe o nome do tipo personalizado.');
       return;
     }
     onSave({ ...draft, name: draft.name.trim(), amountCents });
@@ -143,8 +141,19 @@ function ModalityEditor({
               <View style={styles.chips}>
                 <Chip label="Plano" onPress={() => setDraft((current) => ({ ...current, type: 'plan' }))} selected={draft.type === 'plan'} />
                 <Chip label="Particular" onPress={() => setDraft((current) => ({ ...current, type: 'private' }))} selected={draft.type === 'private'} />
+                <Chip label="Receita recorrente" onPress={() => setDraft((current) => ({ ...current, type: 'recurring' }))} selected={draft.type === 'recurring'} />
+                <Chip label="Personalizado" onPress={() => setDraft((current) => ({ ...current, type: 'custom' }))} selected={draft.type === 'custom'} />
               </View>
             </View>
+
+            {draft.type === 'custom' ? (
+              <Field
+                label="Nome do tipo personalizado"
+                onChangeText={(customType) => setDraft((current) => ({ ...current, customType }))}
+                placeholder="Ex.: Teleinterconsulta"
+                value={draft.customType ?? ''}
+              />
+            ) : null}
 
             <Field
               keyboardType="decimal-pad"

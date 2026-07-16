@@ -8,7 +8,7 @@ export function allowedOrigin(request: Request): string {
 export function corsHeaders(request: Request): HeadersInit {
   return {
     'Access-Control-Allow-Origin': allowedOrigin(request),
-    'Access-Control-Allow-Headers': 'authorization, apikey, content-type, x-client-info',
+    'Access-Control-Allow-Headers': 'authorization, apikey, content-type, x-client-info, x-admin-mfa',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
     'Vary': 'Origin',
   };

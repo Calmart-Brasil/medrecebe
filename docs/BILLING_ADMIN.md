@@ -1,6 +1,6 @@
 # Assinaturas e painel administrativo
 
-O MedRecebe cobra no início do ciclo, oferece garantia de cancelamento com estorno integral em 7 dias, Plano Mobile de **R$ 29,90/mês** e Plano Web de **R$ 59,90/mês**. Checkout, recorrência, cancelamento e reembolso passam por um adaptador de provedor substituível. Identidade, acesso, sincronização e painel administrativo usam Supabase.
+O MedRecebe cobra no início do ciclo, oferece garantia de cancelamento com estorno integral em 7 dias e opera um plano único de **R$ 39,90/mês** para celular e computador. Checkout, recorrência, cancelamento e reembolso passam por um adaptador de provedor substituível. Identidade, acesso, sincronização e painel administrativo usam Supabase.
 
 ## Arquitetura
 
@@ -99,9 +99,9 @@ O webhook é idempotente: eventos são guardados antes do processamento e tentat
 
 `analyze-invoice` recebe PDF ou XML autenticado de até 5 MB, extrai texto sem armazenar o arquivo, identifica CNPJ e Razão Social e retorna os dados necessários para comparar o valor da nota com os atendimentos contabilizados.
 
-## Plano Web
+## Sincronização do plano único
 
-`sync-state` aceita somente contas do Plano Web ativas. Credenciais, campos internos e fotografias são removidos antes do `upsert` em `user_app_states`. Fotos permanecem no aparelho de origem.
+`sync-state` aceita contas ativas do plano único. Credenciais, campos internos e fotografias são removidos antes do `upsert` em `user_app_states`. Fotos permanecem no aparelho de origem.
 
 ## App Store e TestFlight
 

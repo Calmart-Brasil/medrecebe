@@ -150,6 +150,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--blue-600); box-s
 .billing-legal { margin: 13px 8px 0; color: rgb(255 255 255 / 62%); font-size: 9px; line-height: 1.5; }
 .billing-legal a { color: white; }
 .billing-plan-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin-top: 18px; }
+.billing-plan-grid.single { grid-template-columns: 1fr; }
 .billing-plan { display: grid; gap: 3px; min-height: 66px; padding: 10px; border: 1px solid rgb(255 255 255 / 25%); border-radius: 15px; background: rgb(255 255 255 / 8%); color: white; text-align: left; }
 .billing-plan strong { font-size: 14px; }
 .billing-plan small { color: rgb(255 255 255 / 70%); font-size: 10px; }
@@ -281,6 +282,21 @@ input:focus, select:focus, textarea:focus { border-color: var(--blue-600); box-s
 .choice small { color: var(--muted); font-size: 9px; }
 .choice b { color: var(--navy); font-size: 12px; }
 .action-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+.backup-choice { display: grid; grid-template-columns: auto 1fr; gap: 12px; align-items: start; }
+.backup-choice input { width: 22px; height: 22px; margin: 2px 0 0; }
+.backup-choice span { display: grid; gap: 5px; }
+.backup-choice small { color: var(--muted); line-height: 1.5; }
+.recurring-fields { display: grid; gap: 13px; border-color: #bde8df; background: #f2fffb; }
+.toggle-choice { display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: start; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: white; }
+.toggle-choice input { width: 21px; height: 21px; margin: 1px 0 0; }
+.toggle-choice span { display: grid; gap: 3px; }
+.toggle-choice small { color: var(--muted); font-weight: 500; line-height: 1.4; }
+.attendance-record { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px 16px; align-items: start; }
+.attendance-record > div:first-child,
+.attendance-record > span { display: grid; gap: 5px; }
+.attendance-record > span { text-align: right; }
+.attendance-record small { color: var(--muted); line-height: 1.45; }
+.attendance-record .row-actions { grid-column: 1 / -1; justify-content: flex-end; }
 
 .settings { display: grid; gap: 13px; }
 .group-card { display: grid; grid-template-columns: 24px 1fr auto; align-items: center; gap: 11px; width: 100%; text-align: left; }
@@ -359,6 +375,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--blue-600); box-s
 .modal-header h2 { margin: 0; color: var(--navy); font-size: 15px; text-align: center; }
 .modal-header button { padding: 8px 2px; border: 0; background: transparent; color: var(--muted); font-size: 12px; font-weight: 750; }
 .modal-header button:last-child { color: var(--blue-700); }
+.modal-header.simple span { min-width: 70px; }
+.modal-header.simple button:last-child { color: var(--muted); font-size: 22px; }
 .modal-body { display: grid; gap: 15px; padding: 18px; overflow: auto; overscroll-behavior: contain; }
 .form-grid { display: grid; gap: 13px; }
 .inline-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
@@ -370,6 +388,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--blue-600); box-s
 .editor-row button { padding: 7px; border: 0; background: transparent; color: var(--red); font-size: 10px; font-weight: 800; }
 .modality-form { display: grid; gap: 11px; padding: 13px; border: 1px solid #bfe5fa; border-radius: 13px; background: var(--blue-050); }
 .modality-form h3 { margin: 0; color: var(--navy); font-size: 13px; }
+.modal-final-actions { display: grid; gap: 9px; padding-top: 5px; }
 .field-hint { margin: -2px 0 0; color: var(--muted); font-size: 9px; line-height: 1.4; }
 .install-steps { counter-reset: install; display: grid; gap: 12px; }
 .install-step { display: grid; grid-template-columns: 32px 1fr; gap: 10px; align-items: start; }

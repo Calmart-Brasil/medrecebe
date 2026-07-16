@@ -2,7 +2,7 @@ const APP_KEY = 'medrecebe.beta.app.v1';
 const SESSION_KEY = 'medrecebe.beta.session.v1';
 const DEMO_CPF = '52998224725';
 const DEMO_PASSWORD = 'Teste@123';
-const FEEDBACK_EMAIL = 'feedback@medrecebe.com.br';
+const FEEDBACK_EMAIL = 'ti@calmart.com.br';
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -22,9 +22,10 @@ let toastTimer = 0;
 let draftWorkplace = null;
 let editingModalityIndex = null;
 let attendanceDraft = null;
+let editingAttendanceId = '';
 let cloudAccount = null;
 let activeStateKey = APP_KEY;
-let selectedPlanCode = new URLSearchParams(window.location.search).get('plan') === 'web' ? 'web' : 'mobile';
+let selectedPlanCode = 'standard';
 let cloudSyncTimer = 0;
 let cloudHydrating = false;
 
@@ -36,6 +37,7 @@ const TITLES = {
   reconciliation: 'Conciliação',
   feedback: 'Feedback',
   account: 'Conta e instalação',
+  cancellation: 'Cancelamento',
 };
 
 const DEFAULT_MESSAGE = `Olá,
@@ -366,7 +368,7 @@ function isCloudMode() {
 }
 
 function cloudPlanCode() {
-  return cloudAccount?.subscription?.planCode || cloudAccount?.profile?.planCode || selectedPlanCode;
+  return cloudAccount?.subscription?.planCode || cloudAccount?.profile?.planCode || 'standard';
 }
 
 function isDesktopComputer() {
@@ -374,7 +376,7 @@ function isDesktopComputer() {
 }
 
 function planAllowsDevice() {
-  return !isDesktopComputer() || cloudPlanCode() === 'web' || cloudAccount?.profile?.role === 'admin';
+  return true;
 }
 
 function cloudAccessAllowed() {
@@ -386,13 +388,13 @@ function cloudStatePayload() {
 }
 
 function scheduleCloudSync() {
-  if (cloudHydrating || !isCloudMode() || cloudPlanCode() !== 'web' || cloudAccount?.profile?.accessStatus !== 'active') return;
+  if (cloudHydrating || !isCloudMode() || cloudAccount?.profile?.accessStatus !== 'active') return;
   window.clearTimeout(cloudSyncTimer);
   cloudSyncTimer = window.setTimeout(() => cloud.saveState(cloudStatePayload()).catch(() => {}), 1200);
 }
 
 async function hydrateCloudState() {
-  if (!isCloudMode() || cloudPlanCode() !== 'web' || cloudAccount?.profile?.accessStatus !== 'active') return;
+  if (!isCloudMode() || cloudAccount?.profile?.accessStatus !== 'active') return;
   cloudHydrating = true;
   window.clearTimeout(cloudSyncTimer);
   try {
@@ -453,7 +455,7 @@ async function reconcileBillingReturn(initialAccount) {
 function applyCloudAccount(result, cpf = '') {
   cloudAccount = result;
   selectedPlanCode = cloudPlanCode();
-  document.body.classList.toggle('web-plan', selectedPlanCode === 'web');
+  document.body.classList.toggle('web-plan', isDesktopComputer());
   activeStateKey = `${APP_KEY}.user.${result.profile.id}`;
   appState = loadState(activeStateKey);
   appState.profile = {
@@ -475,25 +477,18 @@ function showBilling() {
   $('#billing-view').hidden = false;
   closeDrawer();
   const status = cloudAccount?.profile?.accessStatus || 'pending_payment';
-  const desktopUpgrade = status === 'active' && !planAllowsDevice();
   const messages = {
-    pending_payment: ['Ative seu acesso para registrar atendimentos e acompanhar seus repasses.', 'Escolha um plano e conclua a contratação mensal.'],
+    pending_payment: ['Ative seu acesso para registrar atendimentos e acompanhar seus repasses.', 'Conclua a contratação mensal do plano único.'],
     past_due: ['Não conseguimos confirmar a última mensalidade.', 'Atualize o pagamento para restabelecer o acesso.'],
     canceled: ['Sua assinatura não está ativa.', 'Faça uma nova assinatura para voltar a usar o MedRecebe.'],
     suspended: ['Este acesso foi suspenso pelo administrador.', 'Entre em contato com o suporte antes de tentar um novo pagamento.'],
   };
-  const [lead, detail] = desktopUpgrade
-    ? ['Seu plano atual foi pensado para o iPhone.', 'Escolha o Plano Web para gerenciar os mesmos dados também pelo computador.']
-    : messages[status] || messages.pending_payment;
+  const [lead, detail] = messages[status] || messages.pending_payment;
   $('#billing-lead').textContent = lead;
   $('#billing-status').textContent = detail;
-  $$('.billing-plan').forEach((button) => button.classList.toggle('selected', button.dataset.plan === selectedPlanCode));
-  $('#billing-price-value').textContent = selectedPlanCode === 'web' ? 'R$ 59,90' : 'R$ 29,90';
-  $('#billing-plan-name').textContent = selectedPlanCode === 'web' ? 'WEB + IPHONE' : 'IPHONE';
-  const changingPlan = cloudAccount?.subscription?.status === 'authorized' && cloudAccount.subscription.planCode !== selectedPlanCode;
-  $('#billing-subscribe').textContent = changingPlan
-    ? `Confirmar ${selectedPlanCode === 'web' ? 'Plano Web por R$ 59,90' : 'Plano Mobile por R$ 29,90'}`
-    : desktopUpgrade ? 'Ativar Plano Web' : 'Continuar';
+  $('#billing-price-value').textContent = 'R$ 39,90';
+  $('#billing-plan-name').textContent = 'PLANO ÚNICO';
+  $('#billing-subscribe').textContent = 'Continuar';
   $('#billing-subscribe').hidden = status === 'suspended';
   $('#billing-refresh').hidden = status === 'suspended';
 }
@@ -513,6 +508,7 @@ function showApp() {
   $('#drawer-name').textContent = appState.profile?.name || 'Médico';
   $('#drawer-email').textContent = appState.profile?.email || 'Dados neste aparelho';
   $('#drawer-avatar').textContent = (appState.profile?.name || 'M').trim().charAt(0).toUpperCase();
+  if (new URLSearchParams(window.location.search).get('action') === 'cancel') currentRoute = 'cancellation';
   navigate(currentRoute);
 }
 
@@ -532,8 +528,9 @@ function navigate(route) {
   currentRoute = route;
   closeDrawer();
   $('#header-title').textContent = TITLES[route] || 'MedRecebe';
-  $('#header-action').textContent = route === 'attendance' ? '‹' : '☰';
-  $('#header-action').setAttribute('aria-label', route === 'attendance' ? 'Voltar' : 'Abrir menu');
+  const subpage = ['attendance', 'cancellation'].includes(route);
+  $('#header-action').textContent = subpage ? '‹' : '☰';
+  $('#header-action').setAttribute('aria-label', subpage ? 'Voltar' : 'Abrir menu');
   $$('[data-nav]').forEach((button) => button.classList.toggle('active', button.dataset.nav === route));
   renderRoute();
   screen.focus({ preventScroll: true });
@@ -567,6 +564,9 @@ function renderRoute() {
       break;
     case 'account':
       renderAccount();
+      break;
+    case 'cancellation':
+      renderCancellation();
       break;
     default:
       renderHome();
@@ -655,14 +655,20 @@ function renderWorkplaces() {
 function renderAttendance() {
   const workplace = appState.workplaces.find((item) => item.id === selectedWorkplaceId);
   if (!workplace) return navigate('home');
-  if (!attendanceDraft) attendanceDraft = { occurredAt: dateOnly(), modalityId: workplace.modalities.find((item) => item.active)?.id || '', notes: '', evidence: '' };
+  if (!attendanceDraft) attendanceDraft = { occurredAt: dateOnly(), modalityId: workplace.modalities.find((item) => item.active)?.id || '', notes: '', evidence: '', patientReference: '', medication: '', includeConsultation: false, consultationModalityId: '' };
   const modality = workplace.modalities.find((item) => item.id === attendanceDraft.modalityId);
   const dueAt = modality ? calculateDueDate(attendanceDraft.occurredAt, modality.rule) : '';
-  const choices = workplace.modalities.filter((item) => item.active).map((item) => `<label class="choice"><input type="radio" name="modality" value="${item.id}" ${item.id === attendanceDraft.modalityId ? 'checked' : ''}/><span><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(describeRule(item.rule))}</small></span><b>${currency(item.amountCents)}</b></label>`).join('');
+  const choices = workplace.modalities.filter((item) => item.active).map((item) => `<label class="choice"><input type="radio" name="modality" value="${item.id}" ${item.id === attendanceDraft.modalityId ? 'checked' : ''}/><span><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(modalityTypeLabel(item))} • ${escapeHtml(describeRule(item.rule))}</small></span><b>${currency(item.amountCents)}</b></label>`).join('');
+  const consultationOptions = workplace.modalities.filter((item) => item.active && item.id !== modality?.id && item.type !== 'recurring');
+  if (modality?.type === 'recurring' && attendanceDraft.includeConsultation && !consultationOptions.some((item) => item.id === attendanceDraft.consultationModalityId)) attendanceDraft.consultationModalityId = consultationOptions[0]?.id || '';
+  const consultation = consultationOptions.find((item) => item.id === attendanceDraft.consultationModalityId);
+  const totalCents = (modality?.amountCents || 0) + (attendanceDraft.includeConsultation ? consultation?.amountCents || 0 : 0);
   const photo = attendanceDraft.evidence
     ? `<img class="photo-preview" src="${attendanceDraft.evidence}" alt="Prévia do comprovante"/><button class="button secondary small" data-action="remove-photo" type="button">Remover foto</button>`
     : `<span class="round-icon">▣</span><strong>Fotografe a prova do atendimento</strong><p>Evite incluir dados clínicos desnecessários. A imagem ficará neste aparelho.</p><label class="button primary small file-button">Abrir câmera<input id="evidence-input" type="file" accept="image/*" capture="environment"/></label>`;
-  screen.innerHTML = `<form class="screen-stack" id="attendance-form">${pageHeading('Novo registro', workplace.name, 'Adicione o comprovante e classifique a modalidade do repasse.')}<label>Data do atendimento<input id="attendance-date" type="date" value="${attendanceDraft.occurredAt}" required/></label><h2 class="section-title">Comprovante</h2><div class="attendance-photo">${photo}</div><h2 class="section-title">Modalidade de repasse</h2><div class="choice-list">${choices}</div><label>Observação (opcional)<textarea id="attendance-notes" placeholder="Inclua somente informações necessárias.">${escapeHtml(attendanceDraft.notes)}</textarea></label>${modality ? `<div class="card summary-card"><span class="summary-main"><small>VALOR CONTABILIZADO</small><strong>${currency(modality.amountCents)}</strong></span><span class="summary-count"><small>CRÉDITO</small><strong style="font-size:14px">${displayDate(dueAt)}</strong></span></div>` : ''}<div class="action-grid"><button class="button secondary" data-action="cancel-attendance" type="button">Cancelar</button><button class="button primary" type="submit">Salvar</button></div></form>`;
+  const recurringFields = modality?.type === 'recurring' ? `<div class="card recurring-fields"><h2 class="section-title">Receita recorrente</h2><label>Identificação do paciente<input id="recurring-patient" value="${escapeHtml(attendanceDraft.patientReference || '')}" placeholder="Use iniciais ou um código interno" required/></label><label>Medicamento ou tratamento<input id="recurring-medication" value="${escapeHtml(attendanceDraft.medication || '')}" placeholder="Ex.: imunobiológico ou medicamento oncológico" required/></label><label class="toggle-choice"><input id="recurring-consultation" type="checkbox" ${attendanceDraft.includeConsultation ? 'checked' : ''} ${consultationOptions.length ? '' : 'disabled'}/><span><strong>Contabilizar também uma consulta</strong><small>${consultationOptions.length ? 'Soma o valor de uma modalidade de consulta ao repasse do medicamento.' : 'Cadastre uma modalidade de consulta neste local para usar esta opção.'}</small></span></label>${attendanceDraft.includeConsultation && consultationOptions.length ? `<label>Modalidade da consulta<select id="recurring-consultation-modality">${consultationOptions.map((item) => `<option value="${item.id}" ${item.id === attendanceDraft.consultationModalityId ? 'selected' : ''}>${escapeHtml(item.name)} • ${currency(item.amountCents)}</option>`).join('')}</select></label>` : ''}</div>` : '';
+  const recorded = appState.attendances.filter((item) => item.workplaceId === workplace.id).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))).slice(0, 20).map((item) => `<article class="card attendance-record"><div><strong>${displayDate(item.occurredAt)} • ${escapeHtml(item.modalityName)}</strong><small>${item.patientReference ? `${escapeHtml(item.patientReference)} • ${escapeHtml(item.medication || '')}<br/>` : ''}${escapeHtml(item.notes || 'Sem observação')}</small></div><span><b>${currency(item.amountCents)}</b><small>${item.status === 'paid' ? 'Recebido' : `Crédito ${displayDate(item.dueAt)}`}</small></span><div class="row-actions"><button class="button secondary small" data-action="edit-attendance" data-id="${item.id}" type="button">Editar</button><button class="danger-link" data-action="delete-attendance" data-id="${item.id}" type="button">Excluir</button></div></article>`).join('');
+  screen.innerHTML = `<div class="screen-stack"><form class="screen-stack" id="attendance-form">${pageHeading(editingAttendanceId ? 'Corrigir registro' : 'Novo registro', workplace.name, editingAttendanceId ? 'Revise os dados e salve a correção.' : 'Adicione o comprovante e classifique a modalidade do repasse.')}<label>Data do atendimento<input id="attendance-date" type="date" value="${attendanceDraft.occurredAt}" required/></label><h2 class="section-title">Comprovante</h2><div class="attendance-photo">${photo}</div><h2 class="section-title">Modalidade de repasse</h2><div class="choice-list">${choices}</div>${recurringFields}<label>Observação (opcional)<textarea id="attendance-notes" placeholder="Inclua somente informações necessárias.">${escapeHtml(attendanceDraft.notes)}</textarea></label>${modality ? `<div class="card summary-card"><span class="summary-main"><small>VALOR CONTABILIZADO</small><strong>${currency(totalCents)}</strong>${attendanceDraft.includeConsultation && consultation ? `<small>Repasse ${currency(modality.amountCents)} + consulta ${currency(consultation.amountCents)}</small>` : ''}</span><span class="summary-count"><small>CRÉDITO</small><strong style="font-size:14px">${displayDate(dueAt)}</strong></span></div>` : ''}<div class="action-grid"><button class="button secondary" data-action="cancel-attendance" type="button">Cancelar</button><button class="button primary" type="submit">${editingAttendanceId ? 'Salvar correção' : 'Salvar'}</button></div></form><h2 class="section-title">Atendimentos registrados</h2><div class="list">${recorded || emptyCard('Nenhum atendimento registrado', 'Os registros deste local aparecerão aqui para consulta e correção.')}</div></div>`;
 }
 
 function legalNameMatches(registeredName, extractedNames = []) {
@@ -787,14 +793,67 @@ function renderAccount() {
     canceled: 'Assinatura cancelada',
   };
   const accessStatus = cloudAccount?.profile?.accessStatus;
-  const planCode = cloudPlanCode();
-  const planName = planCode === 'web' ? 'Plano Web' : 'Plano Mobile';
-  const planPrice = planCode === 'web' ? 'R$ 59,90' : 'R$ 29,90';
   const cloudSection = isCloudMode()
-    ? `<h2 class="section-title">Plano e acesso</h2><div class="card workplace-summary"><div class="card-head"><span class="round-icon">✓</span><div><h3>${planName}</h3><p>${planPrice} por mês</p></div><span class="badge ${accessStatus === 'active' ? '' : 'inactive'}">${escapeHtml(subscriptionLabels[accessStatus] || 'Em configuração')}</span></div>${planCode === 'mobile' ? '<button class="button secondary small" data-action="upgrade-web" type="button">Ativar gestão pelo PC</button>' : '<p class="field-hint">Cadastros, regras e atendimentos são sincronizados entre seus dispositivos.</p>'}</div><button class="button danger" data-action="cancel-subscription" type="button">Cancelar assinatura</button>`
+    ? `<h2 class="section-title">Plano e acesso</h2><div class="card workplace-summary"><div class="card-head"><span class="round-icon">✓</span><div><h3>Plano único</h3><p>R$ 39,90 por mês</p></div><span class="badge ${accessStatus === 'active' ? '' : 'inactive'}">${escapeHtml(subscriptionLabels[accessStatus] || 'Em configuração')}</span></div><p class="field-hint">Cadastros, regras e atendimentos são sincronizados entre o celular e o computador.</p></div>`
     : '';
   const deleteLabel = isCloudMode() ? 'Excluir dados salvos neste aparelho' : 'Excluir conta e dados locais';
-  screen.innerHTML = `<div class="screen-stack">${pageHeading('Perfil e assinatura', 'Conta e instalação', 'Gerencie seu plano, seus dados e a instalação do MedRecebe.')}<div class="card card-head"><span class="avatar">${escapeHtml((appState.profile?.name || 'M').charAt(0))}</span><div><h3>${escapeHtml(appState.profile?.name || 'Médico')}</h3><p>${formatCpf(appState.profile?.cpf || '')}<br/>${escapeHtml(appState.profile?.email || '')}</p></div></div>${cloudSection}<div class="notice success"><strong>${planCode === 'web' ? 'Sincronização protegida' : 'Dados salvos neste aparelho'}</strong><br/>${planCode === 'web' ? 'Registros de gestão ficam disponíveis no iPhone e no PC; comprovantes fotográficos continuam somente no aparelho.' : 'Fechar o MedRecebe ou o Safari não apaga seus cadastros ou atendimentos.'}</div><h2 class="section-title">Instalação</h2><div class="card install-card"><span class="install-icon">${isStandalone() ? '✓' : '⇧'}</span><div><strong>${isStandalone() ? 'MedRecebe instalado' : 'Adicionar à Tela de Início'}</strong><p>${isStandalone() ? 'Você está usando o modo aplicativo.' : 'Abra no Safari e instale o atalho para usar offline.'}</p></div>${isStandalone() ? '' : '<button class="link-button" data-action="install" type="button">Ver passos</button>'}</div><h2 class="section-title">Privacidade e suporte</h2><div class="card account-links"><a class="account-link" href="./privacidade.html" target="_blank" rel="noopener">Política de Privacidade <span>›</span></a><a class="account-link" href="./termos.html" target="_blank" rel="noopener">Termos de Uso <span>›</span></a><a class="account-link" href="./cancelamento.html" target="_blank" rel="noopener">Cancelamento e reembolso <span>›</span></a><a class="account-link" href="./suporte.html" target="_blank" rel="noopener">Ajuda e suporte <span>›</span></a></div><button class="button secondary" data-action="logout" type="button">Sair</button><button class="button danger" data-action="delete-beta-data" type="button">${deleteLabel}</button><p class="muted" style="text-align:center">MedRecebe • versão web 2.0</p></div>`;
+  screen.innerHTML = `<div class="screen-stack">${pageHeading('Perfil e assinatura', 'Conta e instalação', 'Gerencie seu plano, seus dados e a instalação do MedRecebe.')}<div class="card card-head"><span class="avatar">${escapeHtml((appState.profile?.name || 'M').charAt(0))}</span><div><h3>${escapeHtml(appState.profile?.name || 'Médico')}</h3><p>${formatCpf(appState.profile?.cpf || '')}<br/>${escapeHtml(appState.profile?.email || '')}</p></div></div>${cloudSection}<div class="notice success"><strong>Sincronização protegida</strong><br/>Registros de gestão ficam disponíveis no celular e no computador; comprovantes fotográficos continuam somente no aparelho em que foram adicionados.</div><h2 class="section-title">Instalação</h2><div class="card install-card"><span class="install-icon">${isStandalone() ? '✓' : '⇧'}</span><div><strong>${isStandalone() ? 'MedRecebe instalado' : 'Adicionar à Tela de Início'}</strong><p>${isStandalone() ? 'Você está usando o modo aplicativo.' : 'No iPhone, abra no Safari e instale o atalho para usar offline.'}</p></div>${isStandalone() ? '' : '<button class="link-button" data-action="install" type="button">Ver passos</button>'}</div><h2 class="section-title">Privacidade e suporte</h2><div class="card account-links"><a class="account-link" href="./privacidade.html" target="_blank" rel="noopener">Política de Privacidade <span>›</span></a><a class="account-link" href="./termos.html" target="_blank" rel="noopener">Termos de Uso <span>›</span></a><a class="account-link" href="./cancelamento.html" target="_blank" rel="noopener">Política de cancelamento e reembolso <span>›</span></a><a class="account-link" href="./suporte.html" target="_blank" rel="noopener">Ajuda e suporte <span>›</span></a></div><button class="button secondary" data-action="logout" type="button">Sair</button><button class="button danger" data-action="delete-beta-data" type="button">${deleteLabel}</button><p class="muted" style="text-align:center">MedRecebe • versão web 2.1</p></div>`;
+}
+
+function cancellationBackup() {
+  return {
+    product: 'MedRecebe',
+    exportedAt: new Date().toISOString(),
+    profile: appState.profile,
+    workplaces: appState.workplaces,
+    attendances: appState.attendances,
+    invoices: appState.invoices || [],
+  };
+}
+
+async function prepareCancellationBackup() {
+  const file = new File([JSON.stringify(cancellationBackup(), null, 2)], `backup-medrecebe-${dateOnly()}.json`, { type: 'application/json' });
+  if (navigator.canShare?.({ files: [file] })) {
+    await navigator.share({ title: 'Backup MedRecebe', text: `Envie este backup para ${appState.profile?.email || 'seu próprio e-mail'}.`, files: [file] });
+    return;
+  }
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(file);
+  link.download = file.name;
+  link.click();
+  window.setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+  const body = `Seu backup MedRecebe foi preparado e baixado como ${file.name}. Anexe o arquivo a esta mensagem e envie para manter uma cópia no seu próprio e-mail.`;
+  window.location.href = `mailto:${encodeURIComponent(appState.profile?.email || '')}?subject=${encodeURIComponent('Backup dos dados MedRecebe')}&body=${encodeURIComponent(body)}`;
+}
+
+function renderCancellation() {
+  if (!isCloudMode()) return navigate('account');
+  screen.innerHTML = `<div class="screen-stack">${pageHeading('Política e encerramento', 'Solicitar cancelamento', 'Revise as condições antes de confirmar o encerramento da recorrência.')}<div class="notice warning"><strong>Antes de continuar</strong><br/>Dentro dos 7 primeiros dias da contratação, o sistema solicita o reembolso integral do pagamento elegível. Depois desse prazo, o cancelamento impede cobranças futuras, sem restituição proporcional do ciclo iniciado.</div><label class="card backup-choice"><input id="cancel-backup" type="checkbox" checked/><span><strong>Preparar backup para meu e-mail</strong><small>O MedRecebe criará um arquivo com locais, modalidades, atendimentos e conciliações. No iPhone, o Safari abrirá o compartilhamento para você escolher o Mail e enviar ao próprio endereço.</small></span></label><div class="card settings"><p><strong>E-mail cadastrado:</strong> ${escapeHtml(appState.profile?.email || '')}</p><p class="field-hint">As fotos armazenadas neste aparelho são incluídas no arquivo quando disponíveis. Revise o conteúdo antes de enviá-lo.</p></div><button class="button primary" data-action="confirm-cancel-subscription" type="button">Confirmar cancelamento</button><button class="button secondary" data-action="cancel-cancellation" type="button">Voltar sem cancelar</button></div>`;
+}
+
+async function performCancellation(button) {
+  if (!confirm('Confirmar o cancelamento da assinatura? A recorrência será encerrada e esta ação poderá bloquear o acesso após a conclusão.')) return;
+  button.disabled = true;
+  button.textContent = 'Cancelando…';
+  const wantsBackup = Boolean($('#cancel-backup')?.checked);
+  try {
+    const result = await cloud.cancelSubscription();
+    if (wantsBackup) {
+      try { await prepareCancellationBackup(); } catch (backupError) { showToast('Cancelamento concluído. O compartilhamento do backup não foi finalizado.'); }
+    }
+    const restored = await cloud.restore();
+    if (restored) applyCloudAccount(restored);
+    const message = result.refunded
+      ? 'Assinatura cancelada e reembolso solicitado.'
+      : result.refundPending
+        ? 'Assinatura cancelada. O reembolso será conferido pelo suporte.'
+        : 'Assinatura cancelada. Não haverá novas cobranças.';
+    showToast(message);
+  } catch (error) {
+    button.disabled = false;
+    button.textContent = 'Confirmar cancelamento';
+    showToast(error instanceof Error ? error.message : 'Não foi possível cancelar agora.');
+  }
 }
 
 function openInstallModal() {
@@ -821,25 +880,34 @@ function editWorkplace(workplaceId) {
 }
 
 function renderWorkplaceModal() {
-  const modalityRows = draftWorkplace.modalities.map((modality, index) => `<div class="editor-row"><span><strong>${escapeHtml(modality.name)} • ${currency(modality.amountCents)}</strong><small>${escapeHtml(describeRule(modality.rule))}</small></span><span><button data-action="edit-modality" data-index="${index}" type="button">Editar</button><button data-action="delete-modality" data-index="${index}" type="button">Excluir</button></span></div>`).join('');
+  const modalityRows = draftWorkplace.modalities.map((modality, index) => `<div class="editor-row"><span><strong>${escapeHtml(modality.name)} • ${currency(modality.amountCents)}</strong><small>${escapeHtml(modalityTypeLabel(modality))} • ${escapeHtml(describeRule(modality.rule))}</small></span><span><button data-action="edit-modality" data-index="${index}" type="button">Editar</button><button data-action="delete-modality" data-index="${index}" type="button">Excluir</button></span></div>`).join('');
   const editing = editingModalityIndex === null ? null : draftWorkplace.modalities[editingModalityIndex];
   const modality = editing || { name: '', type: 'plan', amountCents: 0, rule: { kind: 'calendar_days', days: 30 } };
-  modalRoot.innerHTML = `<div class="modal-wrap"><section class="modal-sheet" role="dialog" aria-modal="true"><header class="modal-header"><button data-action="close-modal" type="button">Cancelar</button><h2>${appState.workplaces.some((item) => item.id === draftWorkplace.id) ? 'Editar local' : 'Novo local'}</h2><button data-action="save-workplace" type="button">Salvar</button></header><div class="modal-body"><div class="form-grid"><label>Nome do local<input id="work-name" value="${escapeHtml(draftWorkplace.name)}" placeholder="Ex.: Clínica Horizonte"/></label><label>Razão Social do pagador<input id="work-legal-name" value="${escapeHtml(draftWorkplace.payerLegalName || '')}" placeholder="Razão Social exibida na Nota Fiscal"/></label><label>CNPJ do pagador<input id="work-cnpj" inputmode="numeric" maxlength="18" value="${formatCnpj(draftWorkplace.payerCnpj || '')}" placeholder="00.000.000/0000-00"/></label><label>Endereço<input id="work-address" value="${escapeHtml(draftWorkplace.address)}" placeholder="Rua, número e cidade"/></label><label>E-mail oficial para conciliação<input id="work-email" type="email" value="${escapeHtml(draftWorkplace.reconciliationEmail)}" placeholder="financeiro@clinica.com.br"/></label><label>E-mail em cópia<input id="work-cc" value="${escapeHtml(draftWorkplace.reconciliationCc || '')}" placeholder="gestor@clinica.com.br"/></label></div><div class="notice">O CNPJ e a Razão Social são usados para identificar automaticamente o pagador na Nota Fiscal.</div><h3 class="section-title">Modalidades</h3><div class="modalities-editor">${modalityRows || '<div class="notice warning">Cadastre pelo menos uma modalidade.</div>'}</div><div class="modality-form"><h3>${editing ? 'Editar modalidade' : 'Adicionar modalidade'}</h3><label>Nome<input id="mod-name" value="${escapeHtml(modality.name)}" placeholder="Ex.: Unimed ou particular"/></label><div class="inline-grid"><label>Tipo<select id="mod-type"><option value="plan" ${modality.type === 'plan' ? 'selected' : ''}>Plano</option><option value="private" ${modality.type === 'private' ? 'selected' : ''}>Particular</option></select></label><label>Valor (R$)<input id="mod-value" inputmode="decimal" value="${modality.amountCents ? (modality.amountCents / 100).toFixed(2).replace('.', ',') : ''}" placeholder="0,00"/></label></div><label>Regra<select id="mod-rule">${ruleOptions(modality.rule.kind)}</select></label><div id="rule-fields">${ruleFields(modality.rule)}</div><button class="button secondary small" data-action="save-modality" type="button">${editing ? 'Atualizar modalidade' : 'Adicionar modalidade'}</button></div><div class="notice">Na regra personalizada, guarde o texto contratual e confira o exemplo de vencimento antes de salvar.</div></div></section></div>`;
+  modalRoot.innerHTML = `<div class="modal-wrap"><section class="modal-sheet" role="dialog" aria-modal="true"><header class="modal-header simple"><span></span><h2>${appState.workplaces.some((item) => item.id === draftWorkplace.id) ? 'Editar local' : 'Novo local'}</h2><button data-action="close-modal" aria-label="Fechar" type="button">×</button></header><div class="modal-body"><div class="form-grid"><label>Nome do local<input id="work-name" value="${escapeHtml(draftWorkplace.name)}" placeholder="Ex.: Clínica Horizonte"/></label><label>Razão Social do pagador<input id="work-legal-name" value="${escapeHtml(draftWorkplace.payerLegalName || '')}" placeholder="Razão Social exibida na Nota Fiscal"/></label><label>CNPJ do pagador<input id="work-cnpj" inputmode="numeric" maxlength="18" value="${formatCnpj(draftWorkplace.payerCnpj || '')}" placeholder="00.000.000/0000-00"/></label><label>Endereço<input id="work-address" value="${escapeHtml(draftWorkplace.address)}" placeholder="Rua, número e cidade"/></label><label>E-mail oficial para conciliação<input id="work-email" type="email" value="${escapeHtml(draftWorkplace.reconciliationEmail)}" placeholder="financeiro@clinica.com.br"/></label><label>E-mail em cópia<input id="work-cc" value="${escapeHtml(draftWorkplace.reconciliationCc || '')}" placeholder="gestor@clinica.com.br"/></label></div><div class="notice">O CNPJ e a Razão Social são usados para identificar automaticamente o pagador na Nota Fiscal.</div><div class="modality-form"><h3>${editing ? 'Editar modalidade' : 'Adicionar modalidade'}</h3><label>Nome<input id="mod-name" value="${escapeHtml(modality.name)}" placeholder="Ex.: Consulta, Unimed ou imunobiológico"/></label><div class="inline-grid"><label>Tipo<select id="mod-type"><option value="plan" ${modality.type === 'plan' ? 'selected' : ''}>Plano</option><option value="private" ${modality.type === 'private' ? 'selected' : ''}>Particular</option><option value="recurring" ${modality.type === 'recurring' ? 'selected' : ''}>Receita recorrente</option><option value="custom" ${modality.type === 'custom' ? 'selected' : ''}>Personalizado</option></select></label><label>Valor (R$)<input id="mod-value" inputmode="decimal" value="${modality.amountCents ? (modality.amountCents / 100).toFixed(2).replace('.', ',') : ''}" placeholder="0,00"/></label></div><label id="mod-custom-type-wrap" ${modality.type === 'custom' ? '' : 'hidden'}>Nome do tipo personalizado<input id="mod-custom-type" value="${escapeHtml(modality.customType || '')}" placeholder="Ex.: Teleinterconsulta"/></label>${modality.type === 'recurring' ? '<div class="notice success">No atendimento, será possível identificar o paciente, o medicamento e contabilizar também uma consulta.</div>' : ''}<label>Regra de pagamento<select id="mod-rule">${ruleOptions(modality.rule.kind)}</select></label><div id="rule-fields">${ruleFields(modality.rule)}</div><button class="button secondary small" data-action="save-modality" type="button">${editing ? 'Atualizar modalidade' : 'Adicionar e continuar'}</button><p class="field-hint">A modalidade é adicionada automaticamente à lista abaixo e o formulário permanece disponível para o próximo cadastro.</p></div><h3 class="section-title">Modalidades cadastradas</h3><div class="modalities-editor">${modalityRows || '<div class="notice warning">Cadastre pelo menos uma modalidade.</div>'}</div><div class="modal-final-actions"><button class="button primary" data-action="save-workplace" type="button">Salvar</button><button class="button secondary" data-action="close-modal" type="button">Cancelar</button></div></div></section></div>`;
+}
+
+function modalityTypeLabel(modality) {
+  if (modality.type === 'plan') return 'Plano';
+  if (modality.type === 'private') return 'Particular';
+  if (modality.type === 'recurring') return 'Receita recorrente';
+  if (modality.type === 'custom') return modality.customType || 'Personalizado';
+  return 'Modalidade';
 }
 
 function ruleOptions(selected) {
   const options = [
     ['calendar_days', 'Dias corridos'], ['immediate', 'À vista'], ['advance', 'Antecipado'],
     ['first_business_day_next_month', '1º dia útil do mês seguinte'], ['last_business_day_next_month', 'Último dia útil do mês seguinte'],
-    ['weekly', 'Dia da semana seguinte'], ['custom', 'Regra personalizada'],
   ];
+  if (selected === 'weekly') options.push(['weekly', 'Regra legada: dia da semana seguinte']);
+  if (selected === 'custom') options.push(['custom', 'Regra legada personalizada']);
   return options.map(([value, label]) => `<option value="${value}" ${value === selected ? 'selected' : ''}>${label}</option>`).join('');
 }
 
 function ruleFields(rule) {
   if (['calendar_days', 'advance'].includes(rule.kind)) return `<label>Quantidade de dias<input id="rule-days" inputmode="numeric" value="${Number(rule.days) || 0}"/></label>`;
   if (rule.kind === 'weekly') return `<label>Dia da semana<select id="rule-weekday">${[['1', 'Segunda'], ['2', 'Terça'], ['3', 'Quarta'], ['4', 'Quinta'], ['5', 'Sexta']].map(([value, label]) => `<option value="${value}" ${Number(value) === Number(rule.weekday || 5) ? 'selected' : ''}>${label}</option>`).join('')}</select></label>`;
-  if (rule.kind === 'custom') return `<div class="form-grid"><label>Data-base<select id="rule-basis"><option value="service_date" ${rule.basis === 'service_date' ? 'selected' : ''}>Data do atendimento</option><option value="end_of_week" ${rule.basis === 'end_of_week' ? 'selected' : ''}>Fim da semana</option><option value="end_of_month" ${rule.basis === 'end_of_month' ? 'selected' : ''}>Fim do mês</option></select></label><div class="inline-grid"><label>Deslocamento<input id="rule-offset" inputmode="numeric" value="${Number(rule.offset) || 0}"/></label><label>Unidade<select id="rule-unit"><option value="days" ${rule.unit === 'days' ? 'selected' : ''}>Dias</option><option value="weeks" ${rule.unit === 'weeks' ? 'selected' : ''}>Semanas</option><option value="months" ${rule.unit === 'months' ? 'selected' : ''}>Meses</option></select></label></div><label>Ajuste<select id="rule-adjustment"><option value="none">Sem ajuste</option><option value="next_business_day" ${rule.adjustment === 'next_business_day' ? 'selected' : ''}>Próximo dia útil</option><option value="previous_business_day" ${rule.adjustment === 'previous_business_day' ? 'selected' : ''}>Dia útil anterior</option><option value="first_business_day" ${rule.adjustment === 'first_business_day' ? 'selected' : ''}>1º dia útil do mês</option><option value="last_business_day" ${rule.adjustment === 'last_business_day' ? 'selected' : ''}>Último dia útil do mês</option></select></label><label>Texto acordado<textarea id="rule-text" placeholder="Descreva fielmente a cláusula.">${escapeHtml(rule.contractualText || '')}</textarea></label></div>`;
+  if (rule.kind === 'custom') return `<div class="form-grid"><div class="notice warning">Esta é uma regra legada. Ela continua disponível para preservar cadastros existentes, mas não aparece em novas modalidades.</div><label>Data-base<select id="rule-basis"><option value="service_date" ${rule.basis === 'service_date' ? 'selected' : ''}>Data do atendimento</option><option value="end_of_week" ${rule.basis === 'end_of_week' ? 'selected' : ''}>Fim da semana</option><option value="end_of_month" ${rule.basis === 'end_of_month' ? 'selected' : ''}>Fim do mês</option></select></label><div class="inline-grid"><label>Deslocamento<input id="rule-offset" inputmode="numeric" value="${Number(rule.offset) || 0}"/></label><label>Unidade<select id="rule-unit"><option value="days" ${rule.unit === 'days' ? 'selected' : ''}>Dias</option><option value="weeks" ${rule.unit === 'weeks' ? 'selected' : ''}>Semanas</option><option value="months" ${rule.unit === 'months' ? 'selected' : ''}>Meses</option></select></label></div><label>Ajuste<select id="rule-adjustment"><option value="none">Sem ajuste</option><option value="next_business_day" ${rule.adjustment === 'next_business_day' ? 'selected' : ''}>Próximo dia útil</option><option value="previous_business_day" ${rule.adjustment === 'previous_business_day' ? 'selected' : ''}>Dia útil anterior</option><option value="first_business_day" ${rule.adjustment === 'first_business_day' ? 'selected' : ''}>1º dia útil do mês</option><option value="last_business_day" ${rule.adjustment === 'last_business_day' ? 'selected' : ''}>Último dia útil do mês</option></select></label><label>Texto acordado (opcional)<textarea id="rule-text">${escapeHtml(rule.contractualText || '')}</textarea></label></div>`;
   return '<p class="field-hint">A data prevista será calculada automaticamente.</p>';
 }
 
@@ -909,7 +977,7 @@ function setAuthMode(mode) {
   $('#auth-title').textContent = register ? 'Criar meu acesso' : 'Boas-vindas';
   $('#auth-description').textContent = register
     ? isCloudMode()
-      ? `Crie sua conta para contratar o Plano ${selectedPlanCode === 'web' ? 'Web' : 'Mobile'} com 7 dias de garantia.`
+      ? 'Crie sua conta para contratar o plano único com 7 dias de garantia.'
       : 'Cadastre seus dados reais. A conta permanecerá salva neste aparelho.'
     : isCloudMode()
       ? 'Entre com o CPF e a senha da sua conta MedRecebe.'
@@ -1031,7 +1099,7 @@ function bindEvents() {
 
   $('#billing-logout').addEventListener('click', logout);
 
-  $('#header-action').addEventListener('click', () => (currentRoute === 'attendance' ? navigate('home') : openDrawer()));
+  $('#header-action').addEventListener('click', () => (currentRoute === 'attendance' ? navigate('home') : currentRoute === 'cancellation' ? navigate('account') : openDrawer()));
   $('#feedback-shortcut').addEventListener('click', () => navigate('feedback'));
   $('#drawer-close').addEventListener('click', closeDrawer);
   $('#drawer-backdrop').addEventListener('click', closeDrawer);
@@ -1049,34 +1117,8 @@ function handleClick(event) {
   const target = event.target.closest('[data-action]');
   if (!target) return;
   const { action, id: targetId, ids, index, value } = target.dataset;
-  if (action === 'select-plan') {
-    selectedPlanCode = target.dataset.plan === 'web' ? 'web' : 'mobile';
-    showBilling();
-  }
-  if (action === 'upgrade-web') {
-    selectedPlanCode = 'web';
-    showBilling();
-  }
-  if (action === 'cancel-subscription' && confirm('Cancelar o acesso? Se o pagamento tiver até 7 dias, o MedRecebe solicitará o reembolso integral automaticamente.')) {
-    target.disabled = true;
-    target.textContent = 'Cancelando…';
-    cloud.cancelSubscription()
-      .then(async (result) => {
-        const restored = await cloud.restore();
-        if (restored) applyCloudAccount(restored);
-        const message = result.refunded
-          ? 'Assinatura cancelada e reembolso solicitado.'
-          : result.refundPending
-            ? 'Assinatura cancelada. O reembolso será conferido pelo suporte.'
-            : 'Assinatura cancelada. Não haverá novas cobranças.';
-        showToast(message);
-      })
-      .catch((error) => {
-        target.disabled = false;
-        target.textContent = 'Cancelar assinatura';
-        showToast(error instanceof Error ? error.message : 'Não foi possível cancelar agora.');
-      });
-  }
+  if (action === 'confirm-cancel-subscription') void performCancellation(target);
+  if (action === 'cancel-cancellation') navigate('account');
   if (action === 'install') openInstallModal();
   if (action === 'close-modal') modalRoot.innerHTML = '';
   if (action === 'new-workplace') newWorkplace();
@@ -1090,9 +1132,42 @@ function handleClick(event) {
   if (action === 'open-attendance') {
     selectedWorkplaceId = targetId;
     attendanceDraft = null;
+    editingAttendanceId = '';
     navigate('attendance');
   }
-  if (action === 'cancel-attendance') navigate('home');
+  if (action === 'cancel-attendance') {
+    attendanceDraft = null;
+    editingAttendanceId = '';
+    navigate('home');
+  }
+  if (action === 'edit-attendance') {
+    const attendance = appState.attendances.find((item) => item.id === targetId);
+    if (attendance) {
+      editingAttendanceId = attendance.id;
+      attendanceDraft = {
+        occurredAt: attendance.occurredAt,
+        modalityId: attendance.modalityId,
+        notes: attendance.notes || '',
+        evidence: attendance.evidence || '',
+        patientReference: attendance.patientReference || '',
+        medication: attendance.medication || '',
+        includeConsultation: Boolean(attendance.includeConsultation),
+        consultationModalityId: attendance.consultationModalityId || '',
+      };
+      renderAttendance();
+      window.scrollTo(0, 0);
+    }
+  }
+  if (action === 'delete-attendance' && confirm('Excluir este atendimento registrado? Esta ação remove o valor do Dashboard e não pode ser desfeita.')) {
+    appState.attendances = appState.attendances.filter((item) => item.id !== targetId);
+    if (editingAttendanceId === targetId) {
+      editingAttendanceId = '';
+      attendanceDraft = null;
+    }
+    saveState();
+    renderAttendance();
+    showToast('Atendimento excluído.');
+  }
   if (action === 'remove-photo') {
     attendanceDraft.evidence = '';
     renderAttendance();
@@ -1133,6 +1208,7 @@ function handleClick(event) {
     preserveWorkplaceFields();
     draftWorkplace.modalities.splice(Number(index), 1);
     editingModalityIndex = null;
+    autosaveExistingWorkplace();
     renderWorkplaceModal();
   }
   if (action === 'save-modality') saveModality();
@@ -1141,12 +1217,26 @@ function handleClick(event) {
 
 function handleChange(event) {
   if (event.target.id === 'mod-rule') $('#rule-fields').innerHTML = ruleFields({ kind: event.target.value });
+  if (event.target.id === 'mod-type') {
+    const custom = $('#mod-custom-type-wrap');
+    if (custom) custom.hidden = event.target.value !== 'custom';
+  }
   if (currentRoute === 'attendance' && attendanceDraft && event.target.id === 'attendance-date') {
     attendanceDraft.occurredAt = event.target.value;
     renderAttendance();
   }
   if (currentRoute === 'attendance' && attendanceDraft && event.target.name === 'modality') {
     attendanceDraft.modalityId = event.target.value;
+    attendanceDraft.includeConsultation = false;
+    attendanceDraft.consultationModalityId = '';
+    renderAttendance();
+  }
+  if (currentRoute === 'attendance' && attendanceDraft && event.target.id === 'recurring-consultation') {
+    attendanceDraft.includeConsultation = event.target.checked;
+    renderAttendance();
+  }
+  if (currentRoute === 'attendance' && attendanceDraft && event.target.id === 'recurring-consultation-modality') {
+    attendanceDraft.consultationModalityId = event.target.value;
     renderAttendance();
   }
   if (event.target.id === 'channel-workplace') {
@@ -1188,6 +1278,8 @@ function handleInput(event) {
   if (currentRoute !== 'attendance' || !attendanceDraft) return;
   if (event.target.id === 'attendance-date') attendanceDraft.occurredAt = event.target.value;
   if (event.target.id === 'attendance-notes') attendanceDraft.notes = event.target.value;
+  if (event.target.id === 'recurring-patient') attendanceDraft.patientReference = event.target.value;
+  if (event.target.id === 'recurring-medication') attendanceDraft.medication = event.target.value;
   if (event.target.name === 'modality') attendanceDraft.modalityId = event.target.value;
 }
 
@@ -1197,15 +1289,23 @@ function handleSubmit(event) {
     const modality = appState.workplaces.find((item) => item.id === selectedWorkplaceId)?.modalities.find((item) => item.id === attendanceDraft.modalityId);
     if (!attendanceDraft.evidence) return showToast('Adicione a foto do comprovante.');
     if (!modality) return showToast('Selecione a modalidade de repasse.');
-    const attendance = { id: id('att'), workplaceId: selectedWorkplaceId, modalityId: modality.id, modalityName: modality.name, occurredAt: attendanceDraft.occurredAt, dueAt: calculateDueDate(attendanceDraft.occurredAt, modality.rule), amountCents: modality.amountCents, evidence: attendanceDraft.evidence, notes: attendanceDraft.notes.trim(), status: 'pending', createdAt: new Date().toISOString() };
-    appState.attendances.unshift(attendance);
+    if (modality.type === 'recurring' && !attendanceDraft.patientReference.trim()) return showToast('Informe uma identificação mínima do paciente.');
+    if (modality.type === 'recurring' && !attendanceDraft.medication.trim()) return showToast('Informe o medicamento ou tratamento.');
+    const workplace = appState.workplaces.find((item) => item.id === selectedWorkplaceId);
+    const consultation = attendanceDraft.includeConsultation ? workplace?.modalities.find((item) => item.id === attendanceDraft.consultationModalityId) : null;
+    if (attendanceDraft.includeConsultation && !consultation) return showToast('Selecione a modalidade da consulta.');
+    const previous = editingAttendanceId ? appState.attendances.find((item) => item.id === editingAttendanceId) : null;
+    const attendance = { id: previous?.id || id('att'), workplaceId: selectedWorkplaceId, modalityId: modality.id, modalityName: modality.name, modalityType: modality.type, occurredAt: attendanceDraft.occurredAt, dueAt: calculateDueDate(attendanceDraft.occurredAt, modality.rule), amountCents: modality.amountCents + (consultation?.amountCents || 0), baseAmountCents: modality.amountCents, evidence: attendanceDraft.evidence, notes: attendanceDraft.notes.trim(), patientReference: modality.type === 'recurring' ? attendanceDraft.patientReference.trim() : '', medication: modality.type === 'recurring' ? attendanceDraft.medication.trim() : '', includeConsultation: Boolean(consultation), consultationModalityId: consultation?.id || '', consultationModalityName: consultation?.name || '', consultationAmountCents: consultation?.amountCents || 0, status: previous?.status || 'pending', createdAt: previous?.createdAt || new Date().toISOString(), updatedAt: new Date().toISOString() };
+    if (previous) appState.attendances = appState.attendances.map((item) => (item.id === previous.id ? attendance : item));
+    else appState.attendances.unshift(attendance);
     if (!saveState()) {
-      appState.attendances.shift();
       return;
     }
     attendanceDraft = null;
-    navigate('home');
-    showToast('Atendimento salvo e adicionado ao Dashboard.');
+    const corrected = Boolean(editingAttendanceId);
+    editingAttendanceId = '';
+    renderAttendance();
+    showToast(corrected ? 'Correção salva no atendimento.' : 'Atendimento salvo e adicionado ao Dashboard.');
   }
   if (event.target.id === 'channel-form') {
     event.preventDefault();
@@ -1235,13 +1335,23 @@ function saveModality() {
   const amountCents = parseMoney($('#mod-value').value);
   const rule = readRuleForm();
   if (!name || amountCents <= 0) return showToast('Informe nome e valor da modalidade.');
-  if (rule.kind === 'custom' && !rule.contractualText) return showToast('Registre o texto acordado na regra personalizada.');
+  const type = $('#mod-type').value;
+  const customType = type === 'custom' ? $('#mod-custom-type').value.trim() : '';
+  if (type === 'custom' && !customType) return showToast('Informe o nome do tipo personalizado.');
   const existing = editingModalityIndex === null ? null : draftWorkplace.modalities[editingModalityIndex];
-  const modality = { id: existing?.id || id('mod'), name, type: $('#mod-type').value, amountCents, rule, active: true };
+  const modality = { id: existing?.id || id('mod'), name, type, customType, amountCents, rule, active: true };
   if (editingModalityIndex === null) draftWorkplace.modalities.push(modality);
   else draftWorkplace.modalities[editingModalityIndex] = modality;
   editingModalityIndex = null;
+  autosaveExistingWorkplace();
   renderWorkplaceModal();
+  showToast('Modalidade salva. Você pode cadastrar a próxima.');
+}
+
+function autosaveExistingWorkplace() {
+  if (!draftWorkplace || !appState.workplaces.some((item) => item.id === draftWorkplace.id)) return;
+  appState.workplaces = appState.workplaces.map((item) => (item.id === draftWorkplace.id ? structuredClone(draftWorkplace) : item));
+  saveState();
 }
 
 function saveWorkplace() {

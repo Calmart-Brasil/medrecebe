@@ -1,5 +1,6 @@
 import { reconcileUserBilling } from '../_shared/billing.ts';
 import { json, options, publicError } from '../_shared/http.ts';
+import { mercadoPago } from '../_shared/mercado-pago.ts';
 import { adminClient, authenticatedUser } from '../_shared/supabase.ts';
 
 Deno.serve(async (request) => {
@@ -12,7 +13,7 @@ Deno.serve(async (request) => {
     const admin = adminClient();
     let { data: profile, error } = await admin
       .from('profiles')
-      .select('id, full_name, email, cpf_last4, role, access_status, selected_plan, manual_access_until')
+      .select('id, full_name, email, cpf_last4, role, access_status, selected_plan, manual_access_until, manual_access_lifetime, suspension_scheduled_at, suspension_reason, forced_suspension_at')
       .eq('id', user.id)
       .single();
     if (error || !profile) return publicError(request, 'Conta não encontrada.', 404);
@@ -24,13 +25,15 @@ Deno.serve(async (request) => {
       .eq('is_current', true)
       .maybeSingle();
 
-    if (profile.role !== 'admin' && subscription?.provider_subscription_id) {
+    const scheduledTimeBeforeSync = Date.parse(profile.suspension_scheduled_at || '');
+    const scheduledAccessActive = Number.isFinite(scheduledTimeBeforeSync) && scheduledTimeBeforeSync > Date.now();
+    if (profile.role !== 'admin' && subscription?.provider_subscription_id && !scheduledAccessActive) {
       try {
         await reconcileUserBilling(user.id, subscription.provider_subscription_id, subscription.created_at, Number(subscription.amount_cents) / 100);
         const [profileResult, subscriptionResult] = await Promise.all([
           admin
             .from('profiles')
-            .select('id, full_name, email, cpf_last4, role, access_status, selected_plan, manual_access_until')
+            .select('id, full_name, email, cpf_last4, role, access_status, selected_plan, manual_access_until, manual_access_lifetime, suspension_scheduled_at, suspension_reason, forced_suspension_at')
             .eq('id', user.id)
             .single(),
           admin
@@ -47,11 +50,34 @@ Deno.serve(async (request) => {
       }
     }
 
+    if (profile.role !== 'admin' && subscription?.status === 'authorized' && subscription.provider_subscription_id && Number(subscription.amount_cents) !== 3990) {
+      try {
+        await mercadoPago(`/preapproval/${encodeURIComponent(subscription.provider_subscription_id)}`, {
+          method: 'PUT',
+          body: JSON.stringify({ auto_recurring: { transaction_amount: 39.9, currency_id: 'BRL', end_date: null } }),
+        });
+        await Promise.all([
+          admin.from('subscriptions').update({ amount_cents: 3990, plan_code: 'standard' }).eq('id', subscription.id),
+          admin.from('profiles').update({ selected_plan: 'standard' }).eq('id', profile.id),
+        ]);
+        subscription.amount_cents = 3990;
+        subscription.plan_code = 'standard';
+        profile.selected_plan = 'standard';
+      } catch (priceError) {
+        console.error('account-status price normalization', priceError);
+      }
+    }
+
+    const scheduledTime = Date.parse(profile.suspension_scheduled_at || '');
+    const scheduledSuspensionDue = profile.role !== 'admin' && Number.isFinite(scheduledTime) && scheduledTime <= Date.now();
+    const scheduledPeriodActive = profile.role !== 'admin' && Number.isFinite(scheduledTime) && scheduledTime > Date.now();
     const shouldEvaluateAccess = profile.role !== 'admin' && !['suspended', 'canceled', 'past_due'].includes(profile.access_status);
-    const manualAccessActive = profile.role !== 'admin' && Date.parse(profile.manual_access_until || '') > Date.now();
-    const effectiveAccess = shouldEvaluateAccess
-      ? subscription?.status === 'authorized' || manualAccessActive ? 'active' : 'pending_payment'
-      : profile.access_status;
+    const manualAccessActive = profile.role !== 'admin' && (profile.manual_access_lifetime || Date.parse(profile.manual_access_until || '') > Date.now());
+    const effectiveAccess = scheduledSuspensionDue
+      ? 'suspended'
+      : shouldEvaluateAccess
+        ? subscription?.status === 'authorized' || manualAccessActive || scheduledPeriodActive ? 'active' : 'pending_payment'
+        : profile.access_status;
     if (effectiveAccess !== profile.access_status) {
       await admin.from('profiles').update({ access_status: effectiveAccess }).eq('id', profile.id);
       profile.access_status = effectiveAccess;
@@ -67,6 +93,10 @@ Deno.serve(async (request) => {
         accessStatus: profile.access_status,
         planCode: profile.selected_plan,
         manualAccessUntil: profile.manual_access_until,
+        manualAccessLifetime: profile.manual_access_lifetime,
+        suspensionScheduledAt: profile.suspension_scheduled_at,
+        suspensionReason: profile.suspension_reason,
+        forcedSuspensionAt: profile.forced_suspension_at,
       },
       subscription: subscription
         ? {
