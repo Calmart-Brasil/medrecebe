@@ -57,7 +57,7 @@ assert.ok(
   'appState só pode ser carregado depois da mensagem padrão usada pelo estado vazio',
 );
 assert.ok(!html.includes('Beta local:'), 'o aviso antigo de beta local não deve aparecer na entrada');
-assert.ok(html.includes('styles.css?v=3') && html.includes('app.js?v=3'), 'os arquivos corrigidos precisam de cache busting');
+assert.ok(html.includes('styles.css?v=3') && html.includes('app.js?v=4'), 'os arquivos corrigidos precisam de cache busting');
 for (const marker of ['billing-view', 'R$ 29,90', 'runtime-config.js', 'cloud.js']) {
   assert.ok(html.includes(marker), `fluxo de assinatura sem: ${marker}`);
 }
@@ -67,12 +67,16 @@ for (const marker of ['register', 'login-cpf', 'create-subscription', 'account-s
 for (const marker of ['MedRecebe Admin', 'admin-users']) {
   assert.ok(adminHtml.includes(marker) || adminApp.includes(marker), `painel administrativo sem: ${marker}`);
 }
+for (const marker of ['admin.css?v=2', 'users-toolbar', 'Base de usuários']) {
+  assert.ok(adminHtml.includes(marker), `layout administrativo desktop sem: ${marker}`);
+}
+assert.ok(!app.includes('Abrir painel administrativo'), 'o painel administrativo não deve aparecer no app móvel');
 assert.ok(cloud.includes('admin-update-user'), 'cliente cloud sem comando administrativo');
 for (const marker of ['profiles', 'subscriptions', 'billing_events', 'admin_audit_log', 'row level security']) {
   assert.ok(migration.toLowerCase().includes(marker), `banco de produção sem: ${marker}`);
 }
 
-for (const marker of ['install', 'activate', 'fetch', 'caches.open', 'medrecebe-beta-v3']) {
+for (const marker of ['install', 'activate', 'fetch', 'caches.open', 'medrecebe-beta-v4']) {
   assert.ok(worker.includes(marker), `sw.js sem: ${marker}`);
 }
 
