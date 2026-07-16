@@ -17,11 +17,17 @@ Deno.serve(async (request) => {
     const digest = await cpfHash(cpf);
     const { data: profile } = await admin
       .from('profiles')
-      .select('id, full_name, email, cpf_last4, role, access_status, selected_plan, manual_access_until')
+      .select('id, full_name, email, cpf_last4, role, access_status, selected_plan, manual_access_until, manual_access_lifetime, suspension_scheduled_at, suspension_reason, forced_suspension_at')
       .eq('cpf_hash', digest)
       .maybeSingle();
 
-    if (!profile || profile.access_status === 'suspended') return publicError(request, 'CPF ou senha incorretos.', 401);
+    if (!profile) return publicError(request, 'CPF ou senha incorretos.', 401);
+    const scheduledTime = Date.parse(profile.suspension_scheduled_at || '');
+    if (profile.role !== 'admin' && Number.isFinite(scheduledTime) && scheduledTime <= Date.now()) {
+      await admin.from('profiles').update({ access_status: 'suspended' }).eq('id', profile.id);
+      profile.access_status = 'suspended';
+    }
+    if (profile.access_status === 'suspended') return publicError(request, 'CPF ou senha incorretos.', 401);
 
     const { data: auth, error: authError } = await publicClient().auth.signInWithPassword({
       email: profile.email,
@@ -36,10 +42,11 @@ Deno.serve(async (request) => {
       .eq('is_current', true)
       .maybeSingle();
 
-    const manualAccessActive = profile.role !== 'admin' && Date.parse(profile.manual_access_until || '') > Date.now();
+    const manualAccessActive = profile.role !== 'admin' && (profile.manual_access_lifetime || Date.parse(profile.manual_access_until || '') > Date.now());
+    const scheduledPeriodActive = profile.role !== 'admin' && Number.isFinite(scheduledTime) && scheduledTime > Date.now();
     const shouldEvaluateAccess = profile.role !== 'admin' && !['suspended', 'canceled', 'past_due'].includes(profile.access_status);
     const effectiveAccess = shouldEvaluateAccess
-      ? subscription?.status === 'authorized' || manualAccessActive ? 'active' : 'pending_payment'
+      ? subscription?.status === 'authorized' || manualAccessActive || scheduledPeriodActive ? 'active' : 'pending_payment'
       : profile.access_status;
     if (effectiveAccess !== profile.access_status) {
       await admin.from('profiles').update({ access_status: effectiveAccess }).eq('id', profile.id);
@@ -60,6 +67,10 @@ Deno.serve(async (request) => {
         accessStatus: effectiveAccess,
         planCode: profile.selected_plan,
         manualAccessUntil: profile.manual_access_until,
+        manualAccessLifetime: profile.manual_access_lifetime,
+        suspensionScheduledAt: profile.suspension_scheduled_at,
+        suspensionReason: profile.suspension_reason,
+        forcedSuspensionAt: profile.forced_suspension_at,
       },
       subscription: subscription
         ? {

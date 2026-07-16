@@ -13,7 +13,7 @@ Deno.serve(async (request) => {
     const email = String(body.email || '').trim().toLowerCase();
     const cpf = onlyDigits(String(body.cpf || ''));
     const password = String(body.password || '');
-    const planCode = body.planCode === 'web' ? 'web' : 'mobile';
+    const planCode = 'standard';
 
     if (fullName.length < 3) return publicError(request, 'Informe seu nome completo.');
     if (!isValidCpf(cpf)) return publicError(request, 'Informe um CPF válido.');

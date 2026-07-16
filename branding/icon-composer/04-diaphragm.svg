@@ -1,4 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
-  <circle cx="814" cy="603" r="93" fill="#EAF5FF"/>
-  <circle cx="814" cy="603" r="58" fill="#12CFC5"/>
+  <defs><filter id="greenGlow" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="22" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
+  <circle cx="814" cy="603" r="93" fill="#FFFFFF" fill-opacity=".96"/>
+  <circle cx="814" cy="603" r="62" fill="#32FFAE" filter="url(#greenGlow)"/>
+  <circle cx="793" cy="581" r="17" fill="#FFFFFF" fill-opacity=".78"/>
 </svg>

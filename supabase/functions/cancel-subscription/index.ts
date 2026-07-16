@@ -30,7 +30,7 @@ Deno.serve(async (request) => {
 
     const { data: subscription, error: subscriptionError } = await admin
       .from('subscriptions')
-      .select('id, provider_subscription_id, status, amount_cents, last_payment_at, refunded_at')
+      .select('id, provider_subscription_id, provider_payment_id, status, amount_cents, last_payment_at, refunded_at')
       .eq('user_id', user.id)
       .eq('is_current', true)
       .maybeSingle();
@@ -55,13 +55,13 @@ Deno.serve(async (request) => {
     if (withinCoolingOff && !refunded) {
       const query = new URLSearchParams({ external_reference: user.id, sort: 'date_created', criteria: 'desc', limit: '10' });
       const payments = await mercadoPago<PaymentSearch>(`/v1/payments/search?${query.toString()}`);
-      const expectedAmount = Number(subscription.amount_cents) / 100;
       const payment = (payments.results || []).find((item) => {
         const paymentTime = Date.parse(item.date_approved || item.date_created || '');
         return item.status === 'approved'
-          && Number(item.transaction_amount) === expectedAmount
+          && (!subscription.provider_payment_id || String(item.id || '') === String(subscription.provider_payment_id))
           && Number.isFinite(paymentTime)
-          && paymentTime >= lastPaymentTime - 300_000;
+          && paymentTime >= lastPaymentTime - 300_000
+          && paymentTime <= lastPaymentTime + 86_400_000;
       });
       if (payment?.id) {
         providerPaymentId = String(payment.id);

@@ -12,8 +12,7 @@ SaaS para médicos registrarem atendimentos, acompanharem repasses e prepararem 
 ## Produto
 
 - Cobrança no início do ciclo, com garantia de cancelamento e estorno integral em 7 dias.
-- Plano Mobile: R$ 29,90/mês, uso no iPhone/PWA.
-- Plano Web: R$ 59,90/mês, uso no iPhone e PC com sincronização dos dados de gestão.
+- Plano único: R$ 39,90/mês, uso no celular e no PC com sincronização dos dados de gestão.
 - Fotos de comprovantes permanecem no aparelho e não entram na sincronização Web.
 - Cobrança recorrente, cancelamento e reembolso processados pelo provedor de pagamentos vigente.
 - Conciliação de Nota Fiscal em PDF/XML por CNPJ, Razão Social e valor contabilizado.
@@ -37,7 +36,7 @@ SaaS para médicos registrarem atendimentos, acompanharem repasses e prepararem 
 
 ## Segurança e privacidade
 
-O CPF completo é transformado em hash no servidor. O painel exibe somente os quatro últimos dígitos. Dados completos do cartão não passam pelo MedRecebe. No Plano Web, o servidor remove credenciais e fotografias antes de persistir o estado sincronizado.
+O CPF completo é transformado em hash no servidor. O painel exibe somente os quatro últimos dígitos. Dados completos do cartão não passam pelo MedRecebe. O servidor remove credenciais e fotografias antes de persistir o estado sincronizado. O painel administrativo exige segundo fator por e-mail ou App Authenticator.
 
 ## Validação
 

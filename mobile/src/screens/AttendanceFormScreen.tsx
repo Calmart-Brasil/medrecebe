@@ -30,10 +30,17 @@ export function AttendanceFormScreen({
   const [occurredAt, setOccurredAt] = useState(formatDateInput(new Date()));
   const [photoUri, setPhotoUri] = useState('');
   const [notes, setNotes] = useState('');
+  const [patientReference, setPatientReference] = useState('');
+  const [medication, setMedication] = useState('');
+  const [includeConsultation, setIncludeConsultation] = useState(false);
+  const [consultationModalityId, setConsultationModalityId] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
   const modality = activeModalities.find((item) => item.id === selectedId);
+  const consultationModalities = activeModalities.filter((item) => item.id !== selectedId && item.type !== 'recurring');
+  const consultationModality = consultationModalities.find((item) => item.id === consultationModalityId) ?? consultationModalities[0];
+  const totalCents = (modality?.amountCents ?? 0) + (includeConsultation ? consultationModality?.amountCents ?? 0 : 0);
   const parsedDate = parseDateInput(occurredAt);
   const dueAt = useMemo(
     () => (modality && parsedDate ? calculateDueDate(parsedDate, modality.rule) : null),
@@ -75,6 +82,18 @@ export function AttendanceFormScreen({
       setError('Informe uma data válida no formato DD/MM/AAAA.');
       return;
     }
+    if (modality.type === 'recurring' && !patientReference.trim()) {
+      setError('Informe uma identificação mínima do paciente, como iniciais ou código interno.');
+      return;
+    }
+    if (modality.type === 'recurring' && !medication.trim()) {
+      setError('Informe o medicamento ou tratamento.');
+      return;
+    }
+    if (includeConsultation && !consultationModality) {
+      setError('Cadastre e selecione uma modalidade de consulta.');
+      return;
+    }
 
     setSaving(true);
     setError('');
@@ -85,11 +104,19 @@ export function AttendanceFormScreen({
         workplaceId: workplace.id,
         modalityId: modality.id,
         modalityName: modality.name,
+        modalityType: modality.type,
         occurredAt: parsedDate,
         dueAt,
-        amountCents: modality.amountCents,
+        amountCents: totalCents,
+        baseAmountCents: modality.amountCents,
         evidenceUri,
         notes: notes.trim(),
+        patientReference: modality.type === 'recurring' ? patientReference.trim() : '',
+        medication: modality.type === 'recurring' ? medication.trim() : '',
+        includeConsultation: includeConsultation && Boolean(consultationModality),
+        consultationModalityId: includeConsultation ? consultationModality?.id : undefined,
+        consultationModalityName: includeConsultation ? consultationModality?.name : undefined,
+        consultationAmountCents: includeConsultation ? consultationModality?.amountCents : 0,
         status: 'pending',
         createdAt: new Date().toISOString(),
       });
@@ -106,7 +133,11 @@ export function AttendanceFormScreen({
         accessibilityRole="button"
         accessibilityState={{ selected }}
         key={item.id}
-        onPress={() => setSelectedId(item.id)}
+        onPress={() => {
+          setSelectedId(item.id);
+          setIncludeConsultation(false);
+          setConsultationModalityId('');
+        }}
         style={({ pressed }) => [styles.modality, selected && styles.modalitySelected, pressed && styles.pressed]}
       >
         <View style={[styles.radio, selected && styles.radioSelected]}>{selected ? <View style={styles.radioDot} /> : null}</View>
@@ -162,6 +193,47 @@ export function AttendanceFormScreen({
       <SectionTitle>Modalidade de repasse</SectionTitle>
       <View style={styles.modalities}>{activeModalities.map(modalityCard)}</View>
 
+      {modality?.type === 'recurring' ? (
+        <Card style={styles.recurringCard}>
+          <SectionTitle>Receita recorrente</SectionTitle>
+          <Field
+            label="Identificação do paciente"
+            onChangeText={setPatientReference}
+            placeholder="Use iniciais ou um código interno"
+            value={patientReference}
+          />
+          <Field
+            label="Medicamento ou tratamento"
+            onChangeText={setMedication}
+            placeholder="Ex.: imunobiológico ou medicamento oncológico"
+            value={medication}
+          />
+          <View style={styles.fieldBlock}>
+            <Text style={styles.fieldLabel}>Consulta associada</Text>
+            <Chip
+              label={includeConsultation ? 'Consulta contabilizada' : 'Contabilizar também uma consulta'}
+              onPress={() => setIncludeConsultation((current) => !current)}
+              selected={includeConsultation}
+            />
+          </View>
+          {includeConsultation ? (
+            <View style={styles.fieldBlock}>
+              <Text style={styles.fieldLabel}>Modalidade da consulta</Text>
+              <View style={styles.modalities}>
+                {consultationModalities.map((item) => (
+                  <Chip
+                    key={item.id}
+                    label={`${item.name} • ${formatCurrency(item.amountCents)}`}
+                    onPress={() => setConsultationModalityId(item.id)}
+                    selected={(consultationModality?.id ?? '') === item.id}
+                  />
+                ))}
+              </View>
+            </View>
+          ) : null}
+        </Card>
+      ) : null}
+
       <Field
         label="Observação (opcional)"
         multiline
@@ -174,7 +246,7 @@ export function AttendanceFormScreen({
         <Card style={styles.summaryCard}>
           <View style={styles.summaryRow}>
             <Text style={styles.summaryLabel}>Valor contabilizado</Text>
-            <Text style={styles.summaryValue}>{formatCurrency(modality.amountCents)}</Text>
+            <Text style={styles.summaryValue}>{formatCurrency(totalCents)}</Text>
           </View>
           <View style={styles.summaryDivider} />
           <View style={styles.summaryRow}>
@@ -199,6 +271,9 @@ export function AttendanceFormScreen({
 }
 
 const styles = StyleSheet.create({
+  recurringCard: { backgroundColor: '#F2FFFB', borderColor: '#BDE8DF', gap: 12 },
+  fieldBlock: { gap: 9 },
+  fieldLabel: { color: colors.navy, fontSize: 13, fontWeight: '800' },
   photoPlaceholder: {
     alignItems: 'center',
     backgroundColor: colors.paper,
