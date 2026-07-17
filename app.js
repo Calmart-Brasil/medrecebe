@@ -3,6 +3,8 @@ const SESSION_KEY = 'medrecebe.beta.session.v1';
 const DEMO_CPF = '52998224725';
 const DEMO_PASSWORD = 'Teste@123';
 const FEEDBACK_EMAIL = 'ti@calmart.com.br';
+const INSTITUTION_DIRECTORY_URL = './data/institution-directory-rmsp.json?v=20260716';
+const CNPJ_CARD_URL = 'https://solucoes.receita.fazenda.gov.br/Servicos/cnpjreva/cnpj.aspx';
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -28,6 +30,9 @@ let activeStateKey = APP_KEY;
 let selectedPlanCode = 'standard';
 let cloudSyncTimer = 0;
 let cloudHydrating = false;
+let institutionDirectory = [];
+let institutionDirectoryMeta = null;
+let institutionDirectoryPromise = null;
 
 const TITLES = {
   home: 'Início',
@@ -170,6 +175,105 @@ function isValidCnpj(value) {
     return remainder < 2 ? 0 : 11 - remainder;
   };
   return calculate(12) === Number(cnpj[12]) && calculate(13) === Number(cnpj[13]);
+}
+
+function normalizeDirectoryText(value = '') {
+  return String(value)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+async function loadInstitutionDirectory() {
+  if (institutionDirectory.length) return institutionDirectory;
+  if (institutionDirectoryPromise) return institutionDirectoryPromise;
+  institutionDirectoryPromise = fetch(INSTITUTION_DIRECTORY_URL)
+    .then((response) => {
+      if (!response.ok) throw new Error('Diretório institucional indisponível.');
+      return response.json();
+    })
+    .then((payload) => {
+      institutionDirectoryMeta = payload.meta || null;
+      institutionDirectory = (payload.institutions || []).map((institution) => ({
+        ...institution,
+        searchKey: normalizeDirectoryText(`${institution.name} ${institution.legalName} ${institution.city} ${institution.payerCnpj} ${institution.cnes}`),
+      }));
+      return institutionDirectory;
+    })
+    .catch((error) => {
+      institutionDirectoryPromise = null;
+      throw error;
+    });
+  return institutionDirectoryPromise;
+}
+
+function directorySelectionMarkup() {
+  if (!draftWorkplace?.cnes) return '<div id="institution-selected"></div>';
+  const sourceLabel = draftWorkplace.payerCnpjSource === 'maintainer' ? 'CNPJ da mantenedora' : 'CNPJ do estabelecimento';
+  const alternate = draftWorkplace.establishmentCnpj && draftWorkplace.maintainerCnpj && draftWorkplace.establishmentCnpj !== draftWorkplace.maintainerCnpj
+    ? `<small>Mantenedora: ${formatCnpj(draftWorkplace.maintainerCnpj)}</small>`
+    : '';
+  const updated = institutionDirectoryMeta?.sourceUpdatedAt || draftWorkplace.directoryUpdatedAt || 'base oficial vigente';
+  return `<div id="institution-selected" class="directory-selected"><div><span class="directory-badge">CNES ${escapeHtml(draftWorkplace.cnes)}</span><strong>${escapeHtml(draftWorkplace.directoryTypeName || 'Estabelecimento de saúde')}</strong><small>${escapeHtml(sourceLabel)} · atualização ${escapeHtml(updated)}</small>${alternate}</div><a href="${CNPJ_CARD_URL}" target="_blank" rel="noopener">Consultar comprovante oficial do CNPJ</a><p>Confirme no contrato ou na Nota Fiscal se este é o CNPJ que efetivamente realiza o repasse. Os campos continuam editáveis.</p></div>`;
+}
+
+function renderInstitutionSearchResults(query = '') {
+  const resultsRoot = $('#institution-results');
+  const statusRoot = $('#institution-directory-status');
+  if (!resultsRoot || !statusRoot) return;
+  const normalized = normalizeDirectoryText(query);
+  const cnpjQuery = cnpjDigits(query);
+  if (!normalized && !cnpjQuery) {
+    resultsRoot.innerHTML = '';
+    statusRoot.textContent = institutionDirectoryMeta
+      ? `${institutionDirectoryMeta.total} locais e empresas em ${institutionDirectoryMeta.municipalities} municípios. Fonte: CNES.`
+      : 'Digite ao menos duas letras para pesquisar.';
+    return;
+  }
+  if (normalized.length < 2 && cnpjQuery.length < 3) {
+    resultsRoot.innerHTML = '';
+    statusRoot.textContent = 'Digite ao menos duas letras ou três números do CNPJ.';
+    return;
+  }
+  const tokens = normalized.split(' ').filter(Boolean);
+  const matches = institutionDirectory
+    .filter((institution) => (cnpjQuery.length >= 3 && institution.payerCnpj.includes(cnpjQuery)) || tokens.every((token) => institution.searchKey.includes(token)))
+    .slice(0, 10);
+  statusRoot.textContent = matches.length
+    ? 'Selecione uma instituição para preencher o cadastro.'
+    : 'Nenhum resultado. Você ainda pode preencher os campos manualmente.';
+  resultsRoot.innerHTML = matches.map((institution) => `<button class="directory-result" data-action="select-directory-institution" data-id="${escapeHtml(institution.id)}" type="button"><span><strong>${escapeHtml(institution.name)}</strong><small>${escapeHtml(institution.typeName)} · ${escapeHtml(institution.city)}</small></span><span><b>${formatCnpj(institution.payerCnpj)}</b><small>CNES ${escapeHtml(institution.cnes)}</small></span></button>`).join('');
+}
+
+function selectDirectoryInstitution(institutionId) {
+  const institution = institutionDirectory.find((item) => item.id === institutionId);
+  if (!institution || !draftWorkplace) return;
+  preserveWorkplaceFields();
+  Object.assign(draftWorkplace, {
+    name: institution.name,
+    address: institution.address,
+    payerCnpj: institution.payerCnpj,
+    payerLegalName: institution.legalName,
+    directoryId: institution.id,
+    directoryCategory: institution.category,
+    directoryTypeName: institution.typeName,
+    directoryUpdatedAt: institutionDirectoryMeta?.sourceUpdatedAt || '',
+    cnes: institution.cnes,
+    payerCnpjSource: institution.payerCnpjSource,
+    establishmentCnpj: institution.establishmentCnpj,
+    maintainerCnpj: institution.maintainerCnpj,
+  });
+  $('#work-name').value = draftWorkplace.name;
+  $('#work-legal-name').value = draftWorkplace.payerLegalName;
+  $('#work-cnpj').value = formatCnpj(draftWorkplace.payerCnpj);
+  $('#work-address').value = draftWorkplace.address;
+  $('#institution-search').value = '';
+  $('#institution-results').innerHTML = '';
+  const selectedRoot = $('#institution-selected');
+  if (selectedRoot) selectedRoot.outerHTML = directorySelectionMarkup();
+  showToast('Dados preenchidos pelo CNES. Confirme o CNPJ pagador antes de salvar.');
 }
 
 function normalizeLegalName(value = '') {
@@ -885,6 +989,16 @@ function renderWorkplaceModal() {
   const editing = editingModalityIndex === null ? null : draftWorkplace.modalities[editingModalityIndex];
   const modality = editing || { name: '', type: 'plan', amountCents: 0, rule: { kind: 'calendar_days', days: 30 } };
   modalRoot.innerHTML = `<div class="modal-wrap"><section class="modal-sheet" role="dialog" aria-modal="true"><header class="modal-header simple"><span></span><h2>${appState.workplaces.some((item) => item.id === draftWorkplace.id) ? 'Editar local' : 'Novo local'}</h2><button data-action="close-modal" aria-label="Fechar" type="button">×</button></header><div class="modal-body"><div class="form-grid"><label>Nome do local<input id="work-name" value="${escapeHtml(draftWorkplace.name)}" placeholder="Ex.: Clínica Horizonte"/></label><label>Razão Social do pagador<input id="work-legal-name" value="${escapeHtml(draftWorkplace.payerLegalName || '')}" placeholder="Razão Social exibida na Nota Fiscal"/></label><label>CNPJ do pagador<input id="work-cnpj" inputmode="numeric" maxlength="18" value="${formatCnpj(draftWorkplace.payerCnpj || '')}" placeholder="00.000.000/0000-00"/></label><label>Endereço<input id="work-address" value="${escapeHtml(draftWorkplace.address)}" placeholder="Rua, número e cidade"/></label><label>E-mail oficial para conciliação<input id="work-email" type="email" value="${escapeHtml(draftWorkplace.reconciliationEmail)}" placeholder="financeiro@clinica.com.br"/></label><label>E-mail em cópia<input id="work-cc" value="${escapeHtml(draftWorkplace.reconciliationCc || '')}" placeholder="gestor@clinica.com.br"/></label></div><div class="notice">O CNPJ e a Razão Social são usados para identificar automaticamente o pagador na Nota Fiscal.</div><div class="modality-form"><h3>${editing ? 'Editar modalidade' : 'Adicionar modalidade'}</h3><label>Nome<input id="mod-name" value="${escapeHtml(modality.name)}" placeholder="Ex.: Consulta, Unimed ou imunobiológico"/></label><div class="inline-grid"><label>Tipo<select id="mod-type"><option value="plan" ${modality.type === 'plan' ? 'selected' : ''}>Plano</option><option value="private" ${modality.type === 'private' ? 'selected' : ''}>Particular</option><option value="recurring" ${modality.type === 'recurring' ? 'selected' : ''}>Receita recorrente</option><option value="custom" ${modality.type === 'custom' ? 'selected' : ''}>Personalizado</option></select></label><label>Valor (R$)<input id="mod-value" inputmode="decimal" value="${modality.amountCents ? (modality.amountCents / 100).toFixed(2).replace('.', ',') : ''}" placeholder="0,00"/></label></div><label id="mod-custom-type-wrap" ${modality.type === 'custom' ? '' : 'hidden'}>Nome do tipo personalizado<input id="mod-custom-type" value="${escapeHtml(modality.customType || '')}" placeholder="Ex.: Teleinterconsulta"/></label>${modality.type === 'recurring' ? '<div class="notice success">No atendimento, será possível identificar o paciente, o medicamento e contabilizar também uma consulta.</div>' : ''}<label>Regra de pagamento<select id="mod-rule">${ruleOptions(modality.rule.kind)}</select></label><div id="rule-fields">${ruleFields(modality.rule)}</div><button class="button secondary small" data-action="save-modality" type="button">${editing ? 'Atualizar modalidade' : 'Adicionar e continuar'}</button><p class="field-hint">A modalidade é adicionada automaticamente à lista abaixo e o formulário permanece disponível para o próximo cadastro.</p></div><h3 class="section-title">Modalidades cadastradas</h3><div class="modalities-editor">${modalityRows || '<div class="notice warning">Cadastre pelo menos uma modalidade.</div>'}</div><div class="modal-final-actions"><button class="button primary" data-action="save-workplace" type="button">Salvar</button><button class="button secondary" data-action="close-modal" type="button">Cancelar</button></div></div></section></div>`;
+  const workplaceFormGrid = $('.form-grid', modalRoot);
+  workplaceFormGrid?.insertAdjacentHTML('beforebegin', `<section class="institution-directory"><div class="directory-heading"><span class="round-icon">⌕</span><div><h3>Buscar hospital ou empresa</h3><p>Preencha automaticamente pelo diretório oficial de São Paulo e Região Metropolitana.</p></div></div><label>Nome, cidade, CNPJ ou CNES<input id="institution-search" autocomplete="off" placeholder="Ex.: Hospital São Paulo, Osasco ou CNPJ"/></label><p class="field-hint" id="institution-directory-status">Carregando diretório institucional…</p><div class="directory-results" id="institution-results" role="listbox"></div>${directorySelectionMarkup()}</section>`);
+  void loadInstitutionDirectory()
+    .then(() => {
+      if ($('#institution-search')) renderInstitutionSearchResults($('#institution-search').value);
+    })
+    .catch(() => {
+      const status = $('#institution-directory-status');
+      if (status) status.textContent = 'A busca automática está indisponível agora. O preenchimento manual continua disponível.';
+    });
 }
 
 function modalityTypeLabel(modality) {
@@ -1127,6 +1241,7 @@ function handleClick(event) {
   if (action === 'close-modal') modalRoot.innerHTML = '';
   if (action === 'new-workplace') newWorkplace();
   if (action === 'edit-workplace') editWorkplace(targetId);
+  if (action === 'select-directory-institution') selectDirectoryInstitution(targetId);
   if (action === 'toggle-workplace') {
     const workplace = appState.workplaces.find((item) => item.id === targetId);
     if (workplace) workplace.active = !workplace.active;
@@ -1275,6 +1390,11 @@ function handleChange(event) {
 }
 
 function handleInput(event) {
+  if (event.target.id === 'institution-search') {
+    if (institutionDirectory.length) renderInstitutionSearchResults(event.target.value);
+    else void loadInstitutionDirectory().then(() => renderInstitutionSearchResults(event.target.value)).catch(() => {});
+    return;
+  }
   if (event.target.id === 'work-cnpj') {
     event.target.value = formatCnpj(event.target.value);
     return;
@@ -1387,6 +1507,7 @@ async function boot() {
   bindEvents();
   if (new URLSearchParams(window.location.search).get('signup') === '1') setAuthMode('register');
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(() => {});
+  void loadInstitutionDirectory().catch(() => {});
   window.addEventListener('beforeinstallprompt', (event) => {
     event.preventDefault();
     deferredInstallPrompt = event;

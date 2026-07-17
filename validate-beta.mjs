@@ -37,6 +37,12 @@ const [manifestText, landing, landingCss, appHtml, app, appCss, cloud, adminHtml
   read('cancelamento.html'),
 ]);
 const manifest = JSON.parse(manifestText);
+const [institutionDirectoryText, institutionBuilder, mobileInstitutionDirectory] = await Promise.all([
+  read('data/institution-directory-rmsp.json'),
+  read('scripts/build-institution-directory.mjs'),
+  read('mobile/src/services/institutionDirectory.ts'),
+]);
+const institutionDirectory = JSON.parse(institutionDirectoryText);
 
 assert.equal(manifest.display, 'standalone');
 assert.equal(manifest.start_url, './app.html?source=homescreen');
@@ -45,7 +51,7 @@ assert.equal(manifest.orientation, 'portrait');
 assert.ok(manifest.icons.some((icon) => icon.sizes === '192x192'));
 assert.ok(manifest.icons.some((icon) => icon.sizes === '512x512'));
 
-for (const asset of ['landing.css', 'legal.css', 'styles.css', 'app.html', 'app.js', 'cloud.js', 'admin.html', 'admin.js', 'admin.css', 'manifest.webmanifest', 'termos.html', 'privacidade.html', 'cancelamento.html', 'assets/apple-touch-icon.png', 'assets/icon-192.png', 'assets/icon-512.png', 'branding/medrecebe-liquid-glass-master.png']) {
+for (const asset of ['landing.css', 'legal.css', 'styles.css', 'app.html', 'app.js', 'cloud.js', 'admin.html', 'admin.js', 'admin.css', 'manifest.webmanifest', 'termos.html', 'privacidade.html', 'cancelamento.html', 'data/institution-directory-rmsp.json', 'scripts/build-institution-directory.mjs', 'assets/apple-touch-icon.png', 'assets/icon-192.png', 'assets/icon-512.png', 'branding/medrecebe-liquid-glass-master.png']) {
   const file = await stat(join(root, asset));
   assert.ok(file.size > 0, `${asset} precisa existir e não pode estar vazio`);
 }
@@ -76,6 +82,8 @@ for (const marker of [
   'requestPersistentStorage',
   'analyzeInvoiceFile',
   'payerCnpj',
+  'loadInstitutionDirectory',
+  'selectDirectoryInstitution',
 ]) assert.ok(app.includes(marker), `app.js sem: ${marker}`);
 
 assert.ok(
@@ -83,7 +91,17 @@ assert.ok(
   'appState só pode ser carregado depois da mensagem padrão usada pelo estado vazio',
 );
 assert.ok(!appHtml.includes('Beta local:'), 'o aviso antigo de beta local não deve aparecer na entrada');
-assert.ok(appHtml.includes('styles.css?v=7') && appHtml.includes('app.js?v=12'), 'os arquivos corrigidos precisam de cache busting');
+assert.ok(appHtml.includes('styles.css?v=8') && appHtml.includes('app.js?v=13'), 'os arquivos corrigidos precisam de cache busting');
+assert.equal(institutionDirectory.meta.municipalities, 39, 'o diretório deve cobrir os 39 municípios da RMSP');
+assert.ok(institutionDirectory.meta.total >= 1000, 'o diretório institucional está incompleto');
+assert.ok(institutionDirectory.meta.countsByCategory.hospital >= 500, 'o diretório hospitalar está incompleto');
+assert.ok(institutionDirectory.meta.countsByCategory.medical_staffing >= 10, 'faltam empresas de cessão de profissionais');
+assert.ok(institutionDirectory.meta.countsByCategory.ambulance >= 400, 'faltam prestadores móveis e pré-hospitalares');
+assert.ok(institutionDirectory.meta.countsByCategory.health_management >= 100, 'faltam centrais de gestão em saúde');
+assert.equal(new Set(institutionDirectory.institutions.map((item) => item.city)).size, 39, 'há município da RMSP sem cobertura');
+assert.ok(institutionDirectory.institutions.every((item) => /^\d{14}$/.test(item.payerCnpj) && /^\d{7}$/.test(item.cnes)), 'diretório com CNPJ ou CNES inválido');
+for (const marker of ['RMSP_MUNICIPALITIES', 'isValidCnpj', 'medical_staffing', 'sourceUpdatedAt']) assert.ok(institutionBuilder.includes(marker), `gerador do diretório sem: ${marker}`);
+for (const marker of ['loadInstitutionDirectory', 'searchInstitutionDirectory', 'CNPJ_CARD_URL']) assert.ok(mobileInstitutionDirectory.includes(marker), `diretório nativo sem: ${marker}`);
 for (const marker of ['billing-view', 'R$ 39,90', 'PLANO ÚNICO', 'runtime-config.js', 'cloud.js']) {
   assert.ok(appHtml.includes(marker), `fluxo de assinatura sem: ${marker}`);
 }
@@ -135,7 +153,7 @@ for (const [name, document] of [['Landing', landing], ['Aplicativo', `${appHtml}
   }
 }
 
-for (const marker of ['install', 'activate', 'fetch', 'caches.open', 'medrecebe-app-v10', './app.html']) {
+for (const marker of ['install', 'activate', 'fetch', 'caches.open', 'medrecebe-app-v11', './app.html', 'institution-directory-rmsp.json']) {
   assert.ok(worker.includes(marker), `sw.js sem: ${marker}`);
 }
 

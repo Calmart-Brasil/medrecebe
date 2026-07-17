@@ -1,7 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   KeyboardAvoidingView,
+  Linking,
   Modal,
   Platform,
   Pressable,
@@ -15,6 +16,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button, Card, Chip, Field, InlineNotice, PageTitle, Screen, SectionTitle } from '../components/ui';
 import { createId } from '../data/store';
 import { cnpjDigits, formatCnpj, isValidCnpj } from '../services/invoice';
+import {
+  CNPJ_CARD_URL,
+  loadInstitutionDirectory,
+  searchInstitutionDirectory,
+  type DirectoryInstitution,
+  type InstitutionDirectory,
+} from '../services/institutionDirectory';
 import {
   calculateDueDate,
   describePaymentRule,
@@ -306,6 +314,34 @@ export function WorkplaceFormScreen({
   const [modalities, setModalities] = useState<PaymentModality[]>(workplace?.modalities ?? []);
   const [editingModality, setEditingModality] = useState<PaymentModality | null>(null);
   const [error, setError] = useState('');
+  const [directory, setDirectory] = useState<InstitutionDirectory | null>(null);
+  const [directoryQuery, setDirectoryQuery] = useState('');
+  const [directoryError, setDirectoryError] = useState('');
+  const [selectedInstitution, setSelectedInstitution] = useState<DirectoryInstitution | null>(null);
+  const directoryMatches = useMemo(() => searchInstitutionDirectory(directory, directoryQuery), [directory, directoryQuery]);
+
+  useEffect(() => {
+    let mounted = true;
+    loadInstitutionDirectory()
+      .then((result) => {
+        if (mounted) setDirectory(result);
+      })
+      .catch(() => {
+        if (mounted) setDirectoryError('A busca automática está indisponível. O preenchimento manual continua disponível.');
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const selectInstitution = (institution: DirectoryInstitution) => {
+    setSelectedInstitution(institution);
+    setName(institution.name);
+    setAddress(institution.address);
+    setPayerLegalName(institution.legalName);
+    setPayerCnpj(formatCnpj(institution.payerCnpj));
+    setDirectoryQuery('');
+  };
 
   const save = () => {
     if (!name.trim()) {
@@ -335,6 +371,14 @@ export function WorkplaceFormScreen({
       address: address.trim(),
       payerCnpj: cnpjDigits(payerCnpj),
       payerLegalName: payerLegalName.trim(),
+      directoryId: selectedInstitution?.id ?? workplace?.directoryId,
+      directoryCategory: selectedInstitution?.category ?? workplace?.directoryCategory,
+      directoryTypeName: selectedInstitution?.typeName ?? workplace?.directoryTypeName,
+      directoryUpdatedAt: selectedInstitution ? directory?.meta.sourceUpdatedAt : workplace?.directoryUpdatedAt,
+      cnes: selectedInstitution?.cnes ?? workplace?.cnes,
+      payerCnpjSource: selectedInstitution?.payerCnpjSource ?? workplace?.payerCnpjSource,
+      establishmentCnpj: selectedInstitution?.establishmentCnpj ?? workplace?.establishmentCnpj,
+      maintainerCnpj: selectedInstitution?.maintainerCnpj ?? workplace?.maintainerCnpj,
       reconciliationEmail: email.trim().toLowerCase(),
       reconciliationCc: cc.trim().toLowerCase(),
       modalities,
@@ -367,6 +411,56 @@ export function WorkplaceFormScreen({
         <PageTitle subtitle="Os dados financeiros ficam vinculados ao local e à modalidade selecionada.">
           {workplace ? 'Editar local' : 'Novo local'}
         </PageTitle>
+
+        <Card style={styles.directoryCard}>
+          <View style={styles.directoryHeading}>
+            <Text style={styles.directoryIcon}>⌕</Text>
+            <View style={styles.directoryHeadingCopy}>
+              <Text style={styles.directoryTitle}>Buscar hospital ou empresa</Text>
+              <Text style={styles.directoryHelp}>Diretório oficial de São Paulo e Região Metropolitana.</Text>
+            </View>
+          </View>
+          <Field
+            autoCapitalize="words"
+            label="Nome, cidade, CNPJ ou CNES"
+            onChangeText={setDirectoryQuery}
+            placeholder="Ex.: Hospital São Paulo ou Osasco"
+            value={directoryQuery}
+          />
+          <Text style={styles.directoryStatus}>
+            {directoryError || (directory ? `${directory.meta.total} locais e empresas em ${directory.meta.municipalities} municípios. Fonte: CNES.` : 'Carregando diretório institucional…')}
+          </Text>
+          {directoryMatches.length ? (
+            <View style={styles.directoryResults}>
+              {directoryMatches.map((institution) => (
+                <Pressable
+                  key={institution.id}
+                  onPress={() => selectInstitution(institution)}
+                  style={({ pressed }) => [styles.directoryResult, pressed && styles.pressed]}
+                >
+                  <View style={styles.directoryResultCopy}>
+                    <Text numberOfLines={1} style={styles.directoryResultName}>{institution.name}</Text>
+                    <Text style={styles.directoryResultType}>{institution.typeName} · {institution.city}</Text>
+                  </View>
+                  <View style={styles.directoryResultCnpj}>
+                    <Text style={styles.directoryCnpj}>{formatCnpj(institution.payerCnpj)}</Text>
+                    <Text style={styles.directoryCnes}>CNES {institution.cnes}</Text>
+                  </View>
+                </Pressable>
+              ))}
+            </View>
+          ) : null}
+          {selectedInstitution || workplace?.cnes ? (
+            <View style={styles.directorySelected}>
+              <Text style={styles.directorySelectedBadge}>CNES {selectedInstitution?.cnes ?? workplace?.cnes}</Text>
+              <Text style={styles.directorySelectedTitle}>{selectedInstitution?.typeName ?? workplace?.directoryTypeName ?? 'Estabelecimento de saúde'}</Text>
+              <Text style={styles.directorySelectedText}>Dados preenchidos pela base oficial. Confirme no contrato ou na Nota Fiscal qual CNPJ efetivamente realiza o repasse.</Text>
+              <Pressable onPress={() => void Linking.openURL(CNPJ_CARD_URL)} style={({ pressed }) => pressed && styles.pressed}>
+                <Text style={styles.directoryLink}>Consultar comprovante oficial do CNPJ</Text>
+              </Pressable>
+            </View>
+          ) : null}
+        </Card>
 
         <Card style={styles.formCard}>
           <Field label="Nome do local" onChangeText={setName} placeholder="Ex.: Clínica Horizonte" value={name} />
@@ -464,6 +558,26 @@ export function WorkplaceFormScreen({
 const styles = StyleSheet.create({
   flex: { flex: 1 },
   formCard: { gap: 15 },
+  directoryCard: { backgroundColor: colors.blue050, borderColor: '#BDD5F4', gap: 12 },
+  directoryHeading: { alignItems: 'center', flexDirection: 'row', gap: 10 },
+  directoryIcon: { backgroundColor: colors.paper, borderRadius: 21, color: colors.blue700, fontSize: 24, height: 42, lineHeight: 42, textAlign: 'center', width: 42 },
+  directoryHeadingCopy: { flex: 1, gap: 3 },
+  directoryTitle: { color: colors.navy, fontSize: 16, fontWeight: '800' },
+  directoryHelp: { color: colors.muted, fontSize: 12, lineHeight: 17 },
+  directoryStatus: { color: colors.muted, fontSize: 11, lineHeight: 16 },
+  directoryResults: { gap: 7 },
+  directoryResult: { alignItems: 'center', backgroundColor: colors.paper, borderColor: colors.line, borderRadius: radius.sm, borderWidth: 1, flexDirection: 'row', gap: 10, padding: 11 },
+  directoryResultCopy: { flex: 1, gap: 3 },
+  directoryResultName: { color: colors.navy, fontSize: 13, fontWeight: '800' },
+  directoryResultType: { color: colors.muted, fontSize: 10, lineHeight: 14 },
+  directoryResultCnpj: { alignItems: 'flex-end', gap: 3 },
+  directoryCnpj: { color: colors.blue700, fontSize: 10, fontWeight: '800' },
+  directoryCnes: { color: colors.muted, fontSize: 9 },
+  directorySelected: { backgroundColor: colors.greenSoft, borderColor: '#AEDCC2', borderRadius: radius.sm, borderWidth: 1, gap: 5, padding: 12 },
+  directorySelectedBadge: { alignSelf: 'flex-start', backgroundColor: colors.paper, borderRadius: radius.pill, color: colors.green, fontSize: 10, fontWeight: '800', overflow: 'hidden', paddingHorizontal: 8, paddingVertical: 4 },
+  directorySelectedTitle: { color: colors.navy, fontSize: 13, fontWeight: '800' },
+  directorySelectedText: { color: colors.muted, fontSize: 11, lineHeight: 16 },
+  directoryLink: { color: colors.blue700, fontSize: 12, fontWeight: '800', paddingTop: 3 },
   fieldBlock: { gap: 8 },
   fieldLabel: { color: colors.navy, fontSize: 14, fontWeight: '700' },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
