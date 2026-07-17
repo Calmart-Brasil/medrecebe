@@ -24,12 +24,6 @@ verify_jwt = false
 [functions.admin-create-user]
 verify_jwt = false
 
-[functions.admin-mfa-email-start]
-verify_jwt = false
-
-[functions.admin-mfa-email-complete]
-verify_jwt = false
-
 [functions.sync-state]
 verify_jwt = false
 

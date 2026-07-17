@@ -7,7 +7,10 @@
     <title>Painel administrativo • MedRecebe</title>
     <meta name="robots" content="noindex,nofollow" />
     <link rel="icon" sizes="192x192" href="assets/icon-192.png" />
-    <link rel="stylesheet" href="admin.css?v=3" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="admin.css?v=4" />
   </head>
   <body>
     <section class="admin-login" id="admin-login">
@@ -15,39 +18,19 @@
         <img src="assets/icon-192.png" alt="" width="82" height="82" />
         <span>ACESSO RESTRITO</span>
         <h1>MedRecebe Admin</h1>
-        <p>O painel é exclusivo para administradores e exige confirmação em duas etapas.</p>
+        <p>Entre com o CPF e a senha da sua conta administrativa.</p>
         <label>CPF<input id="admin-cpf" inputmode="numeric" maxlength="14" placeholder="000.000.000-00" required /></label>
         <label>Senha<input id="admin-password" type="password" autocomplete="current-password" required /></label>
         <div class="admin-error" id="admin-login-error" role="alert"></div>
-        <button class="primary" id="admin-login-button" type="submit">Continuar com segurança</button>
+        <button class="primary" id="admin-login-button" type="submit">Entrar no painel</button>
         <a href="./">Voltar ao aplicativo</a>
       </form>
-    </section>
-
-    <section class="admin-login" id="admin-mfa" hidden>
-      <div class="login-panel mfa-panel">
-        <img src="assets/icon-192.png" alt="" width="82" height="82" />
-        <span>SEGUNDA ETAPA</span>
-        <h1>Confirme sua identidade</h1>
-        <p id="admin-mfa-description">Escolha como deseja confirmar este acesso administrativo.</p>
-        <div class="mfa-methods" id="admin-mfa-methods">
-          <button class="secondary" id="admin-mfa-email" type="button">Confirmar por e-mail</button>
-          <button class="secondary" id="admin-mfa-authenticator" type="button" hidden>Usar App Authenticator</button>
-          <button class="primary" id="admin-mfa-enroll" type="button" hidden>Configurar App Authenticator</button>
-        </div>
-        <form class="mfa-code-form" id="admin-mfa-code-form" hidden>
-          <label>Código de confirmação<input id="admin-mfa-code" inputmode="numeric" autocomplete="one-time-code" maxlength="8" placeholder="000000" required /></label>
-          <div class="admin-error" id="admin-mfa-error" role="alert"></div>
-          <button class="primary" id="admin-mfa-submit" type="submit">Confirmar e acessar</button>
-        </form>
-        <button class="secondary" id="admin-mfa-back" type="button">Voltar</button>
-      </div>
     </section>
 
     <section class="admin-app" id="admin-app" hidden>
       <header class="admin-header">
         <div class="brand"><img src="assets/icon-192.png" alt="" width="42" height="42" /><span><strong>MedRecebe</strong><small>Painel administrativo</small></span></div>
-        <div class="admin-profile"><span id="admin-name">Administrador</span><button id="admin-mfa-settings" type="button">Segurança 2FA</button><button id="admin-logout" type="button">Sair</button></div>
+        <div class="admin-profile"><span id="admin-name">Administrador</span><button id="admin-logout" type="button">Sair</button></div>
       </header>
       <main>
         <div class="heading"><div><span>GESTÃO OPERACIONAL</span><h1>Clientes e acessos</h1><p>Corrija cadastros, crie concessões Freemium e controle suspensões com histórico de auditoria.</p></div><div class="heading-actions"><button class="primary" id="admin-create-user" type="button">Criar usuário Freemium</button><button class="secondary" id="admin-refresh" type="button">Atualizar</button></div></div>
@@ -80,6 +63,6 @@
 
     <script>document.write('<script src="runtime-config.js?v=' + Date.now() + '"><\/script>');</script>
     <script src="cloud.js?v=5"></script>
-    <script src="admin.js?v=4" defer></script>
+    <script src="admin.js?v=5" defer></script>
   </body>
 </html>

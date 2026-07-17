@@ -36,7 +36,7 @@ SaaS para médicos registrarem atendimentos, acompanharem repasses e prepararem 
 
 ## Segurança e privacidade
 
-O CPF completo é transformado em hash no servidor. O painel exibe somente os quatro últimos dígitos. Dados completos do cartão não passam pelo MedRecebe. O servidor remove credenciais e fotografias antes de persistir o estado sincronizado. O painel administrativo exige segundo fator por e-mail ou App Authenticator.
+O CPF completo é transformado em hash no servidor. O painel exibe somente os quatro últimos dígitos. Dados completos do cartão não passam pelo MedRecebe. O servidor remove credenciais e fotografias antes de persistir o estado sincronizado. O painel administrativo aceita somente contas com papel `admin`, autenticadas por CPF e senha.
 
 ## Validação
 

@@ -35,10 +35,10 @@
 - Como administrador, quero programar uma suspensão para o fim do ciclo ou forçá-la por infração.
 - Critérios: a suspensão comum pausa novas cobranças e preserva o período pago; a forçada é imediata, exige reconfirmação e registra a ausência de restituição proporcional quando legalmente aplicável.
 
-## Segurança administrativa
+## Acesso administrativo
 
-- Como administrador, quero confirmar o acesso por e-mail ou App Authenticator.
-- Critérios: senha válida é sempre a primeira etapa; TOTP usa sessão AAL2; e-mail exige desafio iniciado após a senha e gera prova temporária; funções de CRUD recusam sessões sem segundo fator; contas comuns nunca acessam o painel.
+- Como administrador, quero acessar o painel com CPF e senha, sem uma etapa adicional.
+- Critérios: a senha cria uma sessão autenticada; o servidor confirma que a conta possui papel `admin`; contas comuns nunca acessam o painel nem as funções de CRUD.
 
 ## Comunicação e identidade
 
