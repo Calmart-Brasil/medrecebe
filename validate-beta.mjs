@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 const root = fileURLToPath(new URL('.', import.meta.url));
 const read = (file) => readFile(join(root, file), 'utf8');
 
-const [manifestText, landing, landingCss, appHtml, app, appCss, cloud, adminHtml, adminApp, worker, workflow, migration, launchMigration, upfrontMigration, manualAccessMigration, singlePlanMigration, simpleAdminMigration, invoiceFunction, adminCreateFunction, adminUpdateFunction, mobileConfig, mobileInvoice, terms, privacy, cancellation] = await Promise.all([
+const [manifestText, landing, landingCss, appHtml, app, appCss, cloud, adminHtml, adminApp, worker, workflow, migration, launchMigration, upfrontMigration, manualAccessMigration, singlePlanMigration, simpleAdminMigration, invoiceFunction, adminCreateFunction, adminUpdateFunction, createSubscriptionFunction, cancelSubscriptionFunction, mercadoPagoShared, mobileConfig, mobileInvoice, terms, privacy, cancellation] = await Promise.all([
   read('manifest.webmanifest'),
   read('index.html'),
   read('landing.css'),
@@ -27,6 +27,9 @@ const [manifestText, landing, landingCss, appHtml, app, appCss, cloud, adminHtml
   read('supabase/functions/analyze-invoice/index.ts'),
   read('supabase/functions/admin-create-user/index.ts'),
   read('supabase/functions/admin-update-user/index.ts'),
+  read('supabase/functions/create-subscription/index.ts'),
+  read('supabase/functions/cancel-subscription/index.ts'),
+  read('supabase/functions/_shared/mercado-pago.ts'),
   read('mobile/app.json'),
   read('mobile/src/services/invoice.ts'),
   read('termos.html'),
@@ -111,6 +114,10 @@ for (const marker of ['3990', 'manual_access_lifetime', 'suspension_scheduled_at
 for (const marker of ['drop table if exists public.admin_mfa_sessions', 'drop table if exists public.admin_mfa_email_challenges']) assert.ok(simpleAdminMigration.includes(marker), `remoção do 2FA sem: ${marker}`);
 for (const marker of ['freemium_user_created', 'durationUnit', 'lifetime']) assert.ok(adminCreateFunction.includes(marker), `criação Freemium sem: ${marker}`);
 for (const marker of ['update_profile', 'schedule_suspension', 'force_suspension', 'delete_user']) assert.ok(adminUpdateFunction.includes(marker), `CRUD administrativo sem: ${marker}`);
+for (const marker of ['cancelPreapproval', "['cancelled', 'canceled']", 'MercadoPagoError', 'status === 404']) assert.ok(mercadoPagoShared.includes(marker), `cancelamento recorrente sem: ${marker}`);
+assert.ok(adminUpdateFunction.includes('cancelPreapproval'), 'exclusão administrativa não cancela a assinatura de forma compatível');
+assert.ok(createSubscriptionFunction.includes('cancelPreapproval'), 'substituição de assinatura pendente não cancela a anterior de forma compatível');
+assert.ok(cancelSubscriptionFunction.includes('cancelPreapproval'), 'cancelamento do cliente não usa a rotina compatível');
 for (const marker of ['unpdf@1.6.2', 'matchedPayerIds', 'amountCents', '5 * 1024 * 1024']) {
   assert.ok(invoiceFunction.includes(marker), `leitura de Nota Fiscal sem: ${marker}`);
 }

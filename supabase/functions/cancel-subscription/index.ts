@@ -1,5 +1,5 @@
 import { json, options, publicError } from '../_shared/http.ts';
-import { mercadoPago } from '../_shared/mercado-pago.ts';
+import { cancelPreapproval, mercadoPago } from '../_shared/mercado-pago.ts';
 import { adminClient, authenticatedUser } from '../_shared/supabase.ts';
 
 interface Payment {
@@ -41,10 +41,7 @@ Deno.serve(async (request) => {
       return json(request, { canceled: true, refunded: false, noActiveCharge: true });
     }
 
-    await mercadoPago(`/preapproval/${encodeURIComponent(subscription.provider_subscription_id)}`, {
-      method: 'PUT',
-      body: JSON.stringify({ status: 'canceled' }),
-    });
+    await cancelPreapproval(subscription.provider_subscription_id);
 
     let refunded = Boolean(subscription.refunded_at);
     let refundPending = false;

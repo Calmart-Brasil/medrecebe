@@ -1,6 +1,6 @@
 import { cpfHash, isValidCpf, onlyDigits } from '../_shared/cpf.ts';
 import { json, options, publicError } from '../_shared/http.ts';
-import { mercadoPago } from '../_shared/mercado-pago.ts';
+import { cancelPreapproval, mercadoPago } from '../_shared/mercado-pago.ts';
 import { adminClient, requireAdmin } from '../_shared/supabase.ts';
 
 const durationUnits = new Set(['days', 'weeks', 'months', 'years', 'lifetime']);
@@ -25,7 +25,7 @@ function paidPeriodEnd(subscription: Record<string, unknown> | null): string | n
   return end.toISOString();
 }
 
-async function updateProviderSubscriptionStatus(providerId: string, status: 'authorized' | 'paused' | 'canceled'): Promise<void> {
+async function updateProviderSubscriptionStatus(providerId: string, status: 'authorized' | 'paused'): Promise<void> {
   if (!providerId) return;
   await mercadoPago(`/preapproval/${encodeURIComponent(providerId)}`, {
     method: 'PUT',
@@ -67,7 +67,7 @@ Deno.serve(async (request) => {
 
     if (action === 'delete_user') {
       if (body.confirm !== true) return publicError(request, 'Confirme a exclusão definitiva do cadastro.', 400);
-      await updateProviderSubscriptionStatus(String(subscription?.provider_subscription_id || ''), 'canceled');
+      await cancelPreapproval(String(subscription?.provider_subscription_id || ''));
       await admin.from('admin_audit_log').insert({
         admin_user_id: adminUser.id,
         target_user_id: targetUserId,
@@ -140,7 +140,7 @@ Deno.serve(async (request) => {
       };
       auditNext = { suspensionAt, reason: 'administrative_end_of_cycle' };
     } else if (action === 'force_suspension') {
-      await updateProviderSubscriptionStatus(String(subscription?.provider_subscription_id || ''), 'canceled');
+      await cancelPreapproval(String(subscription?.provider_subscription_id || ''));
       if (subscription?.id) {
         await admin.from('subscriptions').update({ status: 'canceled', canceled_at: new Date().toISOString() }).eq('id', subscription.id);
       }
