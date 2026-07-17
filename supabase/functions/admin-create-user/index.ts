@@ -1,6 +1,6 @@
 import { cpfHash, isValidCpf, onlyDigits } from '../_shared/cpf.ts';
 import { json, options, publicError } from '../_shared/http.ts';
-import { adminClient, requireAdminMfa } from '../_shared/supabase.ts';
+import { adminClient, requireAdmin } from '../_shared/supabase.ts';
 
 const durationUnits = new Set(['days', 'weeks', 'months', 'years', 'lifetime']);
 
@@ -20,7 +20,7 @@ Deno.serve(async (request) => {
   if (request.method !== 'POST') return publicError(request, 'Método não permitido.', 405);
 
   try {
-    const adminUser = await requireAdminMfa(request);
+    const adminUser = await requireAdmin(request);
     const body = await request.json().catch(() => ({}));
     const fullName = String(body.fullName || '').trim();
     const email = String(body.email || '').trim().toLowerCase();

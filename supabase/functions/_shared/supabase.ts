@@ -38,35 +38,3 @@ export async function requireAdmin(request: Request): Promise<User> {
   if (error || data?.role !== 'admin') throw new Error('Acesso administrativo não autorizado');
   return user;
 }
-
-function jwtPayload(request: Request): Record<string, unknown> {
-  try {
-    const token = (request.headers.get('authorization') || '').replace(/^Bearer\s+/i, '');
-    const encoded = token.split('.')[1] || '';
-    const normalized = encoded.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(encoded.length / 4) * 4, '=');
-    return JSON.parse(atob(normalized));
-  } catch {
-    return {};
-  }
-}
-
-async function sha256(value: string): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
-  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
-}
-
-export async function requireAdminMfa(request: Request): Promise<User> {
-  const user = await requireAdmin(request);
-  if (jwtPayload(request).aal === 'aal2') return user;
-  const proof = request.headers.get('x-admin-mfa') || '';
-  if (proof.length < 32) throw new Error('Confirme o segundo fator para acessar o painel administrativo');
-  const { data, error } = await adminClient()
-    .from('admin_mfa_sessions')
-    .select('id')
-    .eq('user_id', user.id)
-    .eq('proof_hash', await sha256(proof))
-    .gt('expires_at', new Date().toISOString())
-    .maybeSingle();
-  if (error || !data) throw new Error('A confirmação em duas etapas expirou');
-  return user;
-}

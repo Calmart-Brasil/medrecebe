@@ -10,11 +10,6 @@ const statusLabels = {
 };
 
 let currentUsers = new Map();
-let pendingAdminAccount = null;
-let pendingMfaMode = '';
-let pendingMfaEmail = '';
-let totpFactors = [];
-let enrollmentFactorId = '';
 
 function digits(value = '') { return String(value).replace(/\D/g, '').slice(0, 14); }
 function formatCpf(value = '') {
@@ -45,52 +40,14 @@ function validityLabel(user) {
 
 function showLogin(message = '') {
   $('#admin-app').hidden = true;
-  $('#admin-mfa').hidden = true;
   $('#admin-login').hidden = false;
   $('#admin-login-error').textContent = message;
 }
 
 function showApp(account) {
   $('#admin-login').hidden = true;
-  $('#admin-mfa').hidden = true;
   $('#admin-app').hidden = false;
   $('#admin-name').textContent = account.profile.fullName;
-}
-
-function showMfaCode(description) {
-  $('#admin-mfa-description').textContent = description;
-  $('#admin-mfa-code-form').hidden = false;
-  $('#admin-mfa-code').value = '';
-  $('#admin-mfa-error').textContent = '';
-  $('#admin-mfa-code').focus();
-}
-
-async function sendEmailCode() {
-  pendingMfaMode = 'email';
-  $('#admin-mfa-error').textContent = '';
-  try {
-    const result = await cloud.adminEmailMfaStart();
-    pendingMfaEmail = result.email;
-    showMfaCode(`Enviamos uma confirmação para ${result.maskedEmail}. Abra o link da mensagem para liberar o painel automaticamente. Se o e-mail exibir um código, você também pode digitá-lo abaixo. A confirmação expira em 10 minutos.`);
-  } catch (error) {
-    $('#admin-mfa-error').textContent = `${error instanceof Error ? error.message : 'Não foi possível enviar agora.'} Aguarde alguns minutos ou configure o App Authenticator.`;
-  }
-}
-
-async function beginMfa(account) {
-  pendingAdminAccount = account;
-  $('#admin-login').hidden = true;
-  $('#admin-app').hidden = true;
-  $('#admin-mfa').hidden = false;
-  $('#admin-mfa-code-form').hidden = true;
-  $('#admin-mfa-description').textContent = 'Escolha como deseja confirmar este acesso administrativo.';
-  try {
-    totpFactors = await cloud.listMfaFactors();
-  } catch {
-    totpFactors = [];
-  }
-  $('#admin-mfa-authenticator').hidden = totpFactors.length === 0;
-  $('#admin-mfa-enroll').hidden = totpFactors.length > 0;
 }
 
 async function loadUsers() {
@@ -118,7 +75,6 @@ async function loadUsers() {
     status.textContent = `${result.count} cliente(s) encontrado(s).`;
   } catch (error) {
     status.textContent = error instanceof Error ? error.message : 'Não foi possível carregar os clientes.';
-    if (/segundo fator|duas etapas|expirou/i.test(status.textContent)) await beginMfa(pendingAdminAccount || await cloud.restore());
   }
 }
 
@@ -136,27 +92,6 @@ function openUserEditor(userId) {
   const durationUnit = user.manualAccessLifetime ? 'lifetime' : 'days';
   $('#admin-modal-root').innerHTML = `<div class="admin-modal-wrap"><section class="admin-modal wide" role="dialog" aria-modal="true" aria-labelledby="edit-title"><header><div><span>CLIENTE •••.${escapeHtml(user.cpfLast4)}</span><h2 id="edit-title">Gerenciar ${escapeHtml(user.fullName)}</h2></div><button data-modal-close type="button">×</button></header><div class="admin-form"><form id="edit-profile-form" class="form-section"><h3>Dados cadastrais</h3><div class="two-columns"><label>Nome completo<input id="edit-name" value="${escapeHtml(user.fullName)}" required/></label><label>E-mail<input id="edit-email" type="email" value="${escapeHtml(user.email)}" required/></label></div><label>Novo CPF (somente para correção)<input id="edit-cpf" inputmode="numeric" maxlength="14" placeholder="Deixe vazio para manter •••.${escapeHtml(user.cpfLast4)}"/></label><button class="primary" type="submit">Salvar correções</button></form><form id="freemium-form" class="form-section"><h3>Concessão Freemium</h3><p>${freemiumActive(user) ? `Ativa até ${escapeHtml(validityLabel(user))}.` : 'Nenhuma concessão Freemium ativa.'}</p>${durationFields('edit', durationUnit)}<div class="inline-actions"><button class="primary" type="submit">Aplicar período</button>${freemiumActive(user) ? '<button class="secondary" data-admin-action="revoke_freemium" type="button">Revogar Freemium</button>' : ''}</div></form><section class="form-section warning-zone"><h3>Suspensão</h3><p>A suspensão comum preserva o acesso até o fim do período já pago. A suspensão forçada é imediata e deve ser reservada a infrações às regras de uso.</p><div class="inline-actions">${user.suspensionScheduledAt ? '<button class="secondary" data-admin-action="clear_suspension" type="button">Cancelar suspensão agendada</button>' : '<button class="secondary" data-admin-action="schedule_suspension" type="button">Programar suspensão</button>'}<button class="danger" data-admin-action="force_suspension" type="button">Forçar suspensão imediata</button></div></section><section class="form-section danger-zone"><h3>Excluir cliente</h3><p>Exclui o login e os dados sincronizados. Esta ação não pode ser desfeita.</p><button class="danger" data-admin-action="delete_user" type="button">Excluir cadastro definitivamente</button></section><div class="modal-error" id="edit-error"></div><div class="modal-actions"><button class="secondary" data-modal-close type="button">Fechar</button></div></div></section></div>`;
   $('#admin-modal-root').dataset.userId = userId;
-}
-
-async function openMfaSettings() {
-  let factors = [];
-  try { factors = await cloud.listMfaFactors(); } catch { factors = []; }
-  $('#admin-modal-root').innerHTML = `<div class="admin-modal-wrap"><section class="admin-modal" role="dialog" aria-modal="true" aria-labelledby="mfa-title"><header><div><span>SEGURANÇA</span><h2 id="mfa-title">Autenticação em duas etapas</h2></div><button data-modal-close type="button">×</button></header><div class="admin-form"><div class="form-section"><h3>Confirmação por e-mail</h3><p>Disponível em todos os acessos administrativos.</p></div><div class="form-section"><h3>App Authenticator</h3><p>${factors.length ? `${factors.length} autenticador(es) configurado(s). Você pode adicionar outro dispositivo.` : 'Configure um aplicativo compatível com códigos TOTP.'}</p><button class="primary" id="start-totp-enrollment" type="button">${factors.length ? 'Adicionar outro autenticador' : 'Configurar autenticador'}</button></div><div class="modal-error" id="mfa-settings-error"></div><div class="modal-actions"><button class="secondary" data-modal-close type="button">Fechar</button></div></div></section></div>`;
-}
-
-async function startTotpEnrollment() {
-  const button = $('#start-totp-enrollment');
-  button.disabled = true;
-  try {
-    const factor = await cloud.enrollTotp();
-    enrollmentFactorId = factor.id;
-    const qr = factor.totp?.qr_code || '';
-    const secret = factor.totp?.secret || '';
-    $('.form-section', $('#admin-modal-root')).innerHTML = `<h3>Escaneie no seu App Authenticator</h3><img class="totp-qr" src="${escapeHtml(qr)}" alt="QR Code para configurar o autenticador"/><p class="totp-secret">Código manual: <strong>${escapeHtml(secret)}</strong></p><form id="totp-enrollment-form"><label>Código gerado pelo aplicativo<input id="totp-enrollment-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" required/></label><button class="primary" type="submit">Confirmar autenticador</button></form>`;
-  } catch (error) {
-    $('#mfa-settings-error').textContent = error instanceof Error ? error.message : 'Não foi possível iniciar a configuração.';
-    button.disabled = false;
-  }
 }
 
 async function runUserAction(action, userId) {
@@ -196,51 +131,19 @@ $('#admin-login-form').addEventListener('submit', async (event) => {
       await cloud.logout();
       throw new Error('Esta conta não possui acesso administrativo.');
     }
-    await beginMfa(account);
+    showApp(account);
+    await loadUsers();
   } catch (error) {
     showLogin(error instanceof Error ? error.message : 'Não foi possível entrar.');
   } finally {
     button.disabled = false;
-    button.textContent = 'Continuar com segurança';
+    button.textContent = 'Entrar no painel';
   }
 });
-
-$('#admin-mfa-email').addEventListener('click', () => void sendEmailCode());
-$('#admin-mfa-authenticator').addEventListener('click', () => {
-  pendingMfaMode = 'totp';
-  showMfaCode('Digite o código de seis dígitos exibido no seu App Authenticator.');
-});
-$('#admin-mfa-enroll').addEventListener('click', async () => {
-  await openMfaSettings();
-  await startTotpEnrollment();
-});
-$('#admin-mfa-code-form').addEventListener('submit', async (event) => {
-  event.preventDefault();
-  const button = $('#admin-mfa-submit');
-  button.disabled = true;
-  button.textContent = 'Confirmando…';
-  try {
-    const code = $('#admin-mfa-code').value;
-    if (pendingMfaMode === 'totp') await cloud.verifyTotp(totpFactors[0]?.id, code);
-    else await cloud.verifyAdminEmailOtp(pendingMfaEmail, code);
-    const account = await cloud.restore();
-    if (!account || account.profile.role !== 'admin') throw new Error('Sessão administrativa inválida.');
-    pendingAdminAccount = account;
-    showApp(account);
-    await loadUsers();
-  } catch (error) {
-    $('#admin-mfa-error').textContent = error instanceof Error ? error.message : 'Código inválido.';
-  } finally {
-    button.disabled = false;
-    button.textContent = 'Confirmar e acessar';
-  }
-});
-$('#admin-mfa-back').addEventListener('click', async () => { await cloud.logout(); showLogin(); });
 
 $('#admin-search-form').addEventListener('submit', (event) => { event.preventDefault(); void loadUsers(); });
 $('#admin-refresh').addEventListener('click', () => void loadUsers());
 $('#admin-create-user').addEventListener('click', openCreateUser);
-$('#admin-mfa-settings').addEventListener('click', () => void openMfaSettings());
 $('#admin-logout').addEventListener('click', async () => { await cloud.logout(); showLogin(); });
 $('#admin-users').addEventListener('click', (event) => {
   const button = event.target.closest('[data-user-edit]');
@@ -259,7 +162,6 @@ $('#admin-modal-root').addEventListener('click', (event) => {
   if (event.target.closest('[data-modal-close]')) $('#admin-modal-root').innerHTML = '';
   const actionButton = event.target.closest('[data-admin-action]');
   if (actionButton) void runUserAction(actionButton.dataset.adminAction, $('#admin-modal-root').dataset.userId);
-  if (event.target.id === 'start-totp-enrollment') void startTotpEnrollment();
 });
 $('#admin-modal-root').addEventListener('submit', async (event) => {
   event.preventDefault();
@@ -288,28 +190,13 @@ $('#admin-modal-root').addEventListener('submit', async (event) => {
       await loadUsers();
     } catch (caught) { $('#edit-error').textContent = caught instanceof Error ? caught.message : 'Não foi possível aplicar o período.'; }
   }
-  if (event.target.id === 'totp-enrollment-form') {
-    try {
-      await cloud.verifyTotp(enrollmentFactorId, $('#totp-enrollment-code').value);
-      $('#admin-modal-root').innerHTML = '';
-      const account = await cloud.restore();
-      if (!account || account.profile.role !== 'admin') throw new Error('Sessão administrativa inválida.');
-      pendingAdminAccount = account;
-      showApp(account);
-      $('#admin-status').textContent = 'App Authenticator configurado com sucesso.';
-      await loadUsers();
-    } catch (caught) { $('#mfa-settings-error').textContent = caught instanceof Error ? caught.message : 'Código inválido.'; }
-  }
 });
 
 async function boot() {
   if (!cloud?.isEnabled()) return showLogin('Configure o Supabase para ativar o painel.');
   try {
-    if (window.location.hash.includes('access_token=')) await cloud.completeAdminEmailMfaLink();
     const account = await cloud.restore();
     if (!account || account.profile.role !== 'admin') return showLogin();
-    pendingAdminAccount = account;
-    if (!cloud.adminMfaSatisfied()) return beginMfa(account);
     showApp(account);
     await loadUsers();
   } catch {

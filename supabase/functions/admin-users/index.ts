@@ -1,5 +1,5 @@
 import { json, options, publicError } from '../_shared/http.ts';
-import { adminClient, requireAdminMfa } from '../_shared/supabase.ts';
+import { adminClient, requireAdmin } from '../_shared/supabase.ts';
 
 Deno.serve(async (request) => {
   const preflight = options(request);
@@ -7,7 +7,7 @@ Deno.serve(async (request) => {
   if (request.method !== 'POST') return publicError(request, 'Método não permitido.', 405);
 
   try {
-    await requireAdminMfa(request);
+    await requireAdmin(request);
     const body = await request.json().catch(() => ({}));
     const search = String(body.search || '').trim().slice(0, 80);
     const safeSearch = search.replace(/[%_,().]/g, ' ').replace(/\s+/g, ' ').trim();

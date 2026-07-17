@@ -372,7 +372,7 @@ function cloudPlanCode() {
 }
 
 function isDesktopComputer() {
-  return window.matchMedia('(min-width: 900px) and (hover: hover) and (pointer: fine)').matches;
+  return window.matchMedia('(min-width: 900px)').matches;
 }
 
 function planAllowsDevice() {
@@ -502,6 +502,7 @@ function showLogin() {
 
 function showApp() {
   if (!cloudAccessAllowed()) return showBilling();
+  document.body.classList.toggle('web-plan', isDesktopComputer());
   $('#login-view').hidden = true;
   $('#billing-view').hidden = true;
   $('#app-view').hidden = false;
@@ -526,6 +527,7 @@ function closeDrawer() {
 
 function navigate(route) {
   currentRoute = route;
+  document.body.dataset.route = route;
   closeDrawer();
   $('#header-title').textContent = TITLES[route] || 'MedRecebe';
   const subpage = ['attendance', 'cancellation'].includes(route);
@@ -595,7 +597,7 @@ function renderHome() {
   screen.innerHTML = `<div class="screen-stack">
     ${pageHeading(`Olá, ${firstName}`, 'Registrar atendimento', 'Escolha onde você atendeu para fazer um novo registro.')}
     ${install}
-    <div class="card summary-card"><span class="summary-main"><small>A RECEBER</small><strong>${currency(total)}</strong></span><span class="summary-count"><strong>${pending.length}</strong><small>atendimentos</small></span></div>
+    <div class="overview-grid"><div class="card summary-card"><span class="summary-main"><small>A RECEBER</small><strong>${currency(total)}</strong><span class="desktop-summary-note">Valores ainda não marcados como recebidos</span></span><span class="summary-count"><strong>${pending.length}</strong><small>atendimentos</small></span></div><div class="card desktop-stat"><span class="round-icon">⌂</span><div><small>LOCAIS ATIVOS</small><strong>${active.length}</strong><p>Com modalidades disponíveis</p></div></div><button class="card desktop-action" data-action="new-workplace" type="button"><span>＋</span><div><small>ATALHO</small><strong>Novo local</strong><p>Cadastre um pagador e suas regras</p></div></button></div>
     <h2 class="section-title">Onde foi o atendimento?</h2><div class="location-list">${cards}</div>
     ${appState.demo ? '<div class="notice warning demo-notice">Você está vendo dados fictícios. Use-os livremente para explorar o MedRecebe.</div>' : ''}
   </div>`;
@@ -622,9 +624,8 @@ function renderDashboard() {
 
   screen.innerHTML = `<div class="screen-stack">
     ${pageHeading('Visão geral', 'Dashboard', 'Valores calculados pelas regras cadastradas em cada modalidade.')}
-    <div class="card summary-card"><div style="width:100%"><span class="summary-main"><small>TOTAL A RECEBER</small><strong>${currency(total)}</strong></span><div class="metrics"><span class="metric"><strong>${receivables.length}</strong><small>PENDENTES</small></span><span class="metric overdue"><strong>${overdue.length}</strong><small>VENCIDOS</small></span><span class="metric"><strong>${inReconciliation.length}</strong><small>EM CONCILIAÇÃO</small></span></div></div></div>
-    <h2 class="section-title">Por local de trabalho</h2><div class="list">${workplaceCards || emptyCard('Ainda não há dados', 'Cadastre um local e comece a registrar atendimentos.')}</div>
-    ${dueCards ? `<h2 class="section-title">Confirmar créditos</h2><div class="list">${dueCards}</div>` : ''}
+    <div class="dashboard-overview"><div class="card summary-card"><div style="width:100%"><span class="summary-main"><small>TOTAL A RECEBER</small><strong>${currency(total)}</strong><span class="desktop-summary-note">Consolidado dos atendimentos em aberto</span></span><div class="metrics"><span class="metric"><strong>${receivables.length}</strong><small>PENDENTES</small></span><span class="metric overdue"><strong>${overdue.length}</strong><small>VENCIDOS</small></span><span class="metric"><strong>${inReconciliation.length}</strong><small>EM CONCILIAÇÃO</small></span></div></div></div><article class="card dashboard-insight"><span class="round-icon">⇄</span><small>CONCILIAÇÃO</small><strong>${currency(overdue.reduce((sum, item) => sum + item.amountCents, 0))}</strong><p>em créditos vencidos para revisar</p><button class="button secondary small" data-nav="reconciliation" type="button">Abrir conciliação</button></article></div>
+    <div class="dashboard-columns"><section><h2 class="section-title">Por local de trabalho</h2><div class="list">${workplaceCards || emptyCard('Ainda não há dados', 'Cadastre um local e comece a registrar atendimentos.')}</div></section>${dueCards ? `<section><h2 class="section-title">Confirmar créditos</h2><div class="list due-list">${dueCards}</div></section>` : `<section><h2 class="section-title">Próximos passos</h2>${emptyCard('Nenhum crédito vencido', 'Quando um repasse chegar à data prevista, ele aparecerá aqui para confirmação.')}</section>`}</div>
     <p class="muted" style="text-align:center">Dias úteis consideram fins de semana. O aplicativo não consulta feriados bancários.</p>
   </div>`;
 }
@@ -1109,6 +1110,9 @@ function bindEvents() {
   document.addEventListener('submit', handleSubmit);
   document.addEventListener('change', handleChange);
   document.addEventListener('input', handleInput);
+  window.addEventListener('resize', () => {
+    if (!$('#app-view').hidden) document.body.classList.toggle('web-plan', isDesktopComputer());
+  });
 }
 
 function handleClick(event) {
