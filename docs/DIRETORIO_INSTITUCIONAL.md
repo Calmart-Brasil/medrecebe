@@ -14,6 +14,8 @@ Base gerada em 17/07/2026 com dados CNES atualizados em 16/07/2026:
 
 Cada unidade física permanece separada pelo código CNES. Isso permite que dois hospitais da mesma rede apareçam como locais de trabalho diferentes, ainda que compartilhem a mesma mantenedora.
 
+O campo `tradeName` preserva o nome fantasia informado pelo estabelecimento ao CNES, enquanto `legalName` guarda a razão social. A busca considera ambos e a interface os apresenta separadamente. Quando o CNES não informa nome fantasia, o campo permanece vazio e a razão social é usada apenas como nome de exibição de contingência.
+
 ## Fontes oficiais
 
 - CNES / Ministério da Saúde: https://dadosabertos.saude.gov.br/dataset/cnes-cadastro-nacional-de-estabelecimentos-de-saude

@@ -49,6 +49,8 @@ export interface Workplace {
   directoryId?: string;
   directoryCategory?: string;
   directoryTypeName?: string;
+  directoryTradeName?: string;
+  directoryLegalName?: string;
   directoryUpdatedAt?: string;
   cnes?: string;
   payerCnpjSource?: 'establishment' | 'maintainer';

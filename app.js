@@ -3,7 +3,7 @@ const SESSION_KEY = 'medrecebe.beta.session.v1';
 const DEMO_CPF = '52998224725';
 const DEMO_PASSWORD = 'Teste@123';
 const FEEDBACK_EMAIL = 'ti@calmart.com.br';
-const INSTITUTION_DIRECTORY_URL = './data/institution-directory-rmsp.json?v=20260716';
+const INSTITUTION_DIRECTORY_URL = './data/institution-directory-rmsp.json?v=20260717';
 const CNPJ_CARD_URL = 'https://solucoes.receita.fazenda.gov.br/Servicos/cnpjreva/cnpj.aspx';
 
 const $ = (selector, root = document) => root.querySelector(selector);
@@ -198,7 +198,8 @@ async function loadInstitutionDirectory() {
       institutionDirectoryMeta = payload.meta || null;
       institutionDirectory = (payload.institutions || []).map((institution) => ({
         ...institution,
-        searchKey: normalizeDirectoryText(`${institution.name} ${institution.legalName} ${institution.city} ${institution.payerCnpj} ${institution.cnes}`),
+        tradeName: institution.tradeName || institution.name || '',
+        searchKey: normalizeDirectoryText(`${institution.tradeName || ''} ${institution.name} ${institution.legalName} ${institution.city} ${institution.payerCnpj} ${institution.cnes}`),
       }));
       return institutionDirectory;
     })
@@ -212,11 +213,13 @@ async function loadInstitutionDirectory() {
 function directorySelectionMarkup() {
   if (!draftWorkplace?.cnes) return '<div id="institution-selected"></div>';
   const sourceLabel = draftWorkplace.payerCnpjSource === 'maintainer' ? 'CNPJ da mantenedora' : 'CNPJ do estabelecimento';
+  const tradeName = draftWorkplace.directoryTradeName || draftWorkplace.name || 'Instituição selecionada';
+  const legalName = draftWorkplace.directoryLegalName || draftWorkplace.payerLegalName || '';
   const alternate = draftWorkplace.establishmentCnpj && draftWorkplace.maintainerCnpj && draftWorkplace.establishmentCnpj !== draftWorkplace.maintainerCnpj
     ? `<small>Mantenedora: ${formatCnpj(draftWorkplace.maintainerCnpj)}</small>`
     : '';
   const updated = institutionDirectoryMeta?.sourceUpdatedAt || draftWorkplace.directoryUpdatedAt || 'base oficial vigente';
-  return `<div id="institution-selected" class="directory-selected"><div><span class="directory-badge">CNES ${escapeHtml(draftWorkplace.cnes)}</span><strong>${escapeHtml(draftWorkplace.directoryTypeName || 'Estabelecimento de saúde')}</strong><small>${escapeHtml(sourceLabel)} · atualização ${escapeHtml(updated)}</small>${alternate}</div><a href="${CNPJ_CARD_URL}" target="_blank" rel="noopener">Consultar comprovante oficial do CNPJ</a><p>Confirme no contrato ou na Nota Fiscal se este é o CNPJ que efetivamente realiza o repasse. Os campos continuam editáveis.</p></div>`;
+  return `<div id="institution-selected" class="directory-selected"><div><span class="directory-badge">CNES ${escapeHtml(draftWorkplace.cnes)}</span><strong>${escapeHtml(tradeName)}</strong>${legalName ? `<small>Razão social: ${escapeHtml(legalName)}</small>` : ''}<small>${escapeHtml(draftWorkplace.directoryTypeName || 'Estabelecimento de saúde')} · ${escapeHtml(sourceLabel)}</small><small>Base CNES atualizada em ${escapeHtml(updated)}</small>${alternate}</div><a href="${CNPJ_CARD_URL}" target="_blank" rel="noopener">Consultar comprovante oficial do CNPJ</a><p>Confirme no contrato ou na Nota Fiscal se este é o CNPJ que efetivamente realiza o repasse. Os campos continuam editáveis.</p></div>`;
 }
 
 function renderInstitutionSearchResults(query = '') {
@@ -244,7 +247,7 @@ function renderInstitutionSearchResults(query = '') {
   statusRoot.textContent = matches.length
     ? 'Selecione uma instituição para preencher o cadastro.'
     : 'Nenhum resultado. Você ainda pode preencher os campos manualmente.';
-  resultsRoot.innerHTML = matches.map((institution) => `<button class="directory-result" data-action="select-directory-institution" data-id="${escapeHtml(institution.id)}" type="button"><span><strong>${escapeHtml(institution.name)}</strong><small>${escapeHtml(institution.typeName)} · ${escapeHtml(institution.city)}</small></span><span><b>${formatCnpj(institution.payerCnpj)}</b><small>CNES ${escapeHtml(institution.cnes)}</small></span></button>`).join('');
+  resultsRoot.innerHTML = matches.map((institution) => `<button class="directory-result" data-action="select-directory-institution" data-id="${escapeHtml(institution.id)}" type="button"><span><strong>${escapeHtml(institution.tradeName || institution.name)}</strong><small>Razão social: ${escapeHtml(institution.legalName)}</small><small>${escapeHtml(institution.typeName)} · ${escapeHtml(institution.city)}</small></span><span><b>${formatCnpj(institution.payerCnpj)}</b><small>CNES ${escapeHtml(institution.cnes)}</small></span></button>`).join('');
 }
 
 function selectDirectoryInstitution(institutionId) {
@@ -252,13 +255,15 @@ function selectDirectoryInstitution(institutionId) {
   if (!institution || !draftWorkplace) return;
   preserveWorkplaceFields();
   Object.assign(draftWorkplace, {
-    name: institution.name,
+    name: institution.tradeName || institution.name,
     address: institution.address,
     payerCnpj: institution.payerCnpj,
     payerLegalName: institution.legalName,
     directoryId: institution.id,
     directoryCategory: institution.category,
     directoryTypeName: institution.typeName,
+    directoryTradeName: institution.tradeName || institution.name,
+    directoryLegalName: institution.legalName,
     directoryUpdatedAt: institutionDirectoryMeta?.sourceUpdatedAt || '',
     cnes: institution.cnes,
     payerCnpjSource: institution.payerCnpjSource,
@@ -989,8 +994,12 @@ function renderWorkplaceModal() {
   const editing = editingModalityIndex === null ? null : draftWorkplace.modalities[editingModalityIndex];
   const modality = editing || { name: '', type: 'plan', amountCents: 0, rule: { kind: 'calendar_days', days: 30 } };
   modalRoot.innerHTML = `<div class="modal-wrap"><section class="modal-sheet" role="dialog" aria-modal="true"><header class="modal-header simple"><span></span><h2>${appState.workplaces.some((item) => item.id === draftWorkplace.id) ? 'Editar local' : 'Novo local'}</h2><button data-action="close-modal" aria-label="Fechar" type="button">×</button></header><div class="modal-body"><div class="form-grid"><label>Nome do local<input id="work-name" value="${escapeHtml(draftWorkplace.name)}" placeholder="Ex.: Clínica Horizonte"/></label><label>Razão Social do pagador<input id="work-legal-name" value="${escapeHtml(draftWorkplace.payerLegalName || '')}" placeholder="Razão Social exibida na Nota Fiscal"/></label><label>CNPJ do pagador<input id="work-cnpj" inputmode="numeric" maxlength="18" value="${formatCnpj(draftWorkplace.payerCnpj || '')}" placeholder="00.000.000/0000-00"/></label><label>Endereço<input id="work-address" value="${escapeHtml(draftWorkplace.address)}" placeholder="Rua, número e cidade"/></label><label>E-mail oficial para conciliação<input id="work-email" type="email" value="${escapeHtml(draftWorkplace.reconciliationEmail)}" placeholder="financeiro@clinica.com.br"/></label><label>E-mail em cópia<input id="work-cc" value="${escapeHtml(draftWorkplace.reconciliationCc || '')}" placeholder="gestor@clinica.com.br"/></label></div><div class="notice">O CNPJ e a Razão Social são usados para identificar automaticamente o pagador na Nota Fiscal.</div><div class="modality-form"><h3>${editing ? 'Editar modalidade' : 'Adicionar modalidade'}</h3><label>Nome<input id="mod-name" value="${escapeHtml(modality.name)}" placeholder="Ex.: Consulta, Unimed ou imunobiológico"/></label><div class="inline-grid"><label>Tipo<select id="mod-type"><option value="plan" ${modality.type === 'plan' ? 'selected' : ''}>Plano</option><option value="private" ${modality.type === 'private' ? 'selected' : ''}>Particular</option><option value="recurring" ${modality.type === 'recurring' ? 'selected' : ''}>Receita recorrente</option><option value="custom" ${modality.type === 'custom' ? 'selected' : ''}>Personalizado</option></select></label><label>Valor (R$)<input id="mod-value" inputmode="decimal" value="${modality.amountCents ? (modality.amountCents / 100).toFixed(2).replace('.', ',') : ''}" placeholder="0,00"/></label></div><label id="mod-custom-type-wrap" ${modality.type === 'custom' ? '' : 'hidden'}>Nome do tipo personalizado<input id="mod-custom-type" value="${escapeHtml(modality.customType || '')}" placeholder="Ex.: Teleinterconsulta"/></label>${modality.type === 'recurring' ? '<div class="notice success">No atendimento, será possível identificar o paciente, o medicamento e contabilizar também uma consulta.</div>' : ''}<label>Regra de pagamento<select id="mod-rule">${ruleOptions(modality.rule.kind)}</select></label><div id="rule-fields">${ruleFields(modality.rule)}</div><button class="button secondary small" data-action="save-modality" type="button">${editing ? 'Atualizar modalidade' : 'Adicionar e continuar'}</button><p class="field-hint">A modalidade é adicionada automaticamente à lista abaixo e o formulário permanece disponível para o próximo cadastro.</p></div><h3 class="section-title">Modalidades cadastradas</h3><div class="modalities-editor">${modalityRows || '<div class="notice warning">Cadastre pelo menos uma modalidade.</div>'}</div><div class="modal-final-actions"><button class="button primary" data-action="save-workplace" type="button">Salvar</button><button class="button secondary" data-action="close-modal" type="button">Cancelar</button></div></div></section></div>`;
+  const workNameInput = $('#work-name');
+  const workNameLabel = workNameInput?.closest('label');
+  if (workNameLabel?.firstChild) workNameLabel.firstChild.textContent = 'Nome fantasia / nome do local';
+  if (workNameInput) workNameInput.placeholder = 'Ex.: Hospital São Paulo';
   const workplaceFormGrid = $('.form-grid', modalRoot);
-  workplaceFormGrid?.insertAdjacentHTML('beforebegin', `<section class="institution-directory"><div class="directory-heading"><span class="round-icon">⌕</span><div><h3>Buscar hospital ou empresa</h3><p>Preencha automaticamente pelo diretório oficial de São Paulo e Região Metropolitana.</p></div></div><label>Nome, cidade, CNPJ ou CNES<input id="institution-search" autocomplete="off" placeholder="Ex.: Hospital São Paulo, Osasco ou CNPJ"/></label><p class="field-hint" id="institution-directory-status">Carregando diretório institucional…</p><div class="directory-results" id="institution-results" role="listbox"></div>${directorySelectionMarkup()}</section>`);
+  workplaceFormGrid?.insertAdjacentHTML('beforebegin', `<section class="institution-directory"><div class="directory-heading"><span class="round-icon">⌕</span><div><h3>Buscar hospital ou empresa</h3><p>Consulte nome fantasia, razão social e dados oficiais do CNES.</p></div></div><label>Nome fantasia, razão social, cidade, CNPJ ou CNES<input id="institution-search" autocomplete="off" placeholder="Ex.: A.C.Camargo, Fundação Antonio Prudente ou CNPJ"/></label><p class="field-hint" id="institution-directory-status">Carregando diretório institucional…</p><div class="directory-results" id="institution-results" role="listbox"></div>${directorySelectionMarkup()}</section>`);
   void loadInstitutionDirectory()
     .then(() => {
       if ($('#institution-search')) renderInstitutionSearchResults($('#institution-search').value);

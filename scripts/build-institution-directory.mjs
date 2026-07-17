@@ -173,7 +173,8 @@ for await (const line of reader) {
   const city = RMSP_MUNICIPALITIES.get(row.CO_IBGE);
   const cnes = onlyDigits(row.CO_CNES).padStart(7, '0');
   const legalName = clean(row.NO_RAZAO_SOCIAL);
-  const name = clean(row.NO_FANTASIA) || legalName;
+  const tradeName = clean(row.NO_FANTASIA);
+  const name = tradeName || legalName;
   institutions.push({
     id: `cnes-${cnes}`,
     cnes,
@@ -182,6 +183,7 @@ for await (const line of reader) {
     typeCode: Number(row.TP_UNIDADE),
     typeName: TYPE_NAMES.get(row.TP_UNIDADE) || `Tipo CNES ${row.TP_UNIDADE}`,
     name,
+    tradeName,
     legalName,
     payerCnpj,
     payerCnpjSource: establishmentCnpj ? 'establishment' : 'maintainer',

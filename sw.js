@@ -1,4 +1,4 @@
-const CACHE_NAME = 'medrecebe-app-v11';
+const CACHE_NAME = 'medrecebe-app-v12';
 const APP_SHELL = [
   './',
   './index.html',
@@ -6,8 +6,8 @@ const APP_SHELL = [
   './landing.css?v=2',
   './styles.css?v=8',
   './cloud.js?v=5',
-  './app.js?v=13',
-  './data/institution-directory-rmsp.json?v=20260716',
+  './app.js?v=14',
+  './data/institution-directory-rmsp.json?v=20260717',
   './legal.css?v=2',
   './termos.html',
   './privacidade.html',
