@@ -1,5 +1,5 @@
 import { json, options, publicError } from '../_shared/http.ts';
-import { mercadoPago, type MercadoPagoSubscription } from '../_shared/mercado-pago.ts';
+import { cancelPreapproval, mercadoPago, type MercadoPagoSubscription } from '../_shared/mercado-pago.ts';
 import { adminClient, authenticatedUser } from '../_shared/supabase.ts';
 
 const PLAN = { code: 'standard', amount: 39.9, amountCents: 3990, reason: 'MedRecebe - Assinatura mensal' } as const;
@@ -27,7 +27,7 @@ Deno.serve(async (request) => {
     }
     if (current?.status === 'pending' && current.checkout_url && Number(current.amount_cents) === PLAN.amountCents) return json(request, { checkoutUrl: current.checkout_url, reused: true, planCode: PLAN.code });
     if (current?.status === 'pending' && current.provider_subscription_id) {
-      await mercadoPago(`/preapproval/${encodeURIComponent(current.provider_subscription_id)}`, { method: 'PUT', body: JSON.stringify({ status: 'canceled' }) }).catch(() => undefined);
+      await cancelPreapproval(current.provider_subscription_id);
     }
 
     const appUrl = new URL(Deno.env.get('APP_URL') || 'https://medrecebe.com.br/app.html');
