@@ -90,10 +90,10 @@ for (const marker of ['register', 'login-cpf', 'create-subscription', 'cancel-su
 for (const marker of ['MedRecebe Admin', 'admin-users']) {
   assert.ok(adminHtml.includes(marker) || adminApp.includes(marker), `painel administrativo sem: ${marker}`);
 }
-for (const marker of ['admin.css?v=4', 'users-toolbar', 'Base de clientes', 'Entrar no painel']) {
+for (const marker of ['admin.css?v=4', 'admin.js?v=6', 'users-toolbar', 'Base de clientes', 'Entrar no painel']) {
   assert.ok(adminHtml.includes(marker), `layout administrativo desktop sem: ${marker}`);
 }
-for (const forbidden of ['SEGUNDA ETAPA', 'Authenticator', 'admin-mfa', 'adminMfaSatisfied']) assert.ok(!`${adminHtml}\n${adminApp}\n${cloud}`.includes(forbidden), `login administrativo ainda contém: ${forbidden}`);
+for (const forbidden of ['SEGUNDA ETAPA', 'segundo fator', 'Authenticator', 'admin-mfa', 'adminMfaSatisfied', 'prompt(']) assert.ok(!`${adminHtml}\n${adminApp}\n${cloud}`.includes(forbidden), `painel administrativo ainda contém: ${forbidden}`);
 for (const marker of ['width: calc(100% - 272px)', 'grid-template-columns: repeat(3,minmax(0,1fr))', 'background: var(--navy)', 'dashboard-columns']) assert.ok(appCss.includes(marker) || app.includes(marker), `experiência desktop sem: ${marker}`);
 assert.ok(!app.includes('Abrir painel administrativo'), 'o painel administrativo não deve aparecer no app móvel');
 assert.ok(cloud.includes('admin-update-user'), 'cliente cloud sem comando administrativo');

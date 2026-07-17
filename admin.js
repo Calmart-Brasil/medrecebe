@@ -97,16 +97,15 @@ function openUserEditor(userId) {
 async function runUserAction(action, userId) {
   const user = currentUsers.get(userId);
   if (!user) return;
+  $('#edit-error').textContent = '';
   if (action === 'schedule_suspension') {
     if (!confirm(`Programar a suspensão de ${user.fullName}?\n\nO acesso continuará disponível até o fim do período mensal já pago. A cobrança recorrente será encerrada agora e o bloqueio ocorrerá somente na data de vencimento.`)) return;
   }
   if (action === 'force_suspension') {
-    const confirmation = prompt(`Suspensão imediata por infração\n\nO acesso de ${user.fullName} será encerrado agora, sem restituição proporcional quando permitido pelos Termos e pela legislação aplicável.\n\nDigite SUSPENDER para confirmar.`);
-    if (confirmation !== 'SUSPENDER') return;
+    if (!confirm(`Suspender imediatamente o acesso de ${user.fullName}?\n\nO acesso será encerrado agora. Esta ação deve ser usada somente quando houver infração às regras de uso.`)) return;
   }
   if (action === 'delete_user') {
-    const confirmation = prompt(`Excluir definitivamente ${user.fullName}?\n\nLogin e dados sincronizados serão removidos. Digite EXCLUIR para confirmar.`);
-    if (confirmation !== 'EXCLUIR') return;
+    if (!confirm(`Excluir definitivamente o cadastro de ${user.fullName}?\n\nO login e os dados sincronizados serão removidos. Esta ação não pode ser desfeita.`)) return;
   }
   try {
     await cloud.adminUpdateUser({ userId, action, ...(action === 'delete_user' ? { confirm: true } : {}) });
