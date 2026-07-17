@@ -380,6 +380,26 @@ input:focus, select:focus, textarea:focus { border-color: var(--blue-600); box-s
 .modal-header.simple button:last-child { color: var(--muted); font-size: 22px; }
 .modal-body { display: grid; gap: 15px; padding: 18px; overflow: auto; overscroll-behavior: contain; }
 .form-grid { display: grid; gap: 13px; }
+.institution-directory { display: grid; gap: 11px; padding: 14px; border: 1px solid #bdd5f4; border-radius: 15px; background: linear-gradient(145deg, #f7faff, var(--blue-050)); }
+.directory-heading { display: grid; grid-template-columns: 42px 1fr; gap: 10px; align-items: center; }
+.directory-heading .round-icon { width: 42px; height: 42px; background: white; box-shadow: 0 6px 18px rgb(0 77 182 / 10%); }
+.directory-heading h3 { margin: 0 0 3px; color: var(--navy); font-size: 14px; }
+.directory-heading p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.45; }
+.directory-results { display: grid; gap: 7px; max-height: 288px; overflow: auto; }
+.directory-result { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 12px; align-items: center; width: 100%; padding: 11px; border: 1px solid var(--line); border-radius: 11px; background: white; color: var(--ink); text-align: left; }
+.directory-result:hover, .directory-result:focus-visible { border-color: var(--blue-600); box-shadow: 0 0 0 3px rgb(86 160 232 / 15%); }
+.directory-result span { display: grid; min-width: 0; gap: 3px; }
+.directory-result span:last-child { justify-items: end; text-align: right; }
+.directory-result strong { overflow: hidden; color: var(--navy); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.directory-result b { color: var(--blue-700); font-size: 11px; }
+.directory-result small { color: var(--muted); font-size: 10px; line-height: 1.35; }
+.directory-selected { display: grid; gap: 8px; padding: 12px; border: 1px solid #aedcc2; border-radius: 12px; background: #f1fbf5; }
+.directory-selected > div { display: grid; gap: 3px; }
+.directory-selected strong { color: var(--navy); font-size: 12px; }
+.directory-selected small { color: var(--muted); font-size: 10px; }
+.directory-selected a { color: var(--blue-700); font-size: 11px; font-weight: 800; }
+.directory-selected p { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.45; }
+.directory-badge { justify-self: start; padding: 4px 7px; border-radius: 99px; background: var(--green-soft); color: var(--green); font-size: 9px; font-weight: 850; letter-spacing: .04em; }
 .inline-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
 .modalities-editor { display: grid; gap: 9px; }
 .editor-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; padding: 11px; border: 1px solid var(--line); border-radius: 11px; background: white; }

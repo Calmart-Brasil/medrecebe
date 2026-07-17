@@ -46,6 +46,14 @@ export interface Workplace {
   address: string;
   payerCnpj: string;
   payerLegalName: string;
+  directoryId?: string;
+  directoryCategory?: string;
+  directoryTypeName?: string;
+  directoryUpdatedAt?: string;
+  cnes?: string;
+  payerCnpjSource?: 'establishment' | 'maintainer';
+  establishmentCnpj?: string;
+  maintainerCnpj?: string;
   reconciliationEmail: string;
   reconciliationCc: string;
   modalities: PaymentModality[];

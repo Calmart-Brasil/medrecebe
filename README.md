@@ -16,6 +16,7 @@ SaaS para médicos registrarem atendimentos, acompanharem repasses e prepararem 
 - Fotos de comprovantes permanecem no aparelho e não entram na sincronização Web.
 - Cobrança recorrente, cancelamento e reembolso processados pelo provedor de pagamentos vigente.
 - Conciliação de Nota Fiscal em PDF/XML por CNPJ, Razão Social e valor contabilizado.
+- Diretório CNES com hospitais e empresas de saúde dos 39 municípios da Região Metropolitana de São Paulo.
 
 ## Estrutura
 
@@ -25,6 +26,8 @@ SaaS para médicos registrarem atendimentos, acompanharem repasses e prepararem 
 - `termos.html`, `privacidade.html`, `cancelamento.html` e `suporte.html`: documentos e suporte.
 - `supabase/`: banco, RLS e Edge Functions.
 - `docs/historias-usuario-lancamento.md`: jornadas e critérios de aceite.
+- `data/institution-directory-rmsp.json` e `scripts/build-institution-directory.mjs`: base institucional e gerador auditável.
+- `docs/DIRETORIO_INSTITUCIONAL.md`: escopo, fontes, critérios de CNPJ e rotina de atualização.
 - `mobile/`: base do aplicativo iOS para TestFlight.
 
 ## Instalação no iPhone
