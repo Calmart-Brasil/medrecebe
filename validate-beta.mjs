@@ -91,7 +91,7 @@ assert.ok(
   'appState só pode ser carregado depois da mensagem padrão usada pelo estado vazio',
 );
 assert.ok(!appHtml.includes('Beta local:'), 'o aviso antigo de beta local não deve aparecer na entrada');
-assert.ok(appHtml.includes('styles.css?v=8') && appHtml.includes('app.js?v=13'), 'os arquivos corrigidos precisam de cache busting');
+assert.ok(appHtml.includes('styles.css?v=8') && appHtml.includes('app.js?v=14'), 'os arquivos corrigidos precisam de cache busting');
 assert.equal(institutionDirectory.meta.municipalities, 39, 'o diretório deve cobrir os 39 municípios da RMSP');
 assert.ok(institutionDirectory.meta.total >= 1000, 'o diretório institucional está incompleto');
 assert.ok(institutionDirectory.meta.countsByCategory.hospital >= 500, 'o diretório hospitalar está incompleto');
@@ -100,7 +100,9 @@ assert.ok(institutionDirectory.meta.countsByCategory.ambulance >= 400, 'faltam p
 assert.ok(institutionDirectory.meta.countsByCategory.health_management >= 100, 'faltam centrais de gestão em saúde');
 assert.equal(new Set(institutionDirectory.institutions.map((item) => item.city)).size, 39, 'há município da RMSP sem cobertura');
 assert.ok(institutionDirectory.institutions.every((item) => /^\d{14}$/.test(item.payerCnpj) && /^\d{7}$/.test(item.cnes)), 'diretório com CNPJ ou CNES inválido');
-for (const marker of ['RMSP_MUNICIPALITIES', 'isValidCnpj', 'medical_staffing', 'sourceUpdatedAt']) assert.ok(institutionBuilder.includes(marker), `gerador do diretório sem: ${marker}`);
+assert.ok(institutionDirectory.institutions.filter((item) => item.tradeName).length >= 950, 'o diretório precisa preservar os nomes fantasia informados pelo CNES');
+assert.ok(institutionDirectory.institutions.every((item) => item.tradeName !== undefined), 'todo registro precisa declarar o campo tradeName, ainda que vazio');
+for (const marker of ['RMSP_MUNICIPALITIES', 'isValidCnpj', 'medical_staffing', 'sourceUpdatedAt', 'tradeName']) assert.ok(institutionBuilder.includes(marker), `gerador do diretório sem: ${marker}`);
 for (const marker of ['loadInstitutionDirectory', 'searchInstitutionDirectory', 'CNPJ_CARD_URL']) assert.ok(mobileInstitutionDirectory.includes(marker), `diretório nativo sem: ${marker}`);
 for (const marker of ['billing-view', 'R$ 39,90', 'PLANO ÚNICO', 'runtime-config.js', 'cloud.js']) {
   assert.ok(appHtml.includes(marker), `fluxo de assinatura sem: ${marker}`);
@@ -153,7 +155,7 @@ for (const [name, document] of [['Landing', landing], ['Aplicativo', `${appHtml}
   }
 }
 
-for (const marker of ['install', 'activate', 'fetch', 'caches.open', 'medrecebe-app-v11', './app.html', 'institution-directory-rmsp.json']) {
+for (const marker of ['install', 'activate', 'fetch', 'caches.open', 'medrecebe-app-v12', './app.html', 'institution-directory-rmsp.json']) {
   assert.ok(worker.includes(marker), `sw.js sem: ${marker}`);
 }
 

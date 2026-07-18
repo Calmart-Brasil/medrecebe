@@ -336,7 +336,7 @@ export function WorkplaceFormScreen({
 
   const selectInstitution = (institution: DirectoryInstitution) => {
     setSelectedInstitution(institution);
-    setName(institution.name);
+    setName(institution.tradeName || institution.name);
     setAddress(institution.address);
     setPayerLegalName(institution.legalName);
     setPayerCnpj(formatCnpj(institution.payerCnpj));
@@ -374,6 +374,8 @@ export function WorkplaceFormScreen({
       directoryId: selectedInstitution?.id ?? workplace?.directoryId,
       directoryCategory: selectedInstitution?.category ?? workplace?.directoryCategory,
       directoryTypeName: selectedInstitution?.typeName ?? workplace?.directoryTypeName,
+      directoryTradeName: selectedInstitution?.tradeName ?? workplace?.directoryTradeName,
+      directoryLegalName: selectedInstitution?.legalName ?? workplace?.directoryLegalName,
       directoryUpdatedAt: selectedInstitution ? directory?.meta.sourceUpdatedAt : workplace?.directoryUpdatedAt,
       cnes: selectedInstitution?.cnes ?? workplace?.cnes,
       payerCnpjSource: selectedInstitution?.payerCnpjSource ?? workplace?.payerCnpjSource,
@@ -422,9 +424,9 @@ export function WorkplaceFormScreen({
           </View>
           <Field
             autoCapitalize="words"
-            label="Nome, cidade, CNPJ ou CNES"
+            label="Nome fantasia, razão social, cidade, CNPJ ou CNES"
             onChangeText={setDirectoryQuery}
-            placeholder="Ex.: Hospital São Paulo ou Osasco"
+            placeholder="Ex.: A.C.Camargo ou Fundação Antonio Prudente"
             value={directoryQuery}
           />
           <Text style={styles.directoryStatus}>
@@ -439,7 +441,8 @@ export function WorkplaceFormScreen({
                   style={({ pressed }) => [styles.directoryResult, pressed && styles.pressed]}
                 >
                   <View style={styles.directoryResultCopy}>
-                    <Text numberOfLines={1} style={styles.directoryResultName}>{institution.name}</Text>
+                    <Text numberOfLines={1} style={styles.directoryResultName}>{institution.tradeName || institution.name}</Text>
+                    <Text numberOfLines={1} style={styles.directoryResultLegalName}>Razão social: {institution.legalName}</Text>
                     <Text style={styles.directoryResultType}>{institution.typeName} · {institution.city}</Text>
                   </View>
                   <View style={styles.directoryResultCnpj}>
@@ -453,7 +456,9 @@ export function WorkplaceFormScreen({
           {selectedInstitution || workplace?.cnes ? (
             <View style={styles.directorySelected}>
               <Text style={styles.directorySelectedBadge}>CNES {selectedInstitution?.cnes ?? workplace?.cnes}</Text>
-              <Text style={styles.directorySelectedTitle}>{selectedInstitution?.typeName ?? workplace?.directoryTypeName ?? 'Estabelecimento de saúde'}</Text>
+              <Text style={styles.directorySelectedTitle}>{selectedInstitution?.tradeName ?? workplace?.directoryTradeName ?? workplace?.name ?? 'Instituição selecionada'}</Text>
+              <Text style={styles.directorySelectedLegalName}>Razão social: {selectedInstitution?.legalName ?? workplace?.directoryLegalName ?? workplace?.payerLegalName}</Text>
+              <Text style={styles.directorySelectedText}>{selectedInstitution?.typeName ?? workplace?.directoryTypeName ?? 'Estabelecimento de saúde'}</Text>
               <Text style={styles.directorySelectedText}>Dados preenchidos pela base oficial. Confirme no contrato ou na Nota Fiscal qual CNPJ efetivamente realiza o repasse.</Text>
               <Pressable onPress={() => void Linking.openURL(CNPJ_CARD_URL)} style={({ pressed }) => pressed && styles.pressed}>
                 <Text style={styles.directoryLink}>Consultar comprovante oficial do CNPJ</Text>
@@ -463,7 +468,7 @@ export function WorkplaceFormScreen({
         </Card>
 
         <Card style={styles.formCard}>
-          <Field label="Nome do local" onChangeText={setName} placeholder="Ex.: Clínica Horizonte" value={name} />
+          <Field label="Nome fantasia / nome do local" onChangeText={setName} placeholder="Ex.: Hospital São Paulo" value={name} />
           <Field
             label="Razão Social do pagador"
             onChangeText={setPayerLegalName}
@@ -569,6 +574,7 @@ const styles = StyleSheet.create({
   directoryResult: { alignItems: 'center', backgroundColor: colors.paper, borderColor: colors.line, borderRadius: radius.sm, borderWidth: 1, flexDirection: 'row', gap: 10, padding: 11 },
   directoryResultCopy: { flex: 1, gap: 3 },
   directoryResultName: { color: colors.navy, fontSize: 13, fontWeight: '800' },
+  directoryResultLegalName: { color: colors.ink, fontSize: 10, lineHeight: 14 },
   directoryResultType: { color: colors.muted, fontSize: 10, lineHeight: 14 },
   directoryResultCnpj: { alignItems: 'flex-end', gap: 3 },
   directoryCnpj: { color: colors.blue700, fontSize: 10, fontWeight: '800' },
@@ -576,6 +582,7 @@ const styles = StyleSheet.create({
   directorySelected: { backgroundColor: colors.greenSoft, borderColor: '#AEDCC2', borderRadius: radius.sm, borderWidth: 1, gap: 5, padding: 12 },
   directorySelectedBadge: { alignSelf: 'flex-start', backgroundColor: colors.paper, borderRadius: radius.pill, color: colors.green, fontSize: 10, fontWeight: '800', overflow: 'hidden', paddingHorizontal: 8, paddingVertical: 4 },
   directorySelectedTitle: { color: colors.navy, fontSize: 13, fontWeight: '800' },
+  directorySelectedLegalName: { color: colors.ink, fontSize: 11, lineHeight: 16 },
   directorySelectedText: { color: colors.muted, fontSize: 11, lineHeight: 16 },
   directoryLink: { color: colors.blue700, fontSize: 12, fontWeight: '800', paddingTop: 3 },
   fieldBlock: { gap: 8 },

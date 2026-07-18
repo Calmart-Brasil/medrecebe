@@ -1,4 +1,4 @@
-const DIRECTORY_URL = 'https://medrecebe.com.br/data/institution-directory-rmsp.json?v=20260716';
+const DIRECTORY_URL = 'https://medrecebe.com.br/data/institution-directory-rmsp.json?v=20260717';
 
 export const CNPJ_CARD_URL = 'https://solucoes.receita.fazenda.gov.br/Servicos/cnpjreva/cnpj.aspx';
 
@@ -9,6 +9,7 @@ export interface DirectoryInstitution {
   categoryLabel: string;
   typeName: string;
   name: string;
+  tradeName: string;
   legalName: string;
   payerCnpj: string;
   payerCnpjSource: 'establishment' | 'maintainer';
@@ -54,7 +55,7 @@ export function searchInstitutionDirectory(directory: InstitutionDirectory | nul
   const tokens = normalized.split(' ').filter(Boolean);
   return directory.institutions.filter((institution) => {
     if (digits.length >= 3 && institution.payerCnpj.includes(digits)) return true;
-    const key = normalize(`${institution.name} ${institution.legalName} ${institution.city} ${institution.payerCnpj} ${institution.cnes}`);
+    const key = normalize(`${institution.tradeName} ${institution.name} ${institution.legalName} ${institution.city} ${institution.payerCnpj} ${institution.cnes}`);
     return tokens.every((token) => key.includes(token));
   }).slice(0, 10);
 }

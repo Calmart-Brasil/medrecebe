@@ -16,7 +16,7 @@ SaaS para médicos registrarem atendimentos, acompanharem repasses e prepararem 
 - Fotos de comprovantes permanecem no aparelho e não entram na sincronização Web.
 - Cobrança recorrente, cancelamento e reembolso processados pelo provedor de pagamentos vigente.
 - Conciliação de Nota Fiscal em PDF/XML por CNPJ, Razão Social e valor contabilizado.
-- Diretório CNES com hospitais e empresas de saúde dos 39 municípios da Região Metropolitana de São Paulo.
+- Diretório CNES com nome fantasia, razão social, CNPJ e CNES de hospitais e empresas de saúde dos 39 municípios da Região Metropolitana de São Paulo.
 
 ## Estrutura
 
