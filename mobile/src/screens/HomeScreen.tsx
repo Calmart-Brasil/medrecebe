@@ -22,6 +22,7 @@ export function HomeScreen({
 }) {
   const pending = data.attendances.filter((attendance) => attendance.status !== 'paid');
   const pendingTotal = pending.reduce((sum, attendance) => sum + attendance.amountCents, 0);
+  const pendingQuantity = pending.reduce((sum, attendance) => sum + Math.max(1, attendance.quantity ?? 1), 0);
   const activeWorkplaces = data.workplaces.filter((workplace) => workplace.active);
 
   return (
@@ -38,7 +39,7 @@ export function HomeScreen({
         </View>
         <View style={styles.summaryDivider} />
         <View style={styles.summaryMetric}>
-          <Text style={styles.summaryCount}>{pending.length}</Text>
+          <Text style={styles.summaryCount}>{pendingQuantity}</Text>
           <Text style={styles.summaryCaption}>atendimentos</Text>
         </View>
       </Card>

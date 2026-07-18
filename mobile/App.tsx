@@ -113,11 +113,15 @@ export default function App() {
     });
   };
 
-  const saveAttendance = (attendance: Attendance) => {
+  const saveAttendance = (attendances: Attendance[]) => {
     if (!data) return;
-    commit({ ...data, attendances: [attendance, ...data.attendances] });
+    commit({ ...data, attendances: [...attendances, ...data.attendances] });
     setRoute({ name: 'home' });
-    Alert.alert('Atendimento salvo', 'O valor e a data prevista já foram adicionados ao Dashboard.');
+    const quantity = attendances.reduce((sum, attendance) => sum + Math.max(1, attendance.quantity ?? 1), 0);
+    Alert.alert(
+      quantity === 1 ? 'Atendimento salvo' : 'Atendimentos salvos',
+      `${quantity} ${quantity === 1 ? 'atendimento foi adicionado' : 'atendimentos foram adicionados'} ao Dashboard com os valores e prazos previstos.`,
+    );
   };
 
   const logout = () => {

@@ -5,6 +5,9 @@ import { formatCurrency, formatDate, isPastOrToday } from '../services/paymentRu
 import { colors, radius } from '../theme';
 import type { AppData } from '../types';
 
+const quantityOf = (attendance: AppData['attendances'][number]) => Math.max(1, attendance.quantity ?? 1);
+const attendanceCount = (attendances: AppData['attendances']) => attendances.reduce((sum, attendance) => sum + quantityOf(attendance), 0);
+
 export function DashboardScreen({ data, onMarkPaid }: { data: AppData; onMarkPaid: (attendanceIds: string[]) => void }) {
   const receivables = data.attendances.filter((attendance) => attendance.status !== 'paid');
   const total = receivables.reduce((sum, attendance) => sum + attendance.amountCents, 0);
@@ -12,12 +15,13 @@ export function DashboardScreen({ data, onMarkPaid }: { data: AppData; onMarkPai
   const reconciliation = receivables.filter((attendance) => attendance.status === 'in_reconciliation');
   const dueGroups = [...receivables]
     .filter((attendance) => isPastOrToday(attendance.dueAt))
-    .reduce<Array<{ id: string; workplaceName: string; dueAt: string; totalCents: number; ids: string[] }>>((groups, attendance) => {
+    .reduce<Array<{ id: string; workplaceName: string; dueAt: string; totalCents: number; quantity: number; ids: string[] }>>((groups, attendance) => {
       const workplace = data.workplaces.find((item) => item.id === attendance.workplaceId);
       const id = `${attendance.workplaceId}:${attendance.dueAt}`;
       const existing = groups.find((group) => group.id === id);
       if (existing) {
         existing.totalCents += attendance.amountCents;
+        existing.quantity += quantityOf(attendance);
         existing.ids.push(attendance.id);
       } else {
         groups.push({
@@ -25,6 +29,7 @@ export function DashboardScreen({ data, onMarkPaid }: { data: AppData; onMarkPai
           workplaceName: workplace?.name ?? 'Local não disponível',
           dueAt: attendance.dueAt,
           totalCents: attendance.amountCents,
+          quantity: quantityOf(attendance),
           ids: [attendance.id],
         });
       }
@@ -55,15 +60,15 @@ export function DashboardScreen({ data, onMarkPaid }: { data: AppData; onMarkPai
         <Text style={styles.heroValue}>{formatCurrency(total)}</Text>
         <View style={styles.heroMetrics}>
           <View style={styles.heroMetric}>
-            <Text style={styles.heroMetricValue}>{receivables.length}</Text>
+            <Text style={styles.heroMetricValue}>{attendanceCount(receivables)}</Text>
             <Text style={styles.heroMetricLabel}>pendentes</Text>
           </View>
           <View style={styles.heroMetric}>
-            <Text style={[styles.heroMetricValue, overdue.length > 0 && styles.overdueText]}>{overdue.length}</Text>
+            <Text style={[styles.heroMetricValue, overdue.length > 0 && styles.overdueText]}>{attendanceCount(overdue)}</Text>
             <Text style={styles.heroMetricLabel}>vencidos</Text>
           </View>
           <View style={styles.heroMetric}>
-            <Text style={styles.heroMetricValue}>{reconciliation.length}</Text>
+            <Text style={styles.heroMetricValue}>{attendanceCount(reconciliation)}</Text>
             <Text style={styles.heroMetricLabel}>em conciliação</Text>
           </View>
         </View>
@@ -78,7 +83,8 @@ export function DashboardScreen({ data, onMarkPaid }: { data: AppData; onMarkPai
             const entries = receivables.filter((attendance) => attendance.workplaceId === workplace.id);
             const workplaceTotal = entries.reduce((sum, attendance) => sum + attendance.amountCents, 0);
             const nextDue = [...entries].sort((a, b) => a.dueAt.localeCompare(b.dueAt))[0]?.dueAt;
-            const overdueCount = entries.filter((attendance) => isPastOrToday(attendance.dueAt)).length;
+            const quantity = attendanceCount(entries);
+            const overdueCount = attendanceCount(entries.filter((attendance) => isPastOrToday(attendance.dueAt)));
 
             return (
               <Card key={workplace.id} style={styles.workplaceCard}>
@@ -89,7 +95,7 @@ export function DashboardScreen({ data, onMarkPaid }: { data: AppData; onMarkPai
                   <View style={styles.workplaceCopy}>
                     <Text style={styles.workplaceName}>{workplace.name}</Text>
                     <Text style={styles.workplaceCount}>
-                      {entries.length} {entries.length === 1 ? 'atendimento' : 'atendimentos'} a receber
+                      {quantity} {quantity === 1 ? 'atendimento' : 'atendimentos'} a receber
                     </Text>
                   </View>
                   {overdueCount > 0 ? (
@@ -123,7 +129,7 @@ export function DashboardScreen({ data, onMarkPaid }: { data: AppData; onMarkPai
                 <View style={styles.dueGroupCopy}>
                   <Text style={styles.dueGroupName}>{group.workplaceName}</Text>
                   <Text style={styles.dueGroupMeta}>
-                    Previsto em {formatDate(group.dueAt)} • {group.ids.length} {group.ids.length === 1 ? 'atendimento' : 'atendimentos'}
+                    Previsto em {formatDate(group.dueAt)} • {group.quantity} {group.quantity === 1 ? 'atendimento' : 'atendimentos'}
                   </Text>
                 </View>
                 <View style={styles.dueGroupAction}>

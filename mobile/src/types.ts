@@ -85,6 +85,7 @@ export type AttendanceStatus = 'pending' | 'in_reconciliation' | 'paid';
 
 export interface Attendance {
   id: string;
+  recordId?: string;
   workplaceId: string;
   modalityId: string;
   modalityName: string;
@@ -92,6 +93,8 @@ export interface Attendance {
   occurredAt: string;
   dueAt: string;
   amountCents: number;
+  quantity?: number;
+  unitAmountCents?: number;
   baseAmountCents?: number;
   evidenceUri: string;
   notes: string;

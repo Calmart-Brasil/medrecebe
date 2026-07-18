@@ -25,6 +25,7 @@ let draftWorkplace = null;
 let editingModalityIndex = null;
 let attendanceDraft = null;
 let editingAttendanceId = '';
+let attendanceRenderTimer = 0;
 let cloudAccount = null;
 let activeStateKey = APP_KEY;
 let selectedPlanCode = 'standard';
@@ -119,6 +120,44 @@ function activateSession() {
 
 function id(prefix) {
   return `${prefix}-${crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`}`;
+}
+
+function attendanceQuantity(attendance) {
+  const quantity = Number(attendance?.quantity);
+  return Number.isInteger(quantity) && quantity > 0 ? quantity : 1;
+}
+
+function attendanceRecordId(attendance) {
+  return attendance?.recordId || attendance?.id || '';
+}
+
+function attendanceCount(attendances) {
+  return attendances.reduce((total, attendance) => total + attendanceQuantity(attendance), 0);
+}
+
+function attendanceRecordLines(recordId) {
+  return appState.attendances.filter((attendance) => attendanceRecordId(attendance) === recordId);
+}
+
+function attendanceRecordEvidence(lines) {
+  return lines.find((attendance) => attendance.evidence)?.evidence || '';
+}
+
+function newAttendanceDraft(workplace) {
+  const firstModality = workplace.modalities.find((item) => item.active);
+  return {
+    occurredAt: dateOnly(),
+    items: firstModality ? { [firstModality.id]: { quantity: 1 } } : {},
+    notes: '',
+    evidence: '',
+  };
+}
+
+function selectedAttendanceItems(workplace, draft = attendanceDraft) {
+  return workplace.modalities
+    .filter((modality) => modality.active || Number(draft?.items?.[modality.id]?.quantity) > 0)
+    .map((modality) => ({ modality, draft: draft?.items?.[modality.id] || {} }))
+    .filter(({ draft: item }) => Number(item.quantity) > 0);
 }
 
 function escapeHtml(value = '') {
@@ -441,12 +480,14 @@ function demoState(passwordHash, salt) {
     const occurredAt = dateOnly(addDays(new Date(), -daysAgo));
     return {
       id: attendanceId,
+      recordId: attendanceId,
       workplaceId: workplace.id,
       modalityId: modality.id,
       modalityName: modality.name,
       occurredAt,
       dueAt: calculateDueDate(occurredAt, modality.rule),
       amountCents: modality.amountCents,
+      quantity: 1,
       evidence: '',
       notes: 'Registro fictício para avaliação do beta.',
       status: 'pending',
@@ -509,13 +550,22 @@ async function hydrateCloudState() {
   try {
     const result = await cloud.loadState();
     if (result.state) {
-      const localEvidence = new Map(appState.attendances.map((attendance) => [attendance.id, attendance.evidence]));
+      const localEvidence = new Map();
+      appState.attendances.forEach((attendance) => {
+        if (attendance.evidence) localEvidence.set(attendanceRecordId(attendance), attendance.evidence);
+      });
+      const hydratedEvidence = new Set();
       appState = {
         ...emptyState(),
         ...result.state,
         profile: appState.profile,
         cloudUserId: cloudAccount.profile.id,
-        attendances: (result.state.attendances || []).map((attendance) => ({ ...attendance, evidence: localEvidence.get(attendance.id) || '' })),
+        attendances: (result.state.attendances || []).map((attendance) => {
+          const recordId = attendanceRecordId(attendance);
+          const evidence = !hydratedEvidence.has(recordId) ? localEvidence.get(recordId) || '' : '';
+          if (evidence) hydratedEvidence.add(recordId);
+          return { ...attendance, evidence };
+        }),
       };
       localStorage.setItem(activeStateKey, JSON.stringify(appState));
       if (!$('#app-view').hidden) renderRoute();
@@ -706,7 +756,7 @@ function renderHome() {
   screen.innerHTML = `<div class="screen-stack">
     ${pageHeading(`Olá, ${firstName}`, 'Registrar atendimento', 'Escolha onde você atendeu para fazer um novo registro.')}
     ${install}
-    <div class="overview-grid"><div class="card summary-card"><span class="summary-main"><small>A RECEBER</small><strong>${currency(total)}</strong><span class="desktop-summary-note">Valores ainda não marcados como recebidos</span></span><span class="summary-count"><strong>${pending.length}</strong><small>atendimentos</small></span></div><div class="card desktop-stat"><span class="round-icon">⌂</span><div><small>LOCAIS ATIVOS</small><strong>${active.length}</strong><p>Com modalidades disponíveis</p></div></div><button class="card desktop-action" data-action="new-workplace" type="button"><span>＋</span><div><small>ATALHO</small><strong>Novo local</strong><p>Cadastre um pagador e suas regras</p></div></button></div>
+    <div class="overview-grid"><div class="card summary-card"><span class="summary-main"><small>A RECEBER</small><strong>${currency(total)}</strong><span class="desktop-summary-note">Valores ainda não marcados como recebidos</span></span><span class="summary-count"><strong>${attendanceCount(pending)}</strong><small>atendimentos</small></span></div><div class="card desktop-stat"><span class="round-icon">⌂</span><div><small>LOCAIS ATIVOS</small><strong>${active.length}</strong><p>Com modalidades disponíveis</p></div></div><button class="card desktop-action" data-action="new-workplace" type="button"><span>＋</span><div><small>ATALHO</small><strong>Novo local</strong><p>Cadastre um pagador e suas regras</p></div></button></div>
     <h2 class="section-title">Onde foi o atendimento?</h2><div class="location-list">${cards}</div>
     ${appState.demo ? '<div class="notice warning demo-notice">Você está vendo dados fictícios. Use-os livremente para explorar o MedRecebe.</div>' : ''}
   </div>`;
@@ -722,18 +772,19 @@ function renderDashboard() {
       const items = receivables.filter((attendance) => attendance.workplaceId === workplace.id);
       const nextDue = [...items].sort((a, b) => a.dueAt.localeCompare(b.dueAt))[0]?.dueAt;
       const workplaceTotal = items.reduce((sum, attendance) => sum + attendance.amountCents, 0);
-      const overdueCount = items.filter((attendance) => isPastOrToday(attendance.dueAt)).length;
-      return `<article class="card workplace-summary"><div class="card-head"><span class="round-icon">⌂</span><div><h3>${escapeHtml(workplace.name)}</h3><p>${items.length} ${items.length === 1 ? 'atendimento' : 'atendimentos'} a receber</p></div>${overdueCount ? `<span class="badge overdue">${overdueCount} venc.</span>` : ''}</div><div class="value-row"><span><small>Valor a receber</small><strong>${currency(workplaceTotal)}</strong></span><span><small>Próximo crédito</small><b>${nextDue ? displayDate(nextDue) : '—'}</b></span></div></article>`;
+      const quantity = attendanceCount(items);
+      const overdueCount = attendanceCount(items.filter((attendance) => isPastOrToday(attendance.dueAt)));
+      return `<article class="card workplace-summary"><div class="card-head"><span class="round-icon">⌂</span><div><h3>${escapeHtml(workplace.name)}</h3><p>${quantity} ${quantity === 1 ? 'atendimento' : 'atendimentos'} a receber</p></div>${overdueCount ? `<span class="badge overdue">${overdueCount} venc.</span>` : ''}</div><div class="value-row"><span><small>Valor a receber</small><strong>${currency(workplaceTotal)}</strong></span><span><small>Próximo crédito</small><b>${nextDue ? displayDate(nextDue) : '—'}</b></span></div></article>`;
     })
     .join('');
   const dueGroups = groupDueDates(receivables);
   const dueCards = dueGroups
-    .map((group) => `<article class="card location-card"><span class="location-copy"><strong>${escapeHtml(group.workplaceName)}</strong><small>Previsto em ${displayDate(group.dueAt)} • ${group.ids.length} atend.</small><em>${currency(group.totalCents)}</em></span><button class="button secondary small" data-action="mark-paid" data-ids="${group.ids.join(',')}" type="button">Recebido</button></article>`)
+    .map((group) => `<article class="card location-card"><span class="location-copy"><strong>${escapeHtml(group.workplaceName)}</strong><small>Previsto em ${displayDate(group.dueAt)} • ${group.quantity} atend.</small><em>${currency(group.totalCents)}</em></span><button class="button secondary small" data-action="mark-paid" data-ids="${group.ids.join(',')}" type="button">Recebido</button></article>`)
     .join('');
 
   screen.innerHTML = `<div class="screen-stack">
     ${pageHeading('Visão geral', 'Dashboard', 'Valores calculados pelas regras cadastradas em cada modalidade.')}
-    <div class="dashboard-overview"><div class="card summary-card"><div style="width:100%"><span class="summary-main"><small>TOTAL A RECEBER</small><strong>${currency(total)}</strong><span class="desktop-summary-note">Consolidado dos atendimentos em aberto</span></span><div class="metrics"><span class="metric"><strong>${receivables.length}</strong><small>PENDENTES</small></span><span class="metric overdue"><strong>${overdue.length}</strong><small>VENCIDOS</small></span><span class="metric"><strong>${inReconciliation.length}</strong><small>EM CONCILIAÇÃO</small></span></div></div></div><article class="card dashboard-insight"><span class="round-icon">⇄</span><small>CONCILIAÇÃO</small><strong>${currency(overdue.reduce((sum, item) => sum + item.amountCents, 0))}</strong><p>em créditos vencidos para revisar</p><button class="button secondary small" data-nav="reconciliation" type="button">Abrir conciliação</button></article></div>
+    <div class="dashboard-overview"><div class="card summary-card"><div style="width:100%"><span class="summary-main"><small>TOTAL A RECEBER</small><strong>${currency(total)}</strong><span class="desktop-summary-note">Consolidado dos atendimentos em aberto</span></span><div class="metrics"><span class="metric"><strong>${attendanceCount(receivables)}</strong><small>PENDENTES</small></span><span class="metric overdue"><strong>${attendanceCount(overdue)}</strong><small>VENCIDOS</small></span><span class="metric"><strong>${attendanceCount(inReconciliation)}</strong><small>EM CONCILIAÇÃO</small></span></div></div></div><article class="card dashboard-insight"><span class="round-icon">⇄</span><small>CONCILIAÇÃO</small><strong>${currency(overdue.reduce((sum, item) => sum + item.amountCents, 0))}</strong><p>em créditos vencidos para revisar</p><button class="button secondary small" data-nav="reconciliation" type="button">Abrir conciliação</button></article></div>
     <div class="dashboard-columns"><section><h2 class="section-title">Por local de trabalho</h2><div class="list">${workplaceCards || emptyCard('Ainda não há dados', 'Cadastre um local e comece a registrar atendimentos.')}</div></section>${dueCards ? `<section><h2 class="section-title">Confirmar créditos</h2><div class="list due-list">${dueCards}</div></section>` : `<section><h2 class="section-title">Próximos passos</h2>${emptyCard('Nenhum crédito vencido', 'Quando um repasse chegar à data prevista, ele aparecerá aqui para confirmação.')}</section>`}</div>
     <p class="muted" style="text-align:center">Dias úteis consideram fins de semana. O aplicativo não consulta feriados bancários.</p>
   </div>`;
@@ -744,8 +795,9 @@ function groupDueDates(receivables) {
   receivables.filter((attendance) => isPastOrToday(attendance.dueAt)).forEach((attendance) => {
     const workplace = appState.workplaces.find((item) => item.id === attendance.workplaceId);
     const key = `${attendance.workplaceId}:${attendance.dueAt}`;
-    const group = groups.get(key) || { id: key, workplaceName: workplace?.name || 'Local não disponível', dueAt: attendance.dueAt, totalCents: 0, ids: [] };
+    const group = groups.get(key) || { id: key, workplaceName: workplace?.name || 'Local não disponível', dueAt: attendance.dueAt, totalCents: 0, quantity: 0, ids: [] };
     group.totalCents += attendance.amountCents;
+    group.quantity += attendanceQuantity(attendance);
     group.ids.push(attendance.id);
     groups.set(key, group);
   });
@@ -765,20 +817,61 @@ function renderWorkplaces() {
 function renderAttendance() {
   const workplace = appState.workplaces.find((item) => item.id === selectedWorkplaceId);
   if (!workplace) return navigate('home');
-  if (!attendanceDraft) attendanceDraft = { occurredAt: dateOnly(), modalityId: workplace.modalities.find((item) => item.active)?.id || '', notes: '', evidence: '', patientReference: '', medication: '', includeConsultation: false, consultationModalityId: '' };
-  const modality = workplace.modalities.find((item) => item.id === attendanceDraft.modalityId);
-  const dueAt = modality ? calculateDueDate(attendanceDraft.occurredAt, modality.rule) : '';
-  const choices = workplace.modalities.filter((item) => item.active).map((item) => `<label class="choice"><input type="radio" name="modality" value="${item.id}" ${item.id === attendanceDraft.modalityId ? 'checked' : ''}/><span><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(modalityTypeLabel(item))} • ${escapeHtml(describeRule(item.rule))}</small></span><b>${currency(item.amountCents)}</b></label>`).join('');
-  const consultationOptions = workplace.modalities.filter((item) => item.active && item.id !== modality?.id && item.type !== 'recurring');
-  if (modality?.type === 'recurring' && attendanceDraft.includeConsultation && !consultationOptions.some((item) => item.id === attendanceDraft.consultationModalityId)) attendanceDraft.consultationModalityId = consultationOptions[0]?.id || '';
-  const consultation = consultationOptions.find((item) => item.id === attendanceDraft.consultationModalityId);
-  const totalCents = (modality?.amountCents || 0) + (attendanceDraft.includeConsultation ? consultation?.amountCents || 0 : 0);
+  if (!attendanceDraft) attendanceDraft = newAttendanceDraft(workplace);
+  if (!attendanceDraft.items) {
+    const legacyItem = attendanceDraft.modalityId ? {
+      quantity: 1,
+      patientReference: attendanceDraft.patientReference || '',
+      medication: attendanceDraft.medication || '',
+      includeConsultation: Boolean(attendanceDraft.includeConsultation),
+      consultationModalityId: attendanceDraft.consultationModalityId || '',
+    } : null;
+    attendanceDraft.items = legacyItem ? { [attendanceDraft.modalityId]: legacyItem } : {};
+  }
+  const availableModalities = workplace.modalities.filter((item) => item.active || Number(attendanceDraft.items[item.id]?.quantity) > 0);
+  const choices = availableModalities.map((item) => {
+    const quantity = Math.max(0, Number(attendanceDraft.items[item.id]?.quantity) || 0);
+    return `<article class="choice modality-quantity-choice ${quantity ? 'selected' : ''}"><label class="modality-check"><input type="checkbox" name="modality" value="${item.id}" ${quantity ? 'checked' : ''}/><span><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(modalityTypeLabel(item))} • ${escapeHtml(describeRule(item.rule))}</small></span></label><b>${currency(item.amountCents)}<small>por atendimento</small></b>${quantity ? `<div class="quantity-row"><span>Quantidade realizada</span><div class="quantity-stepper"><button data-action="decrease-attendance-quantity" data-id="${item.id}" type="button" aria-label="Diminuir quantidade de ${escapeHtml(item.name)}">−</button><input class="attendance-quantity-input" data-modality-id="${item.id}" type="number" inputmode="numeric" min="1" max="999" value="${quantity}" aria-label="Quantidade de ${escapeHtml(item.name)}"/><button data-action="increase-attendance-quantity" data-id="${item.id}" type="button" aria-label="Aumentar quantidade de ${escapeHtml(item.name)}">+</button></div><strong>${currency(item.amountCents * quantity)}</strong></div>` : ''}</article>`;
+  }).join('');
+  const selectedItems = selectedAttendanceItems(workplace);
+  const itemSummaries = selectedItems.map(({ modality, draft }) => {
+    const quantity = attendanceQuantity(draft);
+    const consultationOptions = workplace.modalities.filter((item) => item.active && item.id !== modality.id && item.type !== 'recurring');
+    let consultation = draft.includeConsultation ? consultationOptions.find((item) => item.id === draft.consultationModalityId) : null;
+    if (draft.includeConsultation && !consultation) {
+      consultation = consultationOptions[0] || null;
+      draft.consultationModalityId = consultation?.id || '';
+    }
+    const unitCents = modality.amountCents + (consultation?.amountCents || 0);
+    return { modality, draft, consultation, quantity, unitCents, amountCents: unitCents * quantity, dueAt: calculateDueDate(attendanceDraft.occurredAt, modality.rule) };
+  });
+  const totalCents = itemSummaries.reduce((sum, item) => sum + item.amountCents, 0);
+  const totalQuantity = itemSummaries.reduce((sum, item) => sum + item.quantity, 0);
+  const dueDates = [...new Set(itemSummaries.map((item) => item.dueAt))];
   const photo = attendanceDraft.evidence
-    ? `<img class="photo-preview" src="${attendanceDraft.evidence}" alt="Prévia do comprovante"/><button class="button secondary small" data-action="remove-photo" type="button">Remover foto</button>`
-    : `<span class="round-icon">▣</span><strong>Fotografe a prova do atendimento</strong><p>Evite incluir dados clínicos desnecessários. A imagem ficará neste aparelho.</p><label class="button primary small file-button">Abrir câmera<input id="evidence-input" type="file" accept="image/*" capture="environment"/></label>`;
-  const recurringFields = modality?.type === 'recurring' ? `<div class="card recurring-fields"><h2 class="section-title">Receita recorrente</h2><label>Identificação do paciente<input id="recurring-patient" value="${escapeHtml(attendanceDraft.patientReference || '')}" placeholder="Use iniciais ou um código interno" required/></label><label>Medicamento ou tratamento<input id="recurring-medication" value="${escapeHtml(attendanceDraft.medication || '')}" placeholder="Ex.: imunobiológico ou medicamento oncológico" required/></label><label class="toggle-choice"><input id="recurring-consultation" type="checkbox" ${attendanceDraft.includeConsultation ? 'checked' : ''} ${consultationOptions.length ? '' : 'disabled'}/><span><strong>Contabilizar também uma consulta</strong><small>${consultationOptions.length ? 'Soma o valor de uma modalidade de consulta ao repasse do medicamento.' : 'Cadastre uma modalidade de consulta neste local para usar esta opção.'}</small></span></label>${attendanceDraft.includeConsultation && consultationOptions.length ? `<label>Modalidade da consulta<select id="recurring-consultation-modality">${consultationOptions.map((item) => `<option value="${item.id}" ${item.id === attendanceDraft.consultationModalityId ? 'selected' : ''}>${escapeHtml(item.name)} • ${currency(item.amountCents)}</option>`).join('')}</select></label>` : ''}</div>` : '';
-  const recorded = appState.attendances.filter((item) => item.workplaceId === workplace.id).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))).slice(0, 20).map((item) => `<article class="card attendance-record"><div><strong>${displayDate(item.occurredAt)} • ${escapeHtml(item.modalityName)}</strong><small>${item.patientReference ? `${escapeHtml(item.patientReference)} • ${escapeHtml(item.medication || '')}<br/>` : ''}${escapeHtml(item.notes || 'Sem observação')}</small></div><span><b>${currency(item.amountCents)}</b><small>${item.status === 'paid' ? 'Recebido' : `Crédito ${displayDate(item.dueAt)}`}</small></span><div class="row-actions"><button class="button secondary small" data-action="edit-attendance" data-id="${item.id}" type="button">Editar</button><button class="danger-link" data-action="delete-attendance" data-id="${item.id}" type="button">Excluir</button></div></article>`).join('');
-  screen.innerHTML = `<div class="screen-stack"><form class="screen-stack" id="attendance-form">${pageHeading(editingAttendanceId ? 'Corrigir registro' : 'Novo registro', workplace.name, editingAttendanceId ? 'Revise os dados e salve a correção.' : 'Adicione o comprovante e classifique a modalidade do repasse.')}<label>Data do atendimento<input id="attendance-date" type="date" value="${attendanceDraft.occurredAt}" required/></label><h2 class="section-title">Comprovante</h2><div class="attendance-photo">${photo}</div><h2 class="section-title">Modalidade de repasse</h2><div class="choice-list">${choices}</div>${recurringFields}<label>Observação (opcional)<textarea id="attendance-notes" placeholder="Inclua somente informações necessárias.">${escapeHtml(attendanceDraft.notes)}</textarea></label>${modality ? `<div class="card summary-card"><span class="summary-main"><small>VALOR CONTABILIZADO</small><strong>${currency(totalCents)}</strong>${attendanceDraft.includeConsultation && consultation ? `<small>Repasse ${currency(modality.amountCents)} + consulta ${currency(consultation.amountCents)}</small>` : ''}</span><span class="summary-count"><small>CRÉDITO</small><strong style="font-size:14px">${displayDate(dueAt)}</strong></span></div>` : ''}<div class="action-grid"><button class="button secondary" data-action="cancel-attendance" type="button">Cancelar</button><button class="button primary" type="submit">${editingAttendanceId ? 'Salvar correção' : 'Salvar'}</button></div></form><h2 class="section-title">Atendimentos registrados</h2><div class="list">${recorded || emptyCard('Nenhum atendimento registrado', 'Os registros deste local aparecerão aqui para consulta e correção.')}</div></div>`;
+    ? `<img class="photo-preview" src="${attendanceDraft.evidence}" alt="Prévia do comprovante"/><div class="photo-source-actions"><label class="button secondary small file-button">Tirar outra foto<input class="evidence-input" type="file" accept="image/*" capture="environment"/></label><label class="button secondary small file-button">Galeria<input class="evidence-input" type="file" accept="image/*"/></label><button class="danger-link" data-action="remove-photo" type="button">Remover</button></div>`
+    : `<span class="round-icon">▣</span><strong>Adicione a prova dos atendimentos</strong><p>Uma única imagem pode comprovar todas as modalidades e quantidades deste registro.</p><div class="photo-source-actions"><label class="button primary small file-button">Tirar foto<input class="evidence-input" type="file" accept="image/*" capture="environment"/></label><label class="button secondary small file-button">Galeria<input class="evidence-input" type="file" accept="image/*"/></label></div>`;
+  const recurringFields = itemSummaries.filter(({ modality }) => modality.type === 'recurring').map(({ modality, draft }) => {
+    const consultationOptions = workplace.modalities.filter((item) => item.active && item.id !== modality.id && item.type !== 'recurring');
+    if (draft.includeConsultation && !consultationOptions.some((item) => item.id === draft.consultationModalityId)) draft.consultationModalityId = consultationOptions[0]?.id || '';
+    return `<div class="card recurring-fields"><h2 class="section-title">Receita recorrente • ${escapeHtml(modality.name)}</h2><label>Identificação do paciente<input data-recurring-patient="${modality.id}" value="${escapeHtml(draft.patientReference || '')}" placeholder="Use iniciais ou um código interno" required/></label><label>Medicamento ou tratamento<input data-recurring-medication="${modality.id}" value="${escapeHtml(draft.medication || '')}" placeholder="Ex.: imunobiológico ou medicamento oncológico" required/></label><label class="toggle-choice"><input class="recurring-consultation" data-modality-id="${modality.id}" type="checkbox" ${draft.includeConsultation ? 'checked' : ''} ${consultationOptions.length ? '' : 'disabled'}/><span><strong>Contabilizar também uma consulta por atendimento</strong><small>${consultationOptions.length ? 'A quantidade da consulta será igual à quantidade informada nesta modalidade.' : 'Cadastre uma modalidade de consulta neste local para usar esta opção.'}</small></span></label>${draft.includeConsultation && consultationOptions.length ? `<label>Modalidade da consulta<select class="recurring-consultation-modality" data-modality-id="${modality.id}">${consultationOptions.map((item) => `<option value="${item.id}" ${item.id === draft.consultationModalityId ? 'selected' : ''}>${escapeHtml(item.name)} • ${currency(item.amountCents)}</option>`).join('')}</select></label>` : ''}</div>`;
+  }).join('');
+  const recordGroups = new Map();
+  appState.attendances.filter((item) => item.workplaceId === workplace.id).forEach((item) => {
+    const recordId = attendanceRecordId(item);
+    const group = recordGroups.get(recordId) || [];
+    group.push(item);
+    recordGroups.set(recordId, group);
+  });
+  const recorded = [...recordGroups.entries()].sort(([, a], [, b]) => String(b[0]?.createdAt).localeCompare(String(a[0]?.createdAt))).slice(0, 20).map(([recordId, lines]) => {
+    const first = lines[0];
+    const recordTotal = lines.reduce((sum, item) => sum + item.amountCents, 0);
+    const recordQuantity = attendanceCount(lines);
+    const lineRows = lines.map((item) => `<div class="attendance-record-line"><span><strong>${attendanceQuantity(item)} × ${escapeHtml(item.modalityName)}</strong>${item.patientReference ? `<small>${escapeHtml(item.patientReference)} • ${escapeHtml(item.medication || '')}</small>` : ''}</span><span><b>${currency(item.amountCents)}</b><small>${item.status === 'paid' ? 'Recebido' : `Crédito ${displayDate(item.dueAt)}`}</small></span></div>`).join('');
+    return `<article class="card attendance-record"><div><strong>${displayDate(first.occurredAt)} • ${recordQuantity} ${recordQuantity === 1 ? 'atendimento' : 'atendimentos'}</strong><small>${escapeHtml(first.notes || 'Sem observação')}</small></div><span><b>${currency(recordTotal)}</b><small>${lines.length} ${lines.length === 1 ? 'modalidade' : 'modalidades'}</small></span><div class="attendance-record-lines">${lineRows}</div><div class="row-actions"><button class="button secondary small" data-action="edit-attendance" data-id="${recordId}" type="button">Editar</button><button class="danger-link" data-action="delete-attendance" data-id="${recordId}" type="button">Excluir</button></div></article>`;
+  }).join('');
+  const summaryLines = itemSummaries.map((item) => `<div class="attendance-summary-line"><span>${item.quantity} × ${escapeHtml(item.modality.name)}</span><span>${currency(item.amountCents)} • ${displayDate(item.dueAt)}</span></div>`).join('');
+  screen.innerHTML = `<div class="screen-stack"><form class="screen-stack" id="attendance-form">${pageHeading(editingAttendanceId ? 'Corrigir registro' : 'Novo registro', workplace.name, editingAttendanceId ? 'Revise as modalidades, quantidades e salve a correção.' : 'Use uma única prova e informe todas as modalidades realizadas no período.')}<label>Data dos atendimentos<input id="attendance-date" type="date" value="${attendanceDraft.occurredAt}" required/></label><h2 class="section-title">Comprovante</h2><div class="attendance-photo">${photo}</div><div class="section-heading"><div><h2 class="section-title">Modalidade de repasse</h2><p>Selecione uma ou mais modalidades e informe a quantidade realizada.</p></div>${totalQuantity ? `<span class="badge">${totalQuantity} atend.</span>` : ''}</div><div class="choice-list">${choices}</div>${recurringFields}<label>Observação (opcional)<textarea id="attendance-notes" placeholder="Inclua somente informações necessárias.">${escapeHtml(attendanceDraft.notes)}</textarea></label>${itemSummaries.length ? `<div class="card attendance-total-card"><div class="attendance-total-head"><span><small>VALOR CONTABILIZADO</small><strong>${currency(totalCents)}</strong><em>${totalQuantity} ${totalQuantity === 1 ? 'atendimento' : 'atendimentos'}</em></span><span><small>CRÉDITO</small><strong>${dueDates.length === 1 ? displayDate(dueDates[0]) : `${dueDates.length} datas`}</strong></span></div><div class="attendance-summary-lines">${summaryLines}</div></div>` : ''}<div class="action-grid"><button class="button secondary" data-action="cancel-attendance" type="button">Cancelar</button><button class="button primary" type="submit">${editingAttendanceId ? 'Salvar correção' : 'Salvar'}</button></div></form><h2 class="section-title">Atendimentos registrados</h2><div class="list">${recorded || emptyCard('Nenhum atendimento registrado', 'Os registros deste local aparecerão aqui para consulta e correção.')}</div></div>`;
 }
 
 function legalNameMatches(registeredName, extractedNames = []) {
@@ -867,10 +960,10 @@ function renderReconciliation() {
   const channel = appState.workplaces.find((item) => item.id === selectedChannelWorkplace);
   if (!selectedReconciliationGroup || !groups.some((group) => group.id === selectedReconciliationGroup)) selectedReconciliationGroup = groups[0]?.id || '';
   const options = appState.workplaces.map((workplace) => `<option value="${workplace.id}" ${workplace.id === selectedChannelWorkplace ? 'selected' : ''}>${escapeHtml(workplace.name)}</option>`).join('');
-  const groupCards = groups.map((group) => `<button class="card group-card ${group.id === selectedReconciliationGroup ? 'selected' : ''}" data-action="select-reconciliation" data-id="${group.id}" type="button"><span class="group-check">${group.id === selectedReconciliationGroup ? '✓' : ''}</span><span><h3>${escapeHtml(group.workplace.name)}</h3><p>${monthLabel(group.month)}</p><small>${group.attendances.length} atend. • ${group.attachments} comprov.</small></span><b>${currency(group.totalCents)}</b></button>`).join('');
+  const groupCards = groups.map((group) => `<button class="card group-card ${group.id === selectedReconciliationGroup ? 'selected' : ''}" data-action="select-reconciliation" data-id="${group.id}" type="button"><span class="group-check">${group.id === selectedReconciliationGroup ? '✓' : ''}</span><span><h3>${escapeHtml(group.workplace.name)}</h3><p>${monthLabel(group.month)}</p><small>${group.quantity} atend. • ${group.attachments} comprov.</small></span><b>${currency(group.totalCents)}</b></button>`).join('');
   const selected = groups.find((group) => group.id === selectedReconciliationGroup);
   const latestInvoice = (appState.invoices || []).find((invoice) => invoice.id === selectedInvoiceId) || appState.invoices?.[0];
-  screen.innerHTML = `<div class="screen-stack">${pageHeading('Conferência de pagamentos', 'Conciliação', 'Envie uma Nota Fiscal para identificar o pagador e comparar automaticamente os valores.')}<h2 class="section-title">Conferir Nota Fiscal</h2><div class="card settings"><p>Selecione o PDF ou XML recebido. O arquivo é lido para extrair CNPJ, Razão Social e valor; depois, o MedRecebe compara esses dados com o cadastro e os atendimentos contabilizados.</p><label class="button primary file-button">Selecionar Nota Fiscal<input id="invoice-file" type="file" accept="application/pdf,application/xml,text/xml,.pdf,.xml"/></label><p class="field-hint">O arquivo é processado para a conferência e não é incorporado à sincronização dos dados de gestão.</p></div>${invoiceCard(latestInvoice)}<h2 class="section-title">Canal oficial</h2>${channel ? `<form class="card settings" id="channel-form"><label>Local<select id="channel-workplace">${options}</select></label><label>E-mail oficial<input id="channel-email" type="email" value="${escapeHtml(channel.reconciliationEmail)}" placeholder="repasses@local.com.br"/></label><label>Cópia (opcional)<input id="channel-cc" value="${escapeHtml(channel.reconciliationCc || '')}" placeholder="gestor@local.com.br"/></label><label>Mensagem padrão<textarea id="channel-message">${escapeHtml(appState.reconciliationMessage)}</textarea></label><p class="field-hint">Tokens: {{local}}, {{periodo}}, {{quantidade}}, {{valor}}, {{detalhes}} e {{medico}}.</p><button class="button secondary small" type="submit">Salvar canal e mensagem</button></form>` : '<div class="notice warning">Cadastre um local antes de configurar a conciliação.</div>'}<h2 class="section-title">Grupos prontos para conciliar</h2><div class="list">${groupCards || emptyCard('Nenhum repasse vencido', 'Quando um grupo ultrapassar a data prevista sem baixa, ele aparecerá aqui.')}</div>${selected ? `<div class="card summary-card"><span class="summary-main"><small>SELECIONADO</small><strong>${currency(selected.totalCents)}</strong><small>${selected.attendances.length} atendimentos • ${monthLabel(selected.month)}</small></span></div><button class="button primary" data-action="open-reconciliation-email" type="button">Abrir solicitação no e-mail</button><div class="notice warning">No navegador, o e-mail é preenchido, mas os comprovantes precisam ser anexados manualmente antes do envio.</div>` : ''}</div>`;
+  screen.innerHTML = `<div class="screen-stack">${pageHeading('Conferência de pagamentos', 'Conciliação', 'Envie uma Nota Fiscal para identificar o pagador e comparar automaticamente os valores.')}<h2 class="section-title">Conferir Nota Fiscal</h2><div class="card settings"><p>Selecione o PDF ou XML recebido. O arquivo é lido para extrair CNPJ, Razão Social e valor; depois, o MedRecebe compara esses dados com o cadastro e os atendimentos contabilizados.</p><label class="button primary file-button">Selecionar Nota Fiscal<input id="invoice-file" type="file" accept="application/pdf,application/xml,text/xml,.pdf,.xml"/></label><p class="field-hint">O arquivo é processado para a conferência e não é incorporado à sincronização dos dados de gestão.</p></div>${invoiceCard(latestInvoice)}<h2 class="section-title">Canal oficial</h2>${channel ? `<form class="card settings" id="channel-form"><label>Local<select id="channel-workplace">${options}</select></label><label>E-mail oficial<input id="channel-email" type="email" value="${escapeHtml(channel.reconciliationEmail)}" placeholder="repasses@local.com.br"/></label><label>Cópia (opcional)<input id="channel-cc" value="${escapeHtml(channel.reconciliationCc || '')}" placeholder="gestor@local.com.br"/></label><label>Mensagem padrão<textarea id="channel-message">${escapeHtml(appState.reconciliationMessage)}</textarea></label><p class="field-hint">Tokens: {{local}}, {{periodo}}, {{quantidade}}, {{valor}}, {{detalhes}} e {{medico}}.</p><button class="button secondary small" type="submit">Salvar canal e mensagem</button></form>` : '<div class="notice warning">Cadastre um local antes de configurar a conciliação.</div>'}<h2 class="section-title">Grupos prontos para conciliar</h2><div class="list">${groupCards || emptyCard('Nenhum repasse vencido', 'Quando um grupo ultrapassar a data prevista sem baixa, ele aparecerá aqui.')}</div>${selected ? `<div class="card summary-card"><span class="summary-main"><small>SELECIONADO</small><strong>${currency(selected.totalCents)}</strong><small>${selected.quantity} atendimentos • ${monthLabel(selected.month)}</small></span></div><button class="button primary" data-action="open-reconciliation-email" type="button">Abrir solicitação no e-mail</button><div class="notice warning">No navegador, o e-mail é preenchido, mas os comprovantes precisam ser anexados manualmente antes do envio.</div>` : ''}</div>`;
 }
 
 function reconciliationGroups() {
@@ -880,10 +973,12 @@ function reconciliationGroups() {
     if (!workplace) return;
     const month = attendance.dueAt.slice(0, 7);
     const key = `${workplace.id}:${month}`;
-    const group = map.get(key) || { id: key, workplace, month, attendances: [], totalCents: 0, attachments: 0 };
+    const group = map.get(key) || { id: key, workplace, month, attendances: [], totalCents: 0, quantity: 0, evidenceRecordIds: new Set(), attachments: 0 };
     group.attendances.push(attendance);
     group.totalCents += attendance.amountCents;
-    if (attendance.evidence) group.attachments += 1;
+    group.quantity += attendanceQuantity(attendance);
+    if (attendanceRecordEvidence(attendanceRecordLines(attendanceRecordId(attendance)))) group.evidenceRecordIds.add(attendanceRecordId(attendance));
+    group.attachments = group.evidenceRecordIds.size;
     map.set(key, group);
   });
   return [...map.values()].sort((a, b) => a.month.localeCompare(b.month));
@@ -1085,9 +1180,9 @@ function prepareReconciliationEmail() {
     selectedChannelWorkplace = group.workplace.id;
     return;
   }
-  const details = group.attendances.map((attendance, index) => `${index + 1}. ${displayDate(attendance.occurredAt)} — ${attendance.modalityName} — ${currency(attendance.amountCents)}`).join('\n');
+  const details = group.attendances.map((attendance, index) => `${index + 1}. ${displayDate(attendance.occurredAt)} — ${attendanceQuantity(attendance)} × ${attendance.modalityName} — ${currency(attendance.amountCents)}`).join('\n');
   let body = appState.reconciliationMessage;
-  const tokens = { '{{local}}': group.workplace.name, '{{periodo}}': monthLabel(group.month), '{{quantidade}}': String(group.attendances.length), '{{valor}}': currency(group.totalCents), '{{detalhes}}': details, '{{medico}}': appState.profile.name };
+  const tokens = { '{{local}}': group.workplace.name, '{{periodo}}': monthLabel(group.month), '{{quantidade}}': String(group.quantity), '{{valor}}': currency(group.totalCents), '{{detalhes}}': details, '{{medico}}': appState.profile.name };
   Object.entries(tokens).forEach(([token, value]) => (body = body.split(token).join(value)));
   const subject = `Conciliação de repasses — ${group.workplace.name} — ${monthLabel(group.month)}`;
   const cc = group.workplace.reconciliationCc ? `&cc=${encodeURIComponent(group.workplace.reconciliationCc)}` : '';
@@ -1269,32 +1364,42 @@ function handleClick(event) {
     navigate('home');
   }
   if (action === 'edit-attendance') {
-    const attendance = appState.attendances.find((item) => item.id === targetId);
+    const lines = attendanceRecordLines(targetId);
+    const attendance = lines[0];
     if (attendance) {
-      editingAttendanceId = attendance.id;
+      editingAttendanceId = targetId;
       attendanceDraft = {
         occurredAt: attendance.occurredAt,
-        modalityId: attendance.modalityId,
         notes: attendance.notes || '',
-        evidence: attendance.evidence || '',
-        patientReference: attendance.patientReference || '',
-        medication: attendance.medication || '',
-        includeConsultation: Boolean(attendance.includeConsultation),
-        consultationModalityId: attendance.consultationModalityId || '',
+        evidence: attendanceRecordEvidence(lines),
+        items: Object.fromEntries(lines.map((line) => [line.modalityId, {
+          quantity: attendanceQuantity(line),
+          patientReference: line.patientReference || '',
+          medication: line.medication || '',
+          includeConsultation: Boolean(line.includeConsultation),
+          consultationModalityId: line.consultationModalityId || '',
+        }])),
       };
       renderAttendance();
       window.scrollTo(0, 0);
     }
   }
-  if (action === 'delete-attendance' && confirm('Excluir este atendimento registrado? Esta ação remove o valor do Dashboard e não pode ser desfeita.')) {
-    appState.attendances = appState.attendances.filter((item) => item.id !== targetId);
+  if (action === 'delete-attendance' && confirm('Excluir este registro e todas as modalidades contabilizadas nele? Esta ação remove os valores do Dashboard e não pode ser desfeita.')) {
+    appState.attendances = appState.attendances.filter((item) => attendanceRecordId(item) !== targetId);
     if (editingAttendanceId === targetId) {
       editingAttendanceId = '';
       attendanceDraft = null;
     }
     saveState();
     renderAttendance();
-    showToast('Atendimento excluído.');
+    showToast('Registro de atendimentos excluído.');
+  }
+  if ((action === 'increase-attendance-quantity' || action === 'decrease-attendance-quantity') && attendanceDraft) {
+    const item = attendanceDraft.items[targetId] || { quantity: 1 };
+    const delta = action === 'increase-attendance-quantity' ? 1 : -1;
+    item.quantity = Math.min(999, Math.max(1, (Number(item.quantity) || 1) + delta));
+    attendanceDraft.items[targetId] = item;
+    renderAttendance();
   }
   if (action === 'remove-photo') {
     attendanceDraft.evidence = '';
@@ -1354,17 +1459,23 @@ function handleChange(event) {
     renderAttendance();
   }
   if (currentRoute === 'attendance' && attendanceDraft && event.target.name === 'modality') {
-    attendanceDraft.modalityId = event.target.value;
-    attendanceDraft.includeConsultation = false;
-    attendanceDraft.consultationModalityId = '';
+    if (event.target.checked) attendanceDraft.items[event.target.value] = attendanceDraft.items[event.target.value] || { quantity: 1 };
+    else delete attendanceDraft.items[event.target.value];
     renderAttendance();
   }
-  if (currentRoute === 'attendance' && attendanceDraft && event.target.id === 'recurring-consultation') {
-    attendanceDraft.includeConsultation = event.target.checked;
+  if (currentRoute === 'attendance' && attendanceDraft && event.target.classList.contains('attendance-quantity-input')) {
+    const item = attendanceDraft.items[event.target.dataset.modalityId];
+    if (item) item.quantity = Math.min(999, Math.max(1, Number(event.target.value) || 1));
     renderAttendance();
   }
-  if (currentRoute === 'attendance' && attendanceDraft && event.target.id === 'recurring-consultation-modality') {
-    attendanceDraft.consultationModalityId = event.target.value;
+  if (currentRoute === 'attendance' && attendanceDraft && event.target.classList.contains('recurring-consultation')) {
+    const item = attendanceDraft.items[event.target.dataset.modalityId];
+    if (item) item.includeConsultation = event.target.checked;
+    renderAttendance();
+  }
+  if (currentRoute === 'attendance' && attendanceDraft && event.target.classList.contains('recurring-consultation-modality')) {
+    const item = attendanceDraft.items[event.target.dataset.modalityId];
+    if (item) item.consultationModalityId = event.target.value;
     renderAttendance();
   }
   if (event.target.id === 'channel-workplace') {
@@ -1385,7 +1496,7 @@ function handleChange(event) {
         showToast(error instanceof Error ? error.message : 'Não foi possível ler a Nota Fiscal.');
       });
   }
-  if (event.target.id === 'evidence-input' && event.target.files[0]) {
+  if (event.target.classList.contains('evidence-input') && event.target.files[0]) {
     const file = event.target.files[0];
     if (!file.type.startsWith('image/')) return showToast('Escolha uma imagem válida.');
     if (file.size > 15 * 1024 * 1024) return showToast('A foto é muito grande. Escolha uma imagem de até 15 MB.');
@@ -1411,26 +1522,48 @@ function handleInput(event) {
   if (currentRoute !== 'attendance' || !attendanceDraft) return;
   if (event.target.id === 'attendance-date') attendanceDraft.occurredAt = event.target.value;
   if (event.target.id === 'attendance-notes') attendanceDraft.notes = event.target.value;
-  if (event.target.id === 'recurring-patient') attendanceDraft.patientReference = event.target.value;
-  if (event.target.id === 'recurring-medication') attendanceDraft.medication = event.target.value;
-  if (event.target.name === 'modality') attendanceDraft.modalityId = event.target.value;
+  if (event.target.dataset.recurringPatient) attendanceDraft.items[event.target.dataset.recurringPatient].patientReference = event.target.value;
+  if (event.target.dataset.recurringMedication) attendanceDraft.items[event.target.dataset.recurringMedication].medication = event.target.value;
+  if (event.target.classList.contains('attendance-quantity-input')) {
+    const modalityId = event.target.dataset.modalityId;
+    const item = attendanceDraft.items[modalityId];
+    if (!item) return;
+    item.quantity = Math.min(999, Math.max(1, Number(event.target.value) || 1));
+    window.clearTimeout(attendanceRenderTimer);
+    attendanceRenderTimer = window.setTimeout(() => {
+      if (currentRoute !== 'attendance' || !attendanceDraft?.items?.[modalityId]) return;
+      renderAttendance();
+      const quantityInput = $(`.attendance-quantity-input[data-modality-id="${CSS.escape(modalityId)}"]`);
+      quantityInput?.focus();
+    }, 350);
+  }
 }
 
 function handleSubmit(event) {
   if (event.target.id === 'attendance-form') {
     event.preventDefault();
-    const modality = appState.workplaces.find((item) => item.id === selectedWorkplaceId)?.modalities.find((item) => item.id === attendanceDraft.modalityId);
-    if (!attendanceDraft.evidence) return showToast('Adicione a foto do comprovante.');
-    if (!modality) return showToast('Selecione a modalidade de repasse.');
-    if (modality.type === 'recurring' && !attendanceDraft.patientReference.trim()) return showToast('Informe uma identificação mínima do paciente.');
-    if (modality.type === 'recurring' && !attendanceDraft.medication.trim()) return showToast('Informe o medicamento ou tratamento.');
     const workplace = appState.workplaces.find((item) => item.id === selectedWorkplaceId);
-    const consultation = attendanceDraft.includeConsultation ? workplace?.modalities.find((item) => item.id === attendanceDraft.consultationModalityId) : null;
-    if (attendanceDraft.includeConsultation && !consultation) return showToast('Selecione a modalidade da consulta.');
-    const previous = editingAttendanceId ? appState.attendances.find((item) => item.id === editingAttendanceId) : null;
-    const attendance = { id: previous?.id || id('att'), workplaceId: selectedWorkplaceId, modalityId: modality.id, modalityName: modality.name, modalityType: modality.type, occurredAt: attendanceDraft.occurredAt, dueAt: calculateDueDate(attendanceDraft.occurredAt, modality.rule), amountCents: modality.amountCents + (consultation?.amountCents || 0), baseAmountCents: modality.amountCents, evidence: attendanceDraft.evidence, notes: attendanceDraft.notes.trim(), patientReference: modality.type === 'recurring' ? attendanceDraft.patientReference.trim() : '', medication: modality.type === 'recurring' ? attendanceDraft.medication.trim() : '', includeConsultation: Boolean(consultation), consultationModalityId: consultation?.id || '', consultationModalityName: consultation?.name || '', consultationAmountCents: consultation?.amountCents || 0, status: previous?.status || 'pending', createdAt: previous?.createdAt || new Date().toISOString(), updatedAt: new Date().toISOString() };
-    if (previous) appState.attendances = appState.attendances.map((item) => (item.id === previous.id ? attendance : item));
-    else appState.attendances.unshift(attendance);
+    const selectedItems = workplace ? selectedAttendanceItems(workplace) : [];
+    if (!attendanceDraft.evidence) return showToast('Adicione a foto do comprovante.');
+    if (!selectedItems.length) return showToast('Selecione pelo menos uma modalidade de repasse.');
+    for (const { modality, draft } of selectedItems) {
+      if (modality.type === 'recurring' && !String(draft.patientReference || '').trim()) return showToast(`Informe a identificação do paciente em ${modality.name}.`);
+      if (modality.type === 'recurring' && !String(draft.medication || '').trim()) return showToast(`Informe o medicamento ou tratamento em ${modality.name}.`);
+      const consultation = draft.includeConsultation ? workplace.modalities.find((item) => item.id === draft.consultationModalityId) : null;
+      if (draft.includeConsultation && !consultation) return showToast(`Selecione a modalidade da consulta em ${modality.name}.`);
+    }
+    const previousLines = editingAttendanceId ? attendanceRecordLines(editingAttendanceId) : [];
+    const recordId = editingAttendanceId || id('record');
+    const createdAt = previousLines[0]?.createdAt || new Date().toISOString();
+    const updatedAt = new Date().toISOString();
+    const attendances = selectedItems.map(({ modality, draft }, index) => {
+      const previous = previousLines.find((item) => item.modalityId === modality.id);
+      const quantity = attendanceQuantity(draft);
+      const consultation = draft.includeConsultation ? workplace.modalities.find((item) => item.id === draft.consultationModalityId) : null;
+      const unitAmountCents = modality.amountCents + (consultation?.amountCents || 0);
+      return { id: previous?.id || id('att'), recordId, workplaceId: selectedWorkplaceId, modalityId: modality.id, modalityName: modality.name, modalityType: modality.type, quantity, occurredAt: attendanceDraft.occurredAt, dueAt: calculateDueDate(attendanceDraft.occurredAt, modality.rule), amountCents: unitAmountCents * quantity, unitAmountCents, baseAmountCents: modality.amountCents, evidence: index === 0 ? attendanceDraft.evidence : '', notes: attendanceDraft.notes.trim(), patientReference: modality.type === 'recurring' ? String(draft.patientReference || '').trim() : '', medication: modality.type === 'recurring' ? String(draft.medication || '').trim() : '', includeConsultation: Boolean(consultation), consultationModalityId: consultation?.id || '', consultationModalityName: consultation?.name || '', consultationAmountCents: consultation?.amountCents || 0, status: previous?.status || 'pending', createdAt, updatedAt };
+    });
+    appState.attendances = [...attendances, ...appState.attendances.filter((item) => attendanceRecordId(item) !== recordId)];
     if (!saveState()) {
       return;
     }
@@ -1438,7 +1571,8 @@ function handleSubmit(event) {
     const corrected = Boolean(editingAttendanceId);
     editingAttendanceId = '';
     renderAttendance();
-    showToast(corrected ? 'Correção salva no atendimento.' : 'Atendimento salvo e adicionado ao Dashboard.');
+    const quantity = attendanceCount(attendances);
+    showToast(corrected ? 'Correção salva no registro.' : `${quantity} ${quantity === 1 ? 'atendimento salvo' : 'atendimentos salvos'} e adicionados ao Dashboard.`);
   }
   if (event.target.id === 'channel-form') {
     event.preventDefault();
@@ -1456,7 +1590,7 @@ function handleSubmit(event) {
     if (!feedback.message) return;
     appState.feedbacks.push(feedback);
     saveState();
-    const context = `\n\n--- Contexto automático ---\nNota: ${feedback.rating}/5\nÁrea: ${feedback.area}\nTela: ${currentRoute}\nLocais: ${appState.workplaces.length}\nAtendimentos: ${appState.attendances.length}\nModo instalado: ${isStandalone() ? 'sim' : 'não'}\nDispositivo: ${navigator.userAgent}\nContato: ${feedback.contact || 'não informado'}`;
+    const context = `\n\n--- Contexto automático ---\nNota: ${feedback.rating}/5\nÁrea: ${feedback.area}\nTela: ${currentRoute}\nLocais: ${appState.workplaces.length}\nAtendimentos: ${attendanceCount(appState.attendances)}\nModo instalado: ${isStandalone() ? 'sim' : 'não'}\nDispositivo: ${navigator.userAgent}\nContato: ${feedback.contact || 'não informado'}`;
     window.location.href = `mailto:${FEEDBACK_EMAIL}?subject=${encodeURIComponent(`Feedback MedRecebe — ${feedback.area} — ${feedback.rating}/5`)}&body=${encodeURIComponent(feedback.message + context)}`;
     renderFeedback();
   }

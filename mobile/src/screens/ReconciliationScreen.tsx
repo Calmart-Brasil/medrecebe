@@ -15,7 +15,10 @@ interface ReconciliationGroup {
   month: string;
   attendances: Attendance[];
   totalCents: number;
+  quantity: number;
 }
+
+const quantityOf = (attendance: Attendance) => Math.max(1, attendance.quantity ?? 1);
 
 function monthLabel(month: string): string {
   const [year, monthNumber] = month.split('-').map(Number);
@@ -42,9 +45,11 @@ function buildGroups(data: AppData): ReconciliationGroup[] {
       month,
       attendances: [],
       totalCents: 0,
+      quantity: 0,
     };
     group.attendances.push(attendance);
     group.totalCents += attendance.amountCents;
+    group.quantity += quantityOf(attendance);
     map.set(key, group);
   });
 
@@ -147,13 +152,13 @@ export function ReconciliationScreen({
       const detail = selectedGroup.attendances
         .map(
           (attendance, index) =>
-            `${index + 1}. ${formatDate(attendance.occurredAt)} — ${attendance.modalityName} — ${formatCurrency(attendance.amountCents)}`,
+            `${index + 1}. ${formatDate(attendance.occurredAt)} — ${quantityOf(attendance)} × ${attendance.modalityName} — ${formatCurrency(attendance.amountCents)}`,
         )
         .join('\n');
       let body = data.reconciliation.defaultMessage;
       body = replaceAll(body, '{{local}}', selectedGroup.workplace.name);
       body = replaceAll(body, '{{periodo}}', monthLabel(selectedGroup.month));
-      body = replaceAll(body, '{{quantidade}}', String(selectedGroup.attendances.length));
+      body = replaceAll(body, '{{quantidade}}', String(selectedGroup.quantity));
       body = replaceAll(body, '{{valor}}', formatCurrency(selectedGroup.totalCents));
       body = replaceAll(body, '{{detalhes}}', detail);
       body = replaceAll(body, '{{medico}}', profile.name);
@@ -166,7 +171,7 @@ export function ReconciliationScreen({
           .filter(Boolean),
         subject: `Conciliação de repasses — ${selectedGroup.workplace.name} — ${monthLabel(selectedGroup.month)}`,
         body,
-        attachments: selectedGroup.attendances.map((attendance) => attendance.evidenceUri).filter(Boolean),
+        attachments: [...new Set(selectedGroup.attendances.map((attendance) => attendance.evidenceUri).filter(Boolean))],
       });
 
       if (result.status === MailComposer.MailComposerStatus.SENT) {
@@ -279,7 +284,7 @@ export function ReconciliationScreen({
         <View style={styles.groups}>
           {groups.map((group) => {
             const selected = selectedGroupId === group.id;
-            const attachmentCount = group.attendances.filter((attendance) => attendance.evidenceUri).length;
+            const attachmentCount = new Set(group.attendances.map((attendance) => attendance.evidenceUri).filter(Boolean)).size;
             return (
               <Pressable
                 accessibilityRole="button"
@@ -295,7 +300,7 @@ export function ReconciliationScreen({
                   <Text style={styles.groupName}>{group.workplace.name}</Text>
                   <Text style={styles.groupPeriod}>{monthLabel(group.month)}</Text>
                   <Text style={styles.groupMeta}>
-                    {group.attendances.length} atend. • {attachmentCount} comprov. • {formatCurrency(group.totalCents)}
+                    {group.quantity} atend. • {attachmentCount} comprov. • {formatCurrency(group.totalCents)}
                   </Text>
                 </View>
                 <Text style={styles.chevron}>›</Text>
@@ -312,7 +317,7 @@ export function ReconciliationScreen({
             <Text style={styles.summaryValue}>{formatCurrency(selectedGroup.totalCents)}</Text>
           </View>
           <Text style={styles.summaryCaption}>
-            {selectedGroup.attendances.length} atendimentos • {monthLabel(selectedGroup.month)}
+            {selectedGroup.quantity} atendimentos • {monthLabel(selectedGroup.month)}
           </Text>
           {selectedGroup.attendances.some((attendance) => !attendance.evidenceUri) ? (
             <InlineNotice tone="warning">Alguns registros demonstrativos não possuem anexo; eles serão listados no texto do e-mail.</InlineNotice>
