@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 const root = fileURLToPath(new URL('.', import.meta.url));
 const read = (file) => readFile(join(root, file), 'utf8');
 
-const [manifestText, landing, landingCss, appHtml, app, appCss, cloud, adminHtml, adminApp, worker, workflow, migration, launchMigration, upfrontMigration, manualAccessMigration, singlePlanMigration, simpleAdminMigration, invoiceFunction, adminCreateFunction, adminUpdateFunction, createSubscriptionFunction, cancelSubscriptionFunction, mercadoPagoShared, mobileConfig, mobileInvoice, terms, privacy, cancellation] = await Promise.all([
+const [manifestText, landing, landingCss, appHtml, app, appCss, cloud, adminHtml, adminApp, worker, workflow, migration, launchMigration, upfrontMigration, manualAccessMigration, singlePlanMigration, simpleAdminMigration, documentMigration, documentFunction, syncStateFunction, invoiceFunction, adminCreateFunction, adminUpdateFunction, createSubscriptionFunction, cancelSubscriptionFunction, mercadoPagoShared, mobileConfig, mobileInvoice, terms, privacy, cancellation] = await Promise.all([
   read('manifest.webmanifest'),
   read('index.html'),
   read('landing.css'),
@@ -24,6 +24,9 @@ const [manifestText, landing, landingCss, appHtml, app, appCss, cloud, adminHtml
   read('supabase/migrations/202607160004_manual_access.sql'),
   read('supabase/migrations/202607160005_single_plan_freemium.sql'),
   read('supabase/migrations/202607160006_remove_admin_mfa.sql'),
+  read('supabase/migrations/202607190001_document_sync.sql'),
+  read('supabase/functions/documents/index.ts'),
+  read('supabase/functions/sync-state/index.ts'),
   read('supabase/functions/analyze-invoice/index.ts'),
   read('supabase/functions/admin-create-user/index.ts'),
   read('supabase/functions/admin-update-user/index.ts'),
@@ -91,7 +94,7 @@ assert.ok(
   'appState só pode ser carregado depois da mensagem padrão usada pelo estado vazio',
 );
 assert.ok(!appHtml.includes('Beta local:'), 'o aviso antigo de beta local não deve aparecer na entrada');
-assert.ok(appHtml.includes('styles.css?v=11') && appHtml.includes('app.js?v=17'), 'os arquivos corrigidos precisam de cache busting');
+assert.ok(appHtml.includes('styles.css?v=12') && appHtml.includes('cloud.js?v=6') && appHtml.includes('app.js?v=18'), 'os arquivos corrigidos precisam de cache busting');
 for (const marker of ['Tirar foto', 'Galeria', 'attendance-quantity-input', 'recordId', 'attendanceQuantity']) assert.ok(app.includes(marker), `registro em lote sem: ${marker}`);
 assert.equal(institutionDirectory.meta.municipalities, 39, 'o diretório deve cobrir os 39 municípios da RMSP');
 assert.ok(institutionDirectory.meta.total >= 1000, 'o diretório institucional está incompleto');
@@ -111,6 +114,11 @@ for (const marker of ['billing-view', 'R$ 39,90', 'PLANO ÚNICO', 'runtime-confi
 for (const marker of ['register', 'login-cpf', 'create-subscription', 'cancel-subscription', 'sync-state', 'account-status', 'analyze-invoice', 'adminUsers', 'adminCreateUser']) {
   assert.ok(cloud.includes(marker), `cliente cloud sem: ${marker}`);
 }
+for (const marker of ['medrecebe-documents', 'user_documents', 'primary key (user_id, id)', 'storage.objects']) assert.ok(documentMigration.includes(marker), `sincronização de documentos sem: ${marker}`);
+for (const marker of ['attendance_evidence', 'delete-record', "onConflict: 'user_id,id'", 'createSignedUrl', 'checksum']) assert.ok(documentFunction.includes(marker), `API de documentos sem: ${marker}`);
+for (const marker of ['attendance.evidence =', 'evidenceDocumentId', 'invoice.documentUrl']) assert.ok(syncStateFunction.includes(marker), `estado cloud ainda persiste binários ou não preserva referências: ${marker}`);
+for (const marker of ['listDocuments', 'uploadDocument', 'deleteDocumentsForRecord']) assert.ok(cloud.includes(marker), `cliente sem sincronização documental: ${marker}`);
+for (const marker of ['showCloudLoading', 'syncPendingEvidence', 'mergeUnsyncedLocalState', 'evidenceRemoteUrl']) assert.ok(app.includes(marker), `aplicativo sem jornada documental: ${marker}`);
 for (const marker of ['MedRecebe Admin', 'admin-users']) {
   assert.ok(adminHtml.includes(marker) || adminApp.includes(marker), `painel administrativo sem: ${marker}`);
 }
@@ -156,7 +164,7 @@ for (const [name, document] of [['Landing', landing], ['Aplicativo', `${appHtml}
   }
 }
 
-for (const marker of ['install', 'activate', 'fetch', 'caches.open', 'medrecebe-app-v16', './app.html', 'institution-directory-rmsp.json']) {
+for (const marker of ['install', 'activate', 'fetch', 'caches.open', 'medrecebe-app-v17', './app.html', 'institution-directory-rmsp.json']) {
   assert.ok(worker.includes(marker), `sw.js sem: ${marker}`);
 }
 

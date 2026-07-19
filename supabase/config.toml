@@ -29,3 +29,6 @@ verify_jwt = false
 
 [functions.cancel-subscription]
 verify_jwt = false
+
+[functions.documents]
+verify_jwt = false

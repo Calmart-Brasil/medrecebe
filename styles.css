@@ -228,7 +228,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--blue-600); box-s
 .empty strong { color: var(--navy); }
 .empty p { max-width: 290px; margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
 
-.metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; margin-top: 14px; padding-top: 13px; border-top: 1px solid rgb(255 255 255 / 18%); }
+.metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; margin-top: 14px; padding-top: 13px; border-top: 1px solid rgb(255 255 255 / 18%); }
 .metric { display: grid; justify-items: center; gap: 2px; }
 .metric strong { font-size: 19px; }
 .metric small { color: #b9e4fb; font-size: 8px; text-align: center; }
@@ -273,6 +273,10 @@ input:focus, select:focus, textarea:focus { border-color: var(--blue-600); box-s
 }
 .attendance-photo p { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
 .photo-preview { width: 100%; aspect-ratio: 4/3; object-fit: cover; border-radius: 11px; background: var(--mist); }
+.evidence-status { color: var(--muted); font-size: 11px; font-weight: 750; }
+.evidence-status.synced { color: var(--green); }
+.evidence-status.pending { color: #8a6300; }
+.document-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .file-button { position: relative; overflow: hidden; }
 .file-button input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
 .photo-source-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; width: 100%; }
@@ -462,6 +466,11 @@ body[data-route="attendance"] #screen { padding-bottom: calc(28px + env(safe-are
 .install-step p { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
 
 .toast { position: fixed; z-index: 120; right: 20px; bottom: calc(82px + env(safe-area-inset-bottom)); left: 20px; max-width: 480px; margin: auto; padding: 12px 15px; border-radius: 12px; background: var(--navy); color: white; box-shadow: var(--shadow); font-size: 12px; text-align: center; }
+.sync-loading { display: grid; place-items: center; align-content: center; gap: 10px; min-height: calc(100dvh - 150px); padding: 32px; color: var(--muted); text-align: center; }
+.sync-loading strong { color: var(--navy); font-size: 18px; }
+.sync-loading p { max-width: 360px; margin: 0; font-size: 13px; }
+.sync-spinner { width: 38px; height: 38px; border: 4px solid var(--blue-100); border-top-color: var(--blue-700); border-radius: 50%; animation: sync-spin .8s linear infinite; }
+@keyframes sync-spin { to { transform: rotate(360deg); } }
 
 @media (min-width: 700px) {
   .app-shell { border-right: 1px solid var(--line); border-left: 1px solid var(--line); box-shadow: 0 0 50px rgb(16 43 70 / 10%); }

@@ -13,7 +13,7 @@ SaaS para médicos registrarem atendimentos, acompanharem repasses e prepararem 
 
 - Cobrança no início do ciclo, com garantia de cancelamento e estorno integral em 7 dias.
 - Plano único: R$ 39,90/mês, uso no celular e no PC com sincronização dos dados de gestão.
-- Fotos de comprovantes permanecem no aparelho e não entram na sincronização Web.
+- Comprovantes e Notas Fiscais são armazenados em área privada e sincronizados entre os dispositivos autenticados do médico.
 - Cobrança recorrente, cancelamento e reembolso processados pelo provedor de pagamentos vigente.
 - Conciliação de Nota Fiscal em PDF/XML por CNPJ, Razão Social e valor contabilizado.
 - Diretório CNES com nome fantasia, razão social, CNPJ e CNES de hospitais e empresas de saúde dos 39 municípios da Região Metropolitana de São Paulo.
@@ -39,7 +39,7 @@ SaaS para médicos registrarem atendimentos, acompanharem repasses e prepararem 
 
 ## Segurança e privacidade
 
-O CPF completo é transformado em hash no servidor. O painel exibe somente os quatro últimos dígitos. Dados completos do cartão não passam pelo MedRecebe. O servidor remove credenciais e fotografias antes de persistir o estado sincronizado. O painel administrativo aceita somente contas com papel `admin`, autenticadas por CPF e senha.
+O CPF completo é transformado em hash no servidor. O painel exibe somente os quatro últimos dígitos. Dados completos do cartão não passam pelo MedRecebe. Comprovantes e Notas Fiscais ficam em bucket privado, acessível apenas pelo titular autenticado por endereços temporários. O painel administrativo aceita somente contas com papel `admin`, autenticadas por CPF e senha.
 
 ## Validação
 

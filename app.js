@@ -32,6 +32,9 @@ let activeStateKey = APP_KEY;
 let selectedPlanCode = 'standard';
 let cloudSyncTimer = 0;
 let cloudHydrating = false;
+let cloudStateDirty = false;
+let cloudHydrationSequence = 0;
+let evidenceSyncRunning = false;
 let institutionDirectory = [];
 let institutionDirectoryMeta = null;
 let institutionDirectoryPromise = null;
@@ -78,11 +81,76 @@ function emptyState() {
   };
 }
 
+function normalizeState(input) {
+  const state = { ...emptyState(), ...(input || {}) };
+  state.workplaces = Array.isArray(state.workplaces) ? state.workplaces : [];
+  const sourceAttendances = Array.isArray(state.attendances) ? state.attendances : [];
+  const associatedIds = new Set(sourceAttendances.filter((item) => item?.isAssociatedConsultation).map((item) => item.sourceAttendanceId));
+  const normalized = [];
+  sourceAttendances.forEach((attendance) => {
+    if (!attendance || typeof attendance !== 'object') return;
+    const quantity = attendanceQuantity(attendance);
+    const workplace = state.workplaces.find((item) => item.id === attendance.workplaceId);
+    const sourceModality = workplace?.modalities?.find((item) => item.id === attendance.modalityId);
+    const shouldSeparate = (attendance.modalityType === 'recurring' || sourceModality?.type === 'recurring')
+      && attendance.includeConsultation
+      && attendance.consultationModalityId
+      && Number(attendance.consultationAmountCents) > 0
+      && !attendance.consultationSeparated
+      && !associatedIds.has(attendance.id);
+    if (!shouldSeparate) {
+      normalized.push(attendance);
+      return;
+    }
+    const consultation = workplace?.modalities?.find((item) => item.id === attendance.consultationModalityId);
+    const baseAmountCents = Number(attendance.baseAmountCents) || Math.max(0, Number(attendance.unitAmountCents || 0) - Number(attendance.consultationAmountCents || 0));
+    const consultationAmountCents = Number(attendance.consultationAmountCents || consultation?.amountCents || 0);
+    normalized.push({
+      ...attendance,
+      amountCents: baseAmountCents * quantity,
+      unitAmountCents: baseAmountCents,
+      baseAmountCents,
+      consultationSeparated: true,
+    });
+    normalized.push({
+      id: `consultation-${attendance.id}`,
+      recordId: attendanceRecordId(attendance),
+      workplaceId: attendance.workplaceId,
+      modalityId: attendance.consultationModalityId,
+      modalityName: attendance.consultationModalityName || consultation?.name || 'Consulta associada',
+      modalityType: consultation?.type || 'plan',
+      quantity,
+      occurredAt: attendance.occurredAt,
+      dueAt: consultation ? calculateDueDate(attendance.occurredAt, consultation.rule) : attendance.dueAt,
+      amountCents: consultationAmountCents * quantity,
+      unitAmountCents: consultationAmountCents,
+      baseAmountCents: consultationAmountCents,
+      evidence: '',
+      notes: '',
+      patientReference: '',
+      medication: '',
+      includeConsultation: false,
+      consultationAmountCents: 0,
+      status: attendance.status,
+      createdAt: attendance.createdAt,
+      updatedAt: attendance.updatedAt || attendance.createdAt,
+      isAssociatedConsultation: true,
+      sourceAttendanceId: attendance.id,
+      sourceModalityId: attendance.modalityId,
+    });
+  });
+  state.attendances = normalized;
+  state.invoices = Array.isArray(state.invoices) ? state.invoices : [];
+  state.feedbacks = Array.isArray(state.feedbacks) ? state.feedbacks : [];
+  state.schemaVersion = 3;
+  return state;
+}
+
 function loadState(storageKey = activeStateKey) {
   try {
     const parsed = JSON.parse(localStorage.getItem(storageKey));
     if (parsed && Array.isArray(parsed.workplaces) && Array.isArray(parsed.attendances)) {
-      return { ...emptyState(), ...parsed };
+      return normalizeState(parsed);
     }
   } catch {
     // Um armazenamento inválido é substituído por uma base limpa.
@@ -93,6 +161,10 @@ function loadState(storageKey = activeStateKey) {
 function saveState() {
   try {
     localStorage.setItem(activeStateKey, JSON.stringify(appState));
+    if (!cloudHydrating && isCloudMode()) {
+      cloudStateDirty = true;
+      localStorage.setItem(`${activeStateKey}.dirty`, '1');
+    }
     scheduleCloudSync();
     return true;
   } catch {
@@ -141,7 +213,24 @@ function attendanceRecordLines(recordId) {
 }
 
 function attendanceRecordEvidence(lines) {
-  return lines.find((attendance) => attendance.evidence)?.evidence || '';
+  const attendance = lines.find((item) => item.evidence || item.evidenceRemoteUrl);
+  return attendance?.evidence || attendance?.evidenceRemoteUrl || '';
+}
+
+function attendanceRecordDocument(lines) {
+  const attendance = lines.find((item) => item.evidence || item.evidenceRemoteUrl || item.evidenceDocumentId);
+  return attendance ? {
+    id: attendance.evidenceDocumentId || '',
+    source: attendance.evidence || attendance.evidenceRemoteUrl || '',
+    remoteUrl: attendance.evidenceRemoteUrl || '',
+    syncStatus: attendance.evidenceSyncStatus || (attendance.evidenceDocumentId ? 'synced' : attendance.evidence ? 'pending' : ''),
+    fileName: attendance.evidenceFileName || 'comprovante.jpg',
+    mimeType: attendance.evidenceMimeType || 'image/jpeg',
+  } : { id: '', source: '', remoteUrl: '', syncStatus: '', fileName: 'comprovante.jpg', mimeType: 'image/jpeg' };
+}
+
+function preferredConsultationModality(modalities) {
+  return modalities.find((item) => /consulta/i.test(item.name || '')) || null;
 }
 
 function newAttendanceDraft(workplace) {
@@ -151,6 +240,11 @@ function newAttendanceDraft(workplace) {
     items: firstModality ? { [firstModality.id]: { quantity: 1 } } : {},
     notes: '',
     evidence: '',
+    evidenceDocumentId: '',
+    evidenceSyncStatus: '',
+    evidenceFileName: 'comprovante.jpg',
+    evidenceMimeType: 'image/jpeg',
+    evidenceChanged: false,
   };
 }
 
@@ -438,6 +532,22 @@ function isPastOrToday(value) {
   return parseDate(value).getTime() <= parseDate(dateOnly()).getTime();
 }
 
+function isPast(value) {
+  return parseDate(value).getTime() < parseDate(dateOnly()).getTime();
+}
+
+function isDueToday(value) {
+  return value === dateOnly();
+}
+
+function attendanceStatusLabel(attendance) {
+  if (attendance.status === 'paid') return 'Recebido';
+  if (attendance.status === 'in_reconciliation') return 'Em conciliação';
+  if (isPast(attendance.dueAt)) return `Vencido em ${displayDate(attendance.dueAt)}`;
+  if (isDueToday(attendance.dueAt)) return 'Vence hoje';
+  return `Crédito em ${displayDate(attendance.dueAt)}`;
+}
+
 function showToast(message) {
   const toast = $('#toast');
   toast.textContent = message;
@@ -538,10 +648,157 @@ function cloudStatePayload() {
   return { ...appState, account: null, cloudUserId: undefined, demo: false };
 }
 
+function applyCloudDocuments(documents = []) {
+  const attendanceDocuments = new Map(documents.filter((item) => item.documentType === 'attendance_evidence').map((item) => [item.recordId, item]));
+  const hydratedRecords = new Set();
+  appState.attendances = appState.attendances.map((attendance) => {
+    const recordId = attendanceRecordId(attendance);
+    const document = attendanceDocuments.get(recordId);
+    if (hydratedRecords.has(recordId)) return attendance;
+    hydratedRecords.add(recordId);
+    if (!document) {
+      const hasLocalEvidence = String(attendance.evidence || '').startsWith('data:');
+      return {
+        ...attendance,
+        evidenceDocumentId: hasLocalEvidence ? attendance.evidenceDocumentId : '',
+        evidenceRemoteUrl: '',
+        evidenceSyncStatus: hasLocalEvidence ? 'pending' : '',
+        evidenceAvailable: hasLocalEvidence,
+      };
+    }
+    return {
+      ...attendance,
+      evidenceDocumentId: document.id,
+      evidenceRemoteUrl: document.signedUrl,
+      evidenceFileName: document.fileName,
+      evidenceMimeType: document.mimeType,
+      evidenceSyncStatus: 'synced',
+      evidenceAvailable: true,
+    };
+  });
+  const invoiceDocuments = new Map(documents.filter((item) => item.documentType === 'invoice').map((item) => [item.recordId, item]));
+  appState.invoices = (appState.invoices || []).map((invoice) => {
+    const document = invoiceDocuments.get(invoice.id);
+    return document ? {
+      ...invoice,
+      documentId: document.id,
+      documentUrl: document.signedUrl,
+      documentMimeType: document.mimeType,
+      documentSyncStatus: 'synced',
+    } : { ...invoice, documentId: '', documentUrl: '', documentSyncStatus: '' };
+  });
+}
+
+async function refreshCloudDocuments() {
+  if (!isCloudMode() || cloudAccount?.profile?.accessStatus !== 'active') return [];
+  const result = await cloud.listDocuments();
+  const documents = Array.isArray(result.documents) ? result.documents : [];
+  applyCloudDocuments(documents);
+  localStorage.setItem(activeStateKey, JSON.stringify(appState));
+  return documents;
+}
+
+async function syncEvidenceForRecord(recordId) {
+  if (!isCloudMode()) return null;
+  const lines = attendanceRecordLines(recordId);
+  const localLine = lines.find((item) => String(item.evidence || '').startsWith('data:'));
+  if (!localLine) return null;
+  const documentId = localLine.evidenceDocumentId || `evidence-${recordId}`;
+  lines.forEach((item) => {
+    item.evidenceSyncStatus = 'uploading';
+    if (item === localLine) item.evidenceDocumentId = documentId;
+  });
+  try {
+    const result = await cloud.uploadDocument({
+      documentId,
+      recordId,
+      documentType: 'attendance_evidence',
+      fileName: localLine.evidenceFileName || 'comprovante.jpg',
+      mimeType: localLine.evidenceMimeType || 'image/jpeg',
+      dataBase64: localLine.evidence.split(',').pop(),
+    });
+    const document = result.document;
+    lines.forEach((item, index) => {
+      item.evidenceSyncStatus = 'synced';
+      item.evidenceAvailable = true;
+      if (index === 0) {
+        item.evidence = '';
+        item.evidenceDocumentId = document.id;
+        item.evidenceRemoteUrl = document.signedUrl;
+        item.evidenceFileName = document.fileName;
+        item.evidenceMimeType = document.mimeType;
+      }
+    });
+    saveState();
+    return document;
+  } catch (error) {
+    lines.forEach((item) => (item.evidenceSyncStatus = 'pending'));
+    saveState();
+    throw error;
+  }
+}
+
+async function syncPendingEvidence() {
+  if (evidenceSyncRunning || !isCloudMode() || cloudAccount?.profile?.accessStatus !== 'active' || !navigator.onLine) return;
+  const pending = new Map();
+  appState.attendances.forEach((attendance) => {
+    const recordId = attendanceRecordId(attendance);
+    if (String(attendance.evidence || '').startsWith('data:') && attendance.evidenceSyncStatus !== 'synced') pending.set(recordId, attendance);
+  });
+  if (!pending.size) return;
+  evidenceSyncRunning = true;
+  showToast(`${pending.size} ${pending.size === 1 ? 'comprovante será sincronizado' : 'comprovantes serão sincronizados'} em segundo plano.`);
+  let failures = 0;
+  for (const recordId of pending.keys()) {
+    try {
+      await syncEvidenceForRecord(recordId);
+    } catch {
+      failures += 1;
+    }
+  }
+  evidenceSyncRunning = false;
+  if (!failures) showToast('Comprovantes disponíveis em todos os seus dispositivos.');
+  else showToast(`${failures} ${failures === 1 ? 'comprovante aguarda' : 'comprovantes aguardam'} uma conexão estável.`);
+  if (!$('#app-view').hidden) renderRoute();
+}
+
 function scheduleCloudSync() {
   if (cloudHydrating || !isCloudMode() || cloudAccount?.profile?.accessStatus !== 'active') return;
   window.clearTimeout(cloudSyncTimer);
-  cloudSyncTimer = window.setTimeout(() => cloud.saveState(cloudStatePayload()).catch(() => {}), 1200);
+  cloudSyncTimer = window.setTimeout(() => {
+    cloud.saveState(cloudStatePayload())
+      .then(() => {
+        cloudStateDirty = false;
+        localStorage.removeItem(`${activeStateKey}.dirty`);
+      })
+      .catch(() => {
+        cloudStateDirty = true;
+        localStorage.setItem(`${activeStateKey}.dirty`, '1');
+      });
+  }, 1200);
+}
+
+function mergeStateCollections(remoteItems = [], localItems = []) {
+  const merged = new Map();
+  [...remoteItems, ...localItems].forEach((item) => {
+    if (!item?.id) return;
+    const previous = merged.get(item.id);
+    const previousTime = Date.parse(previous?.updatedAt || previous?.createdAt || 0) || 0;
+    const itemTime = Date.parse(item.updatedAt || item.createdAt || 0) || 0;
+    if (!previous || itemTime >= previousTime) merged.set(item.id, item);
+  });
+  return [...merged.values()];
+}
+
+function mergeUnsyncedLocalState(remoteState, localState) {
+  return {
+    ...remoteState,
+    workplaces: mergeStateCollections(remoteState.workplaces, localState.workplaces),
+    attendances: mergeStateCollections(remoteState.attendances, localState.attendances),
+    invoices: mergeStateCollections(remoteState.invoices, localState.invoices),
+    feedbacks: mergeStateCollections(remoteState.feedbacks, localState.feedbacks),
+    reconciliationMessage: localState.reconciliationMessage || remoteState.reconciliationMessage,
+  };
 }
 
 async function hydrateCloudState() {
@@ -551,32 +808,53 @@ async function hydrateCloudState() {
   try {
     const result = await cloud.loadState();
     if (result.state) {
+      const localState = appState;
       const localEvidence = new Map();
       appState.attendances.forEach((attendance) => {
-        if (attendance.evidence) localEvidence.set(attendanceRecordId(attendance), attendance.evidence);
+        if (attendance.evidence) localEvidence.set(attendanceRecordId(attendance), {
+          evidence: attendance.evidence,
+          evidenceDocumentId: attendance.evidenceDocumentId || '',
+          evidenceFileName: attendance.evidenceFileName || 'comprovante.jpg',
+          evidenceMimeType: attendance.evidenceMimeType || 'image/jpeg',
+          evidenceSyncStatus: attendance.evidenceSyncStatus || 'pending',
+        });
       });
       const hydratedEvidence = new Set();
-      appState = {
+      const needsStateMigration = Number(result.state.schemaVersion || 0) < 3;
+      const sourceState = cloudStateDirty ? mergeUnsyncedLocalState(result.state, localState) : result.state;
+      appState = normalizeState({
         ...emptyState(),
-        ...result.state,
+        ...sourceState,
         profile: appState.profile,
         cloudUserId: cloudAccount.profile.id,
-        attendances: (result.state.attendances || []).map((attendance) => {
+        attendances: (sourceState.attendances || []).map((attendance) => {
           const recordId = attendanceRecordId(attendance);
-          const evidence = !hydratedEvidence.has(recordId) ? localEvidence.get(recordId) || '' : '';
-          if (evidence) hydratedEvidence.add(recordId);
-          return { ...attendance, evidence };
+          const local = !hydratedEvidence.has(recordId) ? localEvidence.get(recordId) : null;
+          if (local) hydratedEvidence.add(recordId);
+          return { ...attendance, ...(local || {}), evidence: local?.evidence || '' };
         }),
-      };
+      });
+      try {
+        await refreshCloudDocuments();
+      } catch {
+        // O estado financeiro continua disponível mesmo quando os arquivos aguardam reconexão.
+      }
       localStorage.setItem(activeStateKey, JSON.stringify(appState));
-      if (!$('#app-view').hidden) renderRoute();
+      if (needsStateMigration || cloudStateDirty) {
+        await cloud.saveState(cloudStatePayload());
+        cloudStateDirty = false;
+        localStorage.removeItem(`${activeStateKey}.dirty`);
+      }
     } else {
       await cloud.saveState(cloudStatePayload());
+      cloudStateDirty = false;
+      localStorage.removeItem(`${activeStateKey}.dirty`);
     }
   } catch {
     showToast('A sincronização com o PC será retomada quando a conexão estiver disponível.');
   } finally {
     cloudHydrating = false;
+    void syncPendingEvidence();
   }
 }
 
@@ -618,17 +896,21 @@ function applyCloudAccount(result, cpf = '') {
   document.body.classList.toggle('web-plan', isDesktopComputer());
   activeStateKey = `${APP_KEY}.user.${result.profile.id}`;
   appState = loadState(activeStateKey);
+  cloudStateDirty = localStorage.getItem(`${activeStateKey}.dirty`) === '1';
   appState.profile = {
     name: result.profile.fullName,
     email: result.profile.email,
     cpf: cpf || appState.profile?.cpf || `*******${result.profile.cpfLast4}`,
   };
   appState.cloudUserId = result.profile.id;
-  saveState();
+  localStorage.setItem(activeStateKey, JSON.stringify(appState));
   activateSession();
-  if (cloudAccessAllowed()) showApp();
-  else showBilling();
-  void hydrateCloudState();
+  if (!cloudAccessAllowed()) return showBilling();
+  const hydrationSequence = ++cloudHydrationSequence;
+  showCloudLoading();
+  void hydrateCloudState().finally(() => {
+    if (hydrationSequence === cloudHydrationSequence && cloudAccessAllowed()) showApp();
+  });
 }
 
 function showBilling() {
@@ -671,6 +953,15 @@ function showApp() {
   $('#drawer-avatar').textContent = (appState.profile?.name || 'M').trim().charAt(0).toUpperCase();
   if (new URLSearchParams(window.location.search).get('action') === 'cancel') currentRoute = 'cancellation';
   navigate(currentRoute);
+}
+
+function showCloudLoading() {
+  document.body.classList.toggle('web-plan', isDesktopComputer());
+  $('#login-view').hidden = true;
+  $('#billing-view').hidden = true;
+  $('#app-view').hidden = false;
+  $('#header-title').textContent = 'MedRecebe';
+  screen.innerHTML = '<div class="sync-loading" role="status"><span class="sync-spinner" aria-hidden="true"></span><strong>Sincronizando seus dados</strong><p>Carregando atendimentos e documentos protegidos.</p></div>';
 }
 
 function openDrawer() {
@@ -763,7 +1054,9 @@ function renderHome() {
 
 function renderDashboard() {
   const receivables = appState.attendances.filter((attendance) => attendance.status !== 'paid');
-  const overdue = receivables.filter((attendance) => isPastOrToday(attendance.dueAt));
+  const pending = receivables.filter((attendance) => attendance.status === 'pending');
+  const overdue = pending.filter((attendance) => isPast(attendance.dueAt));
+  const dueToday = pending.filter((attendance) => isDueToday(attendance.dueAt));
   const inReconciliation = receivables.filter((attendance) => attendance.status === 'in_reconciliation');
   const total = receivables.reduce((sum, attendance) => sum + attendance.amountCents, 0);
   const workplaceCards = appState.workplaces
@@ -772,25 +1065,25 @@ function renderDashboard() {
       const nextDue = [...items].sort((a, b) => a.dueAt.localeCompare(b.dueAt))[0]?.dueAt;
       const workplaceTotal = items.reduce((sum, attendance) => sum + attendance.amountCents, 0);
       const quantity = attendanceCount(items);
-      const overdueCount = attendanceCount(items.filter((attendance) => isPastOrToday(attendance.dueAt)));
+      const overdueCount = attendanceCount(items.filter((attendance) => attendance.status === 'pending' && isPast(attendance.dueAt)));
       return `<article class="card workplace-summary"><div class="card-head"><span class="round-icon">⌂</span><div><h3>${escapeHtml(workplace.name)}</h3><p>${quantity} ${quantity === 1 ? 'atendimento' : 'atendimentos'}</p></div>${overdueCount ? `<span class="badge overdue">${overdueCount} venc.</span>` : ''}</div><div class="value-row"><span><small>A RECEBER</small><strong>${currency(workplaceTotal)}</strong></span><span><small>PRÓXIMO</small><b>${nextDue ? displayDate(nextDue) : '—'}</b></span></div></article>`;
     })
     .join('');
-  const dueGroups = groupDueDates(receivables);
+  const dueGroups = groupDueDates(pending);
   const dueCards = dueGroups
-    .map((group) => `<article class="card location-card"><span class="location-copy"><strong>${escapeHtml(group.workplaceName)}</strong><small>Previsto em ${displayDate(group.dueAt)} • ${group.quantity} atend.</small><em>${currency(group.totalCents)}</em></span><button class="button secondary small" data-action="mark-paid" data-ids="${group.ids.join(',')}" type="button">Recebido</button></article>`)
+    .map((group) => `<article class="card location-card"><span class="location-copy"><strong>${escapeHtml(group.workplaceName)}</strong><small>${isDueToday(group.dueAt) ? 'Vence hoje' : `Vencido em ${displayDate(group.dueAt)}`} • ${group.quantity} atend.</small><em>${currency(group.totalCents)}</em></span><button class="button secondary small" data-action="mark-paid" data-ids="${group.ids.join(',')}" type="button">Recebido</button></article>`)
     .join('');
 
   screen.innerHTML = `<div class="screen-stack">
     ${pageHeading('', 'Dashboard', '')}
-    <div class="dashboard-overview"><div class="card summary-card"><div style="width:100%"><span class="summary-main"><small>TOTAL A RECEBER</small><strong>${currency(total)}</strong><span class="desktop-summary-note">Atendimentos em aberto</span></span><div class="metrics"><span class="metric"><strong>${attendanceCount(receivables)}</strong><small>PENDENTES</small></span><span class="metric overdue"><strong>${attendanceCount(overdue)}</strong><small>VENCIDOS</small></span><span class="metric"><strong>${attendanceCount(inReconciliation)}</strong><small>EM CONCILIAÇÃO</small></span></div></div></div><article class="card dashboard-insight"><span class="round-icon">⇄</span><small>VENCIDOS</small><strong>${currency(overdue.reduce((sum, item) => sum + item.amountCents, 0))}</strong><button class="button secondary small" data-nav="reconciliation" type="button">Conciliar</button></article></div>
+    <div class="dashboard-overview"><div class="card summary-card"><div style="width:100%"><span class="summary-main"><small>TOTAL A RECEBER</small><strong>${currency(total)}</strong><span class="desktop-summary-note">Atendimentos em aberto</span></span><div class="metrics"><span class="metric"><strong>${attendanceCount(pending)}</strong><small>EM ABERTO</small></span><span class="metric"><strong>${attendanceCount(dueToday)}</strong><small>VENCE HOJE</small></span><span class="metric overdue"><strong>${attendanceCount(overdue)}</strong><small>VENCIDOS</small></span><span class="metric"><strong>${attendanceCount(inReconciliation)}</strong><small>EM CONCILIAÇÃO</small></span></div></div></div><article class="card dashboard-insight"><span class="round-icon">⇄</span><small>VENCIDOS</small><strong>${currency(overdue.reduce((sum, item) => sum + item.amountCents, 0))}</strong><button class="button secondary small" data-nav="reconciliation" type="button">Conciliar</button></article></div>
     <div class="dashboard-columns">${dueCards ? `<section class="attention-panel"><h2 class="section-title">Requer sua atenção</h2><div class="list due-list">${dueCards}</div></section>` : ''}<section class="locations-panel"><h2 class="section-title">Por local</h2><div class="list">${workplaceCards || emptyCard('Ainda não há dados', 'Cadastre um local para começar.')}</div></section></div>
   </div>`;
 }
 
 function groupDueDates(receivables) {
   const groups = new Map();
-  receivables.filter((attendance) => isPastOrToday(attendance.dueAt)).forEach((attendance) => {
+  receivables.filter((attendance) => attendance.status === 'pending' && (isPast(attendance.dueAt) || isDueToday(attendance.dueAt))).forEach((attendance) => {
     const workplace = appState.workplaces.find((item) => item.id === attendance.workplaceId);
     const key = `${attendance.workplaceId}:${attendance.dueAt}`;
     const group = groups.get(key) || { id: key, workplaceName: workplace?.name || 'Local não disponível', dueAt: attendance.dueAt, totalCents: 0, quantity: 0, ids: [] };
@@ -806,7 +1099,8 @@ function renderWorkplaces() {
   const cards = appState.workplaces
     .map((workplace) => {
       const modes = workplace.modalities.slice(0, 3).map((modality) => `<div class="modality-line"><span><strong>${escapeHtml(modality.name)}</strong><small>${escapeHtml(describeRule(modality.rule))}</small></span><b>${currency(modality.amountCents)}</b></div>`).join('');
-      return `<article class="card workplace-summary"><div class="card-head"><span class="round-icon">⌂</span><div><h3>${escapeHtml(workplace.name)}</h3><p>${escapeHtml(workplace.payerLegalName || 'Razão Social não informada')}<br/>${workplace.payerCnpj ? `CNPJ ${formatCnpj(workplace.payerCnpj)}` : 'CNPJ não informado'}<br/>${escapeHtml(workplace.address || 'Endereço não informado')}</p></div><span class="badge ${workplace.active ? '' : 'inactive'}">${workplace.active ? 'Ativo' : 'Inativo'}</span></div><div class="modality-lines">${modes || '<p class="muted">Nenhuma modalidade cadastrada.</p>'}</div><div class="row-actions"><button class="danger-link" data-action="toggle-workplace" data-id="${workplace.id}" type="button">${workplace.active ? 'Desativar' : 'Reativar'}</button><button class="button secondary small" data-action="edit-workplace" data-id="${workplace.id}" type="button">Editar cadastro</button></div></article>`;
+      const remaining = Math.max(0, workplace.modalities.length - 3);
+      return `<article class="card workplace-summary"><div class="card-head"><span class="round-icon">⌂</span><div><h3>${escapeHtml(workplace.name)}</h3><p>${escapeHtml(workplace.payerLegalName || 'Razão Social não informada')}<br/>${workplace.payerCnpj ? `CNPJ ${formatCnpj(workplace.payerCnpj)}` : 'CNPJ não informado'}<br/>${escapeHtml(workplace.address || 'Endereço não informado')}</p></div><span class="badge ${workplace.active ? '' : 'inactive'}">${workplace.active ? 'Ativo' : 'Inativo'}</span></div><div class="modality-lines">${modes || '<p class="muted">Nenhuma modalidade cadastrada.</p>'}${remaining ? `<p class="field-hint">+ ${remaining} ${remaining === 1 ? 'modalidade cadastrada' : 'modalidades cadastradas'}</p>` : ''}</div><div class="row-actions"><button class="danger-link" data-action="toggle-workplace" data-id="${workplace.id}" type="button">${workplace.active ? 'Desativar' : 'Reativar'}</button><button class="button secondary small" data-action="edit-workplace" data-id="${workplace.id}" type="button">Editar cadastro</button></div></article>`;
     })
     .join('');
   screen.innerHTML = `<div class="screen-stack">${pageHeading('', 'Locais e repasses', '')}<button class="button primary" data-action="new-workplace" type="button">Adicionar local</button><div class="list">${cards || emptyCard('Comece pelo primeiro local', 'Cadastre o pagador e suas modalidades.')}</div></div>`;
@@ -837,22 +1131,38 @@ function renderAttendance() {
     const consultationOptions = workplace.modalities.filter((item) => item.active && item.id !== modality.id && item.type !== 'recurring');
     let consultation = draft.includeConsultation ? consultationOptions.find((item) => item.id === draft.consultationModalityId) : null;
     if (draft.includeConsultation && !consultation) {
-      consultation = consultationOptions[0] || null;
+      consultation = preferredConsultationModality(consultationOptions);
       draft.consultationModalityId = consultation?.id || '';
     }
     const unitCents = modality.amountCents + (consultation?.amountCents || 0);
-    return { modality, draft, consultation, quantity, unitCents, amountCents: unitCents * quantity, dueAt: calculateDueDate(attendanceDraft.occurredAt, modality.rule) };
+    return {
+      modality,
+      draft,
+      consultation,
+      quantity,
+      unitCents,
+      amountCents: unitCents * quantity,
+      dueAt: calculateDueDate(attendanceDraft.occurredAt, modality.rule),
+      consultationDueAt: consultation ? calculateDueDate(attendanceDraft.occurredAt, consultation.rule) : '',
+    };
   });
   const totalCents = itemSummaries.reduce((sum, item) => sum + item.amountCents, 0);
-  const totalQuantity = itemSummaries.reduce((sum, item) => sum + item.quantity, 0);
-  const dueDates = [...new Set(itemSummaries.map((item) => item.dueAt))];
+  const totalQuantity = itemSummaries.reduce((sum, item) => sum + item.quantity * (item.consultation ? 2 : 1), 0);
+  const dueDates = [...new Set(itemSummaries.flatMap((item) => [item.dueAt, item.consultationDueAt]).filter(Boolean))];
+  const evidenceStatus = attendanceDraft.evidenceSyncStatus === 'synced'
+    ? '<small class="evidence-status synced">✓ Disponível em todos os dispositivos</small>'
+    : attendanceDraft.evidenceSyncStatus === 'uploading'
+      ? '<small class="evidence-status">Sincronizando comprovante…</small>'
+      : attendanceDraft.evidence
+        ? '<small class="evidence-status pending">Aguardando sincronização</small>'
+        : '';
   const photo = attendanceDraft.evidence
-    ? `<img class="photo-preview" src="${attendanceDraft.evidence}" alt="Prévia do comprovante"/><div class="photo-source-actions"><label class="button secondary small file-button">Tirar outra foto<input class="evidence-input" type="file" accept="image/*" capture="environment"/></label><label class="button secondary small file-button">Galeria<input class="evidence-input" type="file" accept="image/*"/></label><button class="danger-link" data-action="remove-photo" type="button">Remover</button></div>`
+    ? `<img class="photo-preview" src="${escapeHtml(attendanceDraft.evidence)}" alt="Prévia do comprovante"/>${evidenceStatus}<div class="photo-source-actions"><label class="button secondary small file-button">Tirar outra foto<input class="evidence-input" type="file" accept="image/*" capture="environment"/></label><label class="button secondary small file-button">Galeria<input class="evidence-input" type="file" accept="image/*"/></label><button class="danger-link" data-action="remove-photo" type="button">Remover</button></div>`
     : `<strong>Adicionar comprovante</strong><p>Uma foto pode incluir vários atendimentos.</p><div class="photo-source-actions"><label class="button primary small file-button">Tirar foto<input class="evidence-input" type="file" accept="image/*" capture="environment"/></label><label class="button secondary small file-button">Galeria<input class="evidence-input" type="file" accept="image/*"/></label></div>`;
   const recurringFields = itemSummaries.filter(({ modality }) => modality.type === 'recurring').map(({ modality, draft }) => {
     const consultationOptions = workplace.modalities.filter((item) => item.active && item.id !== modality.id && item.type !== 'recurring');
-    if (draft.includeConsultation && !consultationOptions.some((item) => item.id === draft.consultationModalityId)) draft.consultationModalityId = consultationOptions[0]?.id || '';
-    return `<div class="card recurring-fields"><h2 class="section-title">Receita recorrente • ${escapeHtml(modality.name)}</h2><label>Identificação do paciente<input data-recurring-patient="${modality.id}" value="${escapeHtml(draft.patientReference || '')}" placeholder="Use iniciais ou um código interno" required/></label><label>Medicamento ou tratamento<input data-recurring-medication="${modality.id}" value="${escapeHtml(draft.medication || '')}" placeholder="Ex.: imunobiológico ou medicamento oncológico" required/></label><label class="toggle-choice"><input class="recurring-consultation" data-modality-id="${modality.id}" type="checkbox" ${draft.includeConsultation ? 'checked' : ''} ${consultationOptions.length ? '' : 'disabled'}/><span><strong>Contabilizar também uma consulta por atendimento</strong><small>${consultationOptions.length ? 'A quantidade da consulta será igual à quantidade informada nesta modalidade.' : 'Cadastre uma modalidade de consulta neste local para usar esta opção.'}</small></span></label>${draft.includeConsultation && consultationOptions.length ? `<label>Modalidade da consulta<select class="recurring-consultation-modality" data-modality-id="${modality.id}">${consultationOptions.map((item) => `<option value="${item.id}" ${item.id === draft.consultationModalityId ? 'selected' : ''}>${escapeHtml(item.name)} • ${currency(item.amountCents)}</option>`).join('')}</select></label>` : ''}</div>`;
+    if (draft.includeConsultation && !consultationOptions.some((item) => item.id === draft.consultationModalityId)) draft.consultationModalityId = preferredConsultationModality(consultationOptions)?.id || '';
+    return `<div class="card recurring-fields"><h2 class="section-title">Receita recorrente • ${escapeHtml(modality.name)}</h2><label>Identificação do paciente<input data-recurring-patient="${modality.id}" value="${escapeHtml(draft.patientReference || '')}" placeholder="Use iniciais ou um código interno" required/></label><label>Medicamento ou tratamento<input data-recurring-medication="${modality.id}" value="${escapeHtml(draft.medication || '')}" placeholder="Ex.: imunobiológico ou medicamento oncológico" required/></label><label class="toggle-choice"><input class="recurring-consultation" data-modality-id="${modality.id}" type="checkbox" ${draft.includeConsultation ? 'checked' : ''} ${consultationOptions.length ? '' : 'disabled'}/><span><strong>Contabilizar também uma consulta por atendimento</strong><small>${consultationOptions.length ? 'A consulta terá valor, quantidade e prazo próprios no Dashboard.' : 'Cadastre uma modalidade de consulta neste local para usar esta opção.'}</small></span></label>${draft.includeConsultation && consultationOptions.length ? `<label>Modalidade da consulta<select class="recurring-consultation-modality" data-modality-id="${modality.id}"><option value="">Selecione a consulta</option>${consultationOptions.map((item) => `<option value="${item.id}" ${item.id === draft.consultationModalityId ? 'selected' : ''}>${escapeHtml(item.name)} • ${currency(item.amountCents)}</option>`).join('')}</select></label>` : ''}</div>`;
   }).join('');
   const recordGroups = new Map();
   appState.attendances.filter((item) => item.workplaceId === workplace.id).forEach((item) => {
@@ -865,12 +1175,17 @@ function renderAttendance() {
   const visibleRecords = attendanceHistoryExpanded ? allRecorded.slice(0, 50) : allRecorded.slice(0, 3);
   const recorded = visibleRecords.map(([recordId, lines]) => {
     const first = lines[0];
+    const document = attendanceRecordDocument(lines);
     const recordTotal = lines.reduce((sum, item) => sum + item.amountCents, 0);
     const recordQuantity = attendanceCount(lines);
-    const lineRows = lines.map((item) => `<div class="attendance-record-line"><span><strong>${attendanceQuantity(item)} × ${escapeHtml(item.modalityName)}</strong>${item.patientReference ? `<small>${escapeHtml(item.patientReference)} • ${escapeHtml(item.medication || '')}</small>` : ''}</span><span><b>${currency(item.amountCents)}</b><small>${item.status === 'paid' ? 'Recebido' : `Crédito ${displayDate(item.dueAt)}`}</small></span></div>`).join('');
-    return `<details class="card attendance-record"><summary><span><strong>${displayDate(first.occurredAt)}</strong><small>${recordQuantity} ${recordQuantity === 1 ? 'atendimento' : 'atendimentos'}</small></span><span><b>${currency(recordTotal)}</b><small>Ver detalhes</small></span></summary><div class="attendance-record-body">${first.notes ? `<p>${escapeHtml(first.notes)}</p>` : ''}<div class="attendance-record-lines">${lineRows}</div><div class="row-actions"><button class="button secondary small" data-action="edit-attendance" data-id="${recordId}" type="button">Editar</button><button class="danger-link" data-action="delete-attendance" data-id="${recordId}" type="button">Excluir</button></div></div></details>`;
+    const lineRows = lines.map((item) => `<div class="attendance-record-line"><span><strong>${attendanceQuantity(item)} × ${escapeHtml(item.modalityName)}</strong>${item.patientReference ? `<small>${escapeHtml(item.patientReference)} • ${escapeHtml(item.medication || '')}</small>` : ''}</span><span><b>${currency(item.amountCents)}</b><small>${escapeHtml(attendanceStatusLabel(item))}</small></span></div>`).join('');
+    return `<details class="card attendance-record"><summary><span><strong>${displayDate(first.occurredAt)}</strong><small>${recordQuantity} ${recordQuantity === 1 ? 'atendimento' : 'atendimentos'}</small></span><span><b>${currency(recordTotal)}</b><small>Ver detalhes</small></span></summary><div class="attendance-record-body">${first.notes ? `<p>${escapeHtml(first.notes)}</p>` : ''}<div class="attendance-record-lines">${lineRows}</div>${document.remoteUrl ? `<a class="button secondary small" href="${escapeHtml(document.remoteUrl)}" target="_blank" rel="noopener">Abrir comprovante sincronizado</a>` : document.syncStatus === 'pending' ? '<p class="field-hint">O comprovante será enviado quando houver conexão.</p>' : ''}<div class="row-actions"><button class="button secondary small" data-action="edit-attendance" data-id="${recordId}" type="button">Editar</button><button class="danger-link" data-action="delete-attendance" data-id="${recordId}" type="button">Excluir</button></div></div></details>`;
   }).join('');
-  const summaryLines = itemSummaries.map((item) => `<div class="attendance-summary-line"><span>${item.quantity} × ${escapeHtml(item.modality.name)}</span><span>${currency(item.amountCents)} • ${displayDate(item.dueAt)}</span></div>`).join('');
+  const summaryLines = itemSummaries.flatMap((item) => {
+    const base = `<div class="attendance-summary-line"><span>${item.quantity} × ${escapeHtml(item.modality.name)}</span><span>${currency(item.modality.amountCents * item.quantity)} • ${displayDate(item.dueAt)}</span></div>`;
+    if (!item.consultation) return [base];
+    return [base, `<div class="attendance-summary-line"><span>${item.quantity} × ${escapeHtml(item.consultation.name)} <small>(associada)</small></span><span>${currency(item.consultation.amountCents * item.quantity)} • ${displayDate(item.consultationDueAt)}</span></div>`];
+  }).join('');
   const historyToggle = allRecorded.length > 3 ? `<button class="link-button attendance-history-toggle" data-action="toggle-attendance-history" type="button">${attendanceHistoryExpanded ? 'Mostrar menos' : `Ver todos (${allRecorded.length})`}</button>` : '';
   screen.innerHTML = `<div class="screen-stack"><form class="screen-stack" id="attendance-form">${pageHeading('', workplace.name, editingAttendanceId ? 'Editando registro' : '')}<label>Data<input id="attendance-date" type="date" value="${attendanceDraft.occurredAt}" required/></label><h2 class="section-title">Comprovante</h2><div class="attendance-photo">${photo}</div><div class="section-heading compact"><h2 class="section-title">Modalidade de repasse</h2>${totalQuantity ? `<span class="badge">${totalQuantity} atend.</span>` : ''}</div><div class="choice-list">${choices}</div>${recurringFields}<label>Observação (opcional)<textarea id="attendance-notes" placeholder="Adicionar observação">${escapeHtml(attendanceDraft.notes)}</textarea></label><div class="attendance-checkout">${itemSummaries.length ? `<div class="card attendance-total-card"><div class="attendance-total-head"><span><small>TOTAL</small><strong>${currency(totalCents)}</strong><em>${totalQuantity} ${totalQuantity === 1 ? 'atendimento' : 'atendimentos'}</em></span><span><small>PREVISÃO</small><strong>${dueDates.length === 1 ? displayDate(dueDates[0]) : `${dueDates.length} datas`}</strong></span></div><details class="attendance-breakdown"><summary>Ver composição</summary><div class="attendance-summary-lines">${summaryLines}</div></details></div>` : ''}<div class="attendance-actions"><button class="button primary" type="submit">${editingAttendanceId ? 'Salvar correção' : 'Salvar'}</button><button class="text-button" data-action="cancel-attendance" type="button">Cancelar</button></div></div></form><section class="attendance-history-section"><div class="section-heading compact"><h2 class="section-title">Atendimentos</h2><span class="badge">${allRecorded.length}</span></div><div class="list">${recorded || emptyCard('Nenhum atendimento', 'Seus registros aparecerão aqui.')}</div>${historyToggle}</section></div>`;
 }
@@ -883,7 +1198,7 @@ function legalNameMatches(registeredName, extractedNames = []) {
   });
 }
 
-function recordInvoiceAnalysis(analysis) {
+function recordInvoiceAnalysis(analysis, invoiceId = id('invoice'), document = null) {
   const extractedCnpjs = Array.isArray(analysis.cnpjs) ? analysis.cnpjs.map(cnpjDigits) : [];
   const matchedPayerIds = Array.isArray(analysis.matchedPayerIds) ? analysis.matchedPayerIds : [];
   const workplace = appState.workplaces.find((item) => matchedPayerIds.includes(item.id))
@@ -896,7 +1211,7 @@ function recordInvoiceAnalysis(analysis) {
   const differenceCents = group && amountCents !== null ? amountCents - group.totalCents : null;
   const status = !workplace ? 'payer_not_matched' : !group ? 'group_not_found' : differenceCents === 0 ? 'matched' : 'divergent';
   const record = {
-    id: id('invoice'),
+    id: invoiceId,
     fileName: String(analysis.fileName || 'Nota Fiscal'),
     invoiceNumber: String(analysis.invoiceNumber || ''),
     issuedAt: String(analysis.issuedAt || ''),
@@ -910,6 +1225,10 @@ function recordInvoiceAnalysis(analysis) {
     differenceCents,
     status,
     analyzedAt: new Date().toISOString(),
+    documentId: document?.id || '',
+    documentUrl: document?.signedUrl || '',
+    documentMimeType: document?.mimeType || '',
+    documentSyncStatus: document ? 'synced' : '',
   };
   appState.invoices = [record, ...(appState.invoices || [])].slice(0, 30);
   selectedInvoiceId = record.id;
@@ -926,7 +1245,7 @@ function invoiceCard(invoice) {
     group_not_found: ['warning', 'Pagador identificado', 'O local foi encontrado, mas não há grupo vencido para comparar.'],
     payer_not_matched: ['warning', 'Pagador não identificado', 'Confira se o CNPJ e a Razão Social do pagador estão iguais ao documento.'],
   }[invoice.status] || ['warning', 'Conferência pendente', 'Revise os dados extraídos.'];
-  return `<article class="card workplace-summary"><div class="card-head"><span class="round-icon">NF</span><div><h3>${escapeHtml(status[1])}</h3><p>${escapeHtml(invoice.fileName)}${invoice.invoiceNumber ? ` • Nota ${escapeHtml(invoice.invoiceNumber)}` : ''}${invoice.workplaceName ? `<br/>${escapeHtml(invoice.workplaceName)}` : ''}</p></div><span class="badge ${status[0] === 'success' ? '' : 'inactive'}">${status[0] === 'success' ? 'CONCILIADO' : 'REVISAR'}</span></div><div class="value-row"><span><small>VALOR DA NOTA</small><strong>${invoice.amountCents === null ? 'Não identificado' : currency(invoice.amountCents)}</strong></span><span><small>CONTABILIZADO</small><b>${invoice.expectedCents === null ? '—' : currency(invoice.expectedCents)}</b></span></div><p class="field-hint">${escapeHtml(status[2])}</p></article>`;
+  return `<article class="card workplace-summary"><div class="card-head"><span class="round-icon">NF</span><div><h3>${escapeHtml(status[1])}</h3><p>${escapeHtml(invoice.fileName)}${invoice.invoiceNumber ? ` • Nota ${escapeHtml(invoice.invoiceNumber)}` : ''}${invoice.workplaceName ? `<br/>${escapeHtml(invoice.workplaceName)}` : ''}</p></div><span class="badge ${status[0] === 'success' ? '' : 'inactive'}">${status[0] === 'success' ? 'CONCILIADO' : 'REVISAR'}</span></div><div class="value-row"><span><small>VALOR DA NOTA</small><strong>${invoice.amountCents === null ? 'Não identificado' : currency(invoice.amountCents)}</strong></span><span><small>CONTABILIZADO</small><b>${invoice.expectedCents === null ? '—' : currency(invoice.expectedCents)}</b></span></div><p class="field-hint">${escapeHtml(status[2])}</p>${invoice.documentUrl ? `<a class="button secondary small" href="${escapeHtml(invoice.documentUrl)}" target="_blank" rel="noopener">Abrir Nota Fiscal</a>` : ''}</article>`;
 }
 
 function fileAsBase64(file) {
@@ -946,40 +1265,53 @@ async function analyzeInvoiceFile(file) {
   }
   if (file.size > 5 * 1024 * 1024) throw new Error('Escolha um arquivo de até 5 MB.');
   if (!isCloudMode()) throw new Error('A leitura automática requer uma conta MedRecebe conectada.');
+  const invoiceId = id('invoice');
+  const documentId = `document-${invoiceId}`;
+  const mimeType = file.type || (extension === 'xml' ? 'application/xml' : 'application/pdf');
+  const dataBase64 = await fileAsBase64(file);
   const analysis = await cloud.analyzeInvoice({
     fileName: name,
-    mimeType: file.type || (extension === 'xml' ? 'application/xml' : 'application/pdf'),
-    dataBase64: await fileAsBase64(file),
+    mimeType,
+    dataBase64,
     payers: appState.workplaces.map((workplace) => ({ id: workplace.id, cnpj: cnpjDigits(workplace.payerCnpj), legalName: workplace.payerLegalName })),
   });
-  return recordInvoiceAnalysis(analysis);
+  const uploaded = await cloud.uploadDocument({ documentId, recordId: invoiceId, documentType: 'invoice', fileName: name, mimeType, dataBase64 });
+  return recordInvoiceAnalysis(analysis, invoiceId, uploaded.document);
 }
 
 function renderReconciliation() {
   const groups = reconciliationGroups();
+  if (!selectedReconciliationGroup || !groups.some((group) => group.id === selectedReconciliationGroup)) selectedReconciliationGroup = groups[0]?.id || '';
+  const selected = groups.find((group) => group.id === selectedReconciliationGroup);
+  if (selected && (!selectedChannelWorkplace || selectedChannelWorkplace !== selected.workplace.id)) selectedChannelWorkplace = selected.workplace.id;
   if (!selectedChannelWorkplace) selectedChannelWorkplace = appState.workplaces[0]?.id || '';
   const channel = appState.workplaces.find((item) => item.id === selectedChannelWorkplace);
-  if (!selectedReconciliationGroup || !groups.some((group) => group.id === selectedReconciliationGroup)) selectedReconciliationGroup = groups[0]?.id || '';
   const options = appState.workplaces.map((workplace) => `<option value="${workplace.id}" ${workplace.id === selectedChannelWorkplace ? 'selected' : ''}>${escapeHtml(workplace.name)}</option>`).join('');
-  const groupCards = groups.map((group) => `<button class="card group-card ${group.id === selectedReconciliationGroup ? 'selected' : ''}" data-action="select-reconciliation" data-id="${group.id}" type="button"><span class="group-check">${group.id === selectedReconciliationGroup ? '✓' : ''}</span><span><h3>${escapeHtml(group.workplace.name)}</h3><p>${monthLabel(group.month)}</p><small>${group.quantity} atend. • ${group.attachments} comprov.</small></span><b>${currency(group.totalCents)}</b></button>`).join('');
-  const selected = groups.find((group) => group.id === selectedReconciliationGroup);
+  const groupCards = groups.map((group) => `<button class="card group-card ${group.id === selectedReconciliationGroup ? 'selected' : ''}" data-action="select-reconciliation" data-id="${group.id}" type="button"><span class="group-check">${group.id === selectedReconciliationGroup ? '✓' : ''}</span><span><h3>${escapeHtml(group.workplace.name)}</h3><p>${monthLabel(group.month)}</p><small>${group.quantity} atend. • ${group.attachments} comprov. ${group.status === 'in_reconciliation' ? '• Em conciliação' : ''}</small></span><b>${currency(group.totalCents)}</b></button>`).join('');
   const latestInvoice = (appState.invoices || []).find((invoice) => invoice.id === selectedInvoiceId) || appState.invoices?.[0];
-  screen.innerHTML = `<div class="screen-stack">${pageHeading('Conferência de pagamentos', 'Conciliação', 'Envie uma Nota Fiscal para identificar o pagador e comparar automaticamente os valores.')}<h2 class="section-title">Conferir Nota Fiscal</h2><div class="card settings"><p>Selecione o PDF ou XML recebido. O arquivo é lido para extrair CNPJ, Razão Social e valor; depois, o MedRecebe compara esses dados com o cadastro e os atendimentos contabilizados.</p><label class="button primary file-button">Selecionar Nota Fiscal<input id="invoice-file" type="file" accept="application/pdf,application/xml,text/xml,.pdf,.xml"/></label><p class="field-hint">O arquivo é processado para a conferência e não é incorporado à sincronização dos dados de gestão.</p></div>${invoiceCard(latestInvoice)}<h2 class="section-title">Canal oficial</h2>${channel ? `<form class="card settings" id="channel-form"><label>Local<select id="channel-workplace">${options}</select></label><label>E-mail oficial<input id="channel-email" type="email" value="${escapeHtml(channel.reconciliationEmail)}" placeholder="repasses@local.com.br"/></label><label>Cópia (opcional)<input id="channel-cc" value="${escapeHtml(channel.reconciliationCc || '')}" placeholder="gestor@local.com.br"/></label><label>Mensagem padrão<textarea id="channel-message">${escapeHtml(appState.reconciliationMessage)}</textarea></label><p class="field-hint">Tokens: {{local}}, {{periodo}}, {{quantidade}}, {{valor}}, {{detalhes}} e {{medico}}.</p><button class="button secondary small" type="submit">Salvar canal e mensagem</button></form>` : '<div class="notice warning">Cadastre um local antes de configurar a conciliação.</div>'}<h2 class="section-title">Grupos prontos para conciliar</h2><div class="list">${groupCards || emptyCard('Nenhum repasse vencido', 'Quando um grupo ultrapassar a data prevista sem baixa, ele aparecerá aqui.')}</div>${selected ? `<div class="card summary-card"><span class="summary-main"><small>SELECIONADO</small><strong>${currency(selected.totalCents)}</strong><small>${selected.quantity} atendimentos • ${monthLabel(selected.month)}</small></span></div><button class="button primary" data-action="open-reconciliation-email" type="button">Abrir solicitação no e-mail</button><div class="notice warning">No navegador, o e-mail é preenchido, mas os comprovantes precisam ser anexados manualmente antes do envio.</div>` : ''}</div>`;
+  const documentLinks = selected ? [...selected.documents.values()].map((document, index) => document.remoteUrl ? `<a class="button secondary small" href="${escapeHtml(document.remoteUrl)}" target="_blank" rel="noopener">Abrir comprovante ${index + 1}</a>` : '').join('') : '';
+  screen.innerHTML = `<div class="screen-stack">${pageHeading('Conferência de pagamentos', 'Conciliação', 'Envie uma Nota Fiscal para identificar o pagador e comparar automaticamente os valores.')}<h2 class="section-title">Conferir Nota Fiscal</h2><div class="card settings"><p>Selecione o PDF ou XML recebido. O arquivo é lido para extrair CNPJ, Razão Social e valor; depois, o MedRecebe compara esses dados com o cadastro e os atendimentos contabilizados.</p><label class="button primary file-button">Selecionar Nota Fiscal<input id="invoice-file" type="file" accept="application/pdf,application/xml,text/xml,.pdf,.xml"/></label><p class="field-hint">A Nota Fiscal fica protegida e disponível nos seus outros dispositivos.</p></div>${invoiceCard(latestInvoice)}<h2 class="section-title">Canal oficial</h2>${channel ? `<form class="card settings" id="channel-form"><label>Local<select id="channel-workplace">${options}</select></label><label>E-mail oficial<input id="channel-email" type="email" value="${escapeHtml(channel.reconciliationEmail)}" placeholder="repasses@local.com.br"/></label><label>Cópia (opcional)<input id="channel-cc" value="${escapeHtml(channel.reconciliationCc || '')}" placeholder="gestor@local.com.br"/></label><label>Mensagem padrão<textarea id="channel-message">${escapeHtml(appState.reconciliationMessage)}</textarea></label><p class="field-hint">Tokens: {{local}}, {{periodo}}, {{quantidade}}, {{valor}}, {{detalhes}} e {{medico}}.</p><button class="button secondary small" type="submit">Salvar canal e mensagem</button></form>` : '<div class="notice warning">Cadastre um local antes de configurar a conciliação.</div>'}<h2 class="section-title">Grupos para conciliar</h2><div class="list">${groupCards || emptyCard('Nenhum repasse vencido', 'O vencimento de hoje só aparecerá aqui a partir de amanhã, se não houver baixa.')}</div>${selected ? `<div class="card summary-card"><span class="summary-main"><small>${selected.status === 'in_reconciliation' ? 'EM CONCILIAÇÃO' : 'SELECIONADO'}</small><strong>${currency(selected.totalCents)}</strong><small>${selected.quantity} atendimentos • ${monthLabel(selected.month)}</small></span></div>${documentLinks ? `<div class="document-actions">${documentLinks}</div>` : '<div class="notice warning">Este grupo ainda não possui comprovante sincronizado.</div>'}<button class="button primary" data-action="open-reconciliation-email" type="button">${selected.status === 'in_reconciliation' ? 'Reabrir solicitação no e-mail' : 'Preparar solicitação no e-mail'}</button><div class="notice success">Os comprovantes ficam disponíveis em todos os dispositivos. No navegador, abra-os acima para anexá-los ao e-mail.</div>` : ''}</div>`;
 }
 
 function reconciliationGroups() {
   const map = new Map();
-  appState.attendances.filter((attendance) => attendance.status === 'pending' && isPastOrToday(attendance.dueAt)).forEach((attendance) => {
+  appState.attendances.filter((attendance) => ['pending', 'in_reconciliation'].includes(attendance.status) && isPast(attendance.dueAt)).forEach((attendance) => {
     const workplace = appState.workplaces.find((item) => item.id === attendance.workplaceId);
     if (!workplace) return;
     const month = attendance.dueAt.slice(0, 7);
     const key = `${workplace.id}:${month}`;
-    const group = map.get(key) || { id: key, workplace, month, attendances: [], totalCents: 0, quantity: 0, evidenceRecordIds: new Set(), attachments: 0 };
+    const group = map.get(key) || { id: key, workplace, month, attendances: [], totalCents: 0, quantity: 0, evidenceRecordIds: new Set(), documents: new Map(), attachments: 0, status: 'pending' };
     group.attendances.push(attendance);
     group.totalCents += attendance.amountCents;
     group.quantity += attendanceQuantity(attendance);
-    if (attendanceRecordEvidence(attendanceRecordLines(attendanceRecordId(attendance)))) group.evidenceRecordIds.add(attendanceRecordId(attendance));
+    const recordId = attendanceRecordId(attendance);
+    const document = attendanceRecordDocument(attendanceRecordLines(recordId));
+    if (document.source || document.id) {
+      group.evidenceRecordIds.add(recordId);
+      group.documents.set(recordId, document);
+    }
     group.attachments = group.evidenceRecordIds.size;
+    if (attendance.status === 'in_reconciliation') group.status = 'in_reconciliation';
     map.set(key, group);
   });
   return [...map.values()].sort((a, b) => a.month.localeCompare(b.month));
@@ -1003,7 +1335,7 @@ function renderAccount() {
     ? `<h2 class="section-title">Plano e acesso</h2><div class="card workplace-summary"><div class="card-head"><span class="round-icon">✓</span><div><h3>Plano único</h3><p>R$ 39,90 por mês</p></div><span class="badge ${accessStatus === 'active' ? '' : 'inactive'}">${escapeHtml(subscriptionLabels[accessStatus] || 'Em configuração')}</span></div><p class="field-hint">Cadastros, regras e atendimentos são sincronizados entre o celular e o computador.</p></div>`
     : '';
   const deleteLabel = isCloudMode() ? 'Excluir dados salvos neste aparelho' : 'Excluir conta e dados locais';
-  screen.innerHTML = `<div class="screen-stack">${pageHeading('', 'Mais', '')}<div class="card card-head"><span class="avatar">${escapeHtml((appState.profile?.name || 'M').charAt(0))}</span><div><h3>${escapeHtml(appState.profile?.name || 'Médico')}</h3><p>${formatCpf(appState.profile?.cpf || '')}<br/>${escapeHtml(appState.profile?.email || '')}</p></div></div>${cloudSection}<div class="notice success"><strong>Dados sincronizados</strong><br/>As fotos permanecem no aparelho em que foram adicionadas.</div><h2 class="section-title">Aplicativo</h2><div class="card install-card"><span class="install-icon">${isStandalone() ? '✓' : '⇧'}</span><div><strong>${isStandalone() ? 'MedRecebe instalado' : 'Adicionar à Tela de Início'}</strong><p>${isStandalone() ? 'Você está usando o modo aplicativo.' : 'Instale pelo Safari para abrir como aplicativo.'}</p></div>${isStandalone() ? '' : '<button class="link-button" data-action="install" type="button">Ver passos</button>'}</div><h2 class="section-title">Ajuda e preferências</h2><div class="card account-links"><button class="account-link" data-nav="feedback" type="button">Enviar feedback <span>›</span></button><a class="account-link" href="./privacidade.html" target="_blank" rel="noopener">Política de Privacidade <span>›</span></a><a class="account-link" href="./termos.html" target="_blank" rel="noopener">Termos de Uso <span>›</span></a><a class="account-link" href="./cancelamento.html" target="_blank" rel="noopener">Política de cancelamento e reembolso <span>›</span></a><a class="account-link" href="./suporte.html" target="_blank" rel="noopener">Ajuda e suporte <span>›</span></a></div><button class="button secondary" data-action="logout" type="button">Sair</button><button class="button danger" data-action="delete-beta-data" type="button">${deleteLabel}</button><p class="muted" style="text-align:center">MedRecebe • versão web 2.2</p></div>`;
+  screen.innerHTML = `<div class="screen-stack">${pageHeading('', 'Mais', '')}<div class="card card-head"><span class="avatar">${escapeHtml((appState.profile?.name || 'M').charAt(0))}</span><div><h3>${escapeHtml(appState.profile?.name || 'Médico')}</h3><p>${formatCpf(appState.profile?.cpf || '')}<br/>${escapeHtml(appState.profile?.email || '')}</p></div></div>${cloudSection}<div class="notice success"><strong>Dados e documentos sincronizados</strong><br/>Comprovantes e Notas Fiscais ficam disponíveis nos seus dispositivos autenticados.</div><h2 class="section-title">Aplicativo</h2><div class="card install-card"><span class="install-icon">${isStandalone() ? '✓' : '⇧'}</span><div><strong>${isStandalone() ? 'MedRecebe instalado' : 'Adicionar à Tela de Início'}</strong><p>${isStandalone() ? 'Você está usando o modo aplicativo.' : 'Instale pelo Safari para abrir como aplicativo.'}</p></div>${isStandalone() ? '' : '<button class="link-button" data-action="install" type="button">Ver passos</button>'}</div><h2 class="section-title">Ajuda e preferências</h2><div class="card account-links"><button class="account-link" data-nav="feedback" type="button">Enviar feedback <span>›</span></button><a class="account-link" href="./privacidade.html" target="_blank" rel="noopener">Política de Privacidade <span>›</span></a><a class="account-link" href="./termos.html" target="_blank" rel="noopener">Termos de Uso <span>›</span></a><a class="account-link" href="./cancelamento.html" target="_blank" rel="noopener">Política de cancelamento e reembolso <span>›</span></a><a class="account-link" href="./suporte.html" target="_blank" rel="noopener">Ajuda e suporte <span>›</span></a></div><button class="button secondary" data-action="logout" type="button">Sair</button><button class="button danger" data-action="delete-beta-data" type="button">${deleteLabel}</button><p class="muted" style="text-align:center">MedRecebe • versão web 2.3</p></div>`;
 }
 
 function cancellationBackup() {
@@ -1034,7 +1366,7 @@ async function prepareCancellationBackup() {
 
 function renderCancellation() {
   if (!isCloudMode()) return navigate('account');
-  screen.innerHTML = `<div class="screen-stack">${pageHeading('Política e encerramento', 'Solicitar cancelamento', 'Revise as condições antes de confirmar o encerramento da recorrência.')}<div class="notice warning"><strong>Antes de continuar</strong><br/>Dentro dos 7 primeiros dias da contratação, o sistema solicita o reembolso integral do pagamento elegível. Depois desse prazo, o cancelamento impede cobranças futuras, sem restituição proporcional do ciclo iniciado.</div><label class="card backup-choice"><input id="cancel-backup" type="checkbox" checked/><span><strong>Preparar backup para meu e-mail</strong><small>O MedRecebe criará um arquivo com locais, modalidades, atendimentos e conciliações. No iPhone, o Safari abrirá o compartilhamento para você escolher o Mail e enviar ao próprio endereço.</small></span></label><div class="card settings"><p><strong>E-mail cadastrado:</strong> ${escapeHtml(appState.profile?.email || '')}</p><p class="field-hint">As fotos armazenadas neste aparelho são incluídas no arquivo quando disponíveis. Revise o conteúdo antes de enviá-lo.</p></div><button class="button primary" data-action="confirm-cancel-subscription" type="button">Confirmar cancelamento</button><button class="button secondary" data-action="cancel-cancellation" type="button">Voltar sem cancelar</button></div>`;
+  screen.innerHTML = `<div class="screen-stack">${pageHeading('Política e encerramento', 'Solicitar cancelamento', 'Revise as condições antes de confirmar o encerramento da recorrência.')}<div class="notice warning"><strong>Antes de continuar</strong><br/>Dentro dos 7 primeiros dias da contratação, o sistema solicita o reembolso integral do pagamento elegível. Depois desse prazo, o cancelamento impede cobranças futuras, sem restituição proporcional do ciclo iniciado.</div><label class="card backup-choice"><input id="cancel-backup" type="checkbox" checked/><span><strong>Preparar backup para meu e-mail</strong><small>O MedRecebe criará um arquivo com locais, modalidades, atendimentos e conciliações. No iPhone, o Safari abrirá o compartilhamento para você escolher o Mail e enviar ao próprio endereço.</small></span></label><div class="card settings"><p><strong>E-mail cadastrado:</strong> ${escapeHtml(appState.profile?.email || '')}</p><p class="field-hint">O backup registra também o catálogo dos comprovantes e Notas Fiscais sincronizados. Revise o conteúdo antes de enviá-lo.</p></div><button class="button primary" data-action="confirm-cancel-subscription" type="button">Confirmar cancelamento</button><button class="button secondary" data-action="cancel-cancellation" type="button">Voltar sem cancelar</button></div>`;
 }
 
 async function performCancellation(button) {
@@ -1187,6 +1519,12 @@ function prepareReconciliationEmail() {
   Object.entries(tokens).forEach(([token, value]) => (body = body.split(token).join(value)));
   const subject = `Conciliação de repasses — ${group.workplace.name} — ${monthLabel(group.month)}`;
   const cc = group.workplace.reconciliationCc ? `&cc=${encodeURIComponent(group.workplace.reconciliationCc)}` : '';
+  const requestedAt = new Date().toISOString();
+  group.attendances.forEach((attendance) => {
+    attendance.status = 'in_reconciliation';
+    attendance.reconciliationRequestedAt = requestedAt;
+  });
+  saveState();
   window.location.href = `mailto:${encodeURIComponent(group.workplace.reconciliationEmail)}?subject=${encodeURIComponent(subject)}${cc}&body=${encodeURIComponent(body)}`;
 }
 
@@ -1331,9 +1669,10 @@ function bindEvents() {
   window.addEventListener('resize', () => {
     if (!$('#app-view').hidden) document.body.classList.toggle('web-plan', isDesktopComputer());
   });
+  window.addEventListener('online', () => void syncPendingEvidence());
 }
 
-function handleClick(event) {
+async function handleClick(event) {
   const nav = event.target.closest('[data-nav]');
   if (nav) return navigate(nav.dataset.nav);
   const target = event.target.closest('[data-action]');
@@ -1366,14 +1705,22 @@ function handleClick(event) {
   }
   if (action === 'edit-attendance') {
     const lines = attendanceRecordLines(targetId);
-    const attendance = lines[0];
+    const editableLines = lines.filter((line) => !line.isAssociatedConsultation);
+    const attendance = editableLines[0];
     if (attendance) {
+      const document = attendanceRecordDocument(lines);
       editingAttendanceId = targetId;
       attendanceDraft = {
         occurredAt: attendance.occurredAt,
         notes: attendance.notes || '',
-        evidence: attendanceRecordEvidence(lines),
-        items: Object.fromEntries(lines.map((line) => [line.modalityId, {
+        evidence: document.source,
+        evidenceDocumentId: document.id,
+        evidenceRemoteUrl: document.remoteUrl,
+        evidenceSyncStatus: document.syncStatus,
+        evidenceFileName: document.fileName,
+        evidenceMimeType: document.mimeType,
+        evidenceChanged: false,
+        items: Object.fromEntries(editableLines.map((line) => [line.modalityId, {
           quantity: attendanceQuantity(line),
           patientReference: line.patientReference || '',
           medication: line.medication || '',
@@ -1393,7 +1740,14 @@ function handleClick(event) {
     }
     saveState();
     renderAttendance();
-    showToast('Registro de atendimentos excluído.');
+    if (isCloudMode()) {
+      try {
+        await cloud.deleteDocumentsForRecord(targetId);
+        showToast('Registro e comprovante excluídos.');
+      } catch {
+        showToast('Registro excluído. A remoção do comprovante será retomada pelo suporte.');
+      }
+    } else showToast('Registro de atendimentos excluído.');
   }
   if ((action === 'increase-attendance-quantity' || action === 'decrease-attendance-quantity') && attendanceDraft) {
     const item = attendanceDraft.items[targetId] || { quantity: 1 };
@@ -1404,6 +1758,8 @@ function handleClick(event) {
   }
   if (action === 'remove-photo') {
     attendanceDraft.evidence = '';
+    attendanceDraft.evidenceChanged = true;
+    attendanceDraft.evidenceSyncStatus = '';
     renderAttendance();
   }
   if (action === 'toggle-attendance-history') {
@@ -1422,6 +1778,8 @@ function handleClick(event) {
   }
   if (action === 'select-reconciliation') {
     selectedReconciliationGroup = targetId;
+    const group = reconciliationGroups().find((item) => item.id === targetId);
+    if (group) selectedChannelWorkplace = group.workplace.id;
     renderReconciliation();
   }
   if (action === 'open-reconciliation-email') prepareReconciliationEmail();
@@ -1508,6 +1866,10 @@ function handleChange(event) {
     compressImage(file)
       .then((dataUrl) => {
         attendanceDraft.evidence = dataUrl;
+        attendanceDraft.evidenceFileName = `${String(file.name || 'comprovante').replace(/\.[^.]+$/, '').slice(0, 120) || 'comprovante'}.jpg`;
+        attendanceDraft.evidenceMimeType = 'image/jpeg';
+        attendanceDraft.evidenceSyncStatus = 'pending';
+        attendanceDraft.evidenceChanged = true;
         renderAttendance();
       })
       .catch(() => showToast('Não foi possível preparar esta foto.'));
@@ -1544,7 +1906,7 @@ function handleInput(event) {
   }
 }
 
-function handleSubmit(event) {
+async function handleSubmit(event) {
   if (event.target.id === 'attendance-form') {
     event.preventDefault();
     const workplace = appState.workplaces.find((item) => item.id === selectedWorkplaceId);
@@ -1558,15 +1920,43 @@ function handleSubmit(event) {
       if (draft.includeConsultation && !consultation) return showToast(`Selecione a modalidade da consulta em ${modality.name}.`);
     }
     const previousLines = editingAttendanceId ? attendanceRecordLines(editingAttendanceId) : [];
+    const previousEditableLines = previousLines.filter((item) => !item.isAssociatedConsultation);
     const recordId = editingAttendanceId || id('record');
     const createdAt = previousLines[0]?.createdAt || new Date().toISOString();
     const updatedAt = new Date().toISOString();
-    const attendances = selectedItems.map(({ modality, draft }, index) => {
-      const previous = previousLines.find((item) => item.modalityId === modality.id);
+    const localEvidence = String(attendanceDraft.evidence || '').startsWith('data:') ? attendanceDraft.evidence : '';
+    const previousDocument = attendanceRecordDocument(previousLines);
+    const evidenceDocumentId = attendanceDraft.evidenceDocumentId || previousDocument.id || `evidence-${recordId}`;
+    const evidenceRemoteUrl = attendanceDraft.evidenceRemoteUrl || previousDocument.remoteUrl || (!localEvidence ? attendanceDraft.evidence : '');
+    const attendances = selectedItems.flatMap(({ modality, draft }, selectedIndex) => {
+      const previous = previousEditableLines.find((item) => item.modalityId === modality.id);
       const quantity = attendanceQuantity(draft);
       const consultation = draft.includeConsultation ? workplace.modalities.find((item) => item.id === draft.consultationModalityId) : null;
-      const unitAmountCents = modality.amountCents + (consultation?.amountCents || 0);
-      return { id: previous?.id || id('att'), recordId, workplaceId: selectedWorkplaceId, modalityId: modality.id, modalityName: modality.name, modalityType: modality.type, quantity, occurredAt: attendanceDraft.occurredAt, dueAt: calculateDueDate(attendanceDraft.occurredAt, modality.rule), amountCents: unitAmountCents * quantity, unitAmountCents, baseAmountCents: modality.amountCents, evidence: index === 0 ? attendanceDraft.evidence : '', notes: attendanceDraft.notes.trim(), patientReference: modality.type === 'recurring' ? String(draft.patientReference || '').trim() : '', medication: modality.type === 'recurring' ? String(draft.medication || '').trim() : '', includeConsultation: Boolean(consultation), consultationModalityId: consultation?.id || '', consultationModalityName: consultation?.name || '', consultationAmountCents: consultation?.amountCents || 0, status: previous?.status || 'pending', createdAt, updatedAt };
+      const main = { id: previous?.id || id('att'), recordId, workplaceId: selectedWorkplaceId, modalityId: modality.id, modalityName: modality.name, modalityType: modality.type, quantity, occurredAt: attendanceDraft.occurredAt, dueAt: calculateDueDate(attendanceDraft.occurredAt, modality.rule), amountCents: modality.amountCents * quantity, unitAmountCents: modality.amountCents, baseAmountCents: modality.amountCents, evidence: selectedIndex === 0 ? localEvidence : '', evidenceDocumentId: selectedIndex === 0 ? evidenceDocumentId : '', evidenceRemoteUrl: selectedIndex === 0 ? evidenceRemoteUrl : '', evidenceFileName: selectedIndex === 0 ? attendanceDraft.evidenceFileName || previousDocument.fileName : '', evidenceMimeType: selectedIndex === 0 ? attendanceDraft.evidenceMimeType || previousDocument.mimeType : '', evidenceSyncStatus: selectedIndex === 0 ? (localEvidence && attendanceDraft.evidenceChanged ? 'pending' : attendanceDraft.evidenceSyncStatus || previousDocument.syncStatus) : '', evidenceAvailable: selectedIndex === 0, notes: attendanceDraft.notes.trim(), patientReference: modality.type === 'recurring' ? String(draft.patientReference || '').trim() : '', medication: modality.type === 'recurring' ? String(draft.medication || '').trim() : '', includeConsultation: Boolean(consultation), consultationSeparated: Boolean(consultation), consultationModalityId: consultation?.id || '', consultationModalityName: consultation?.name || '', consultationAmountCents: consultation?.amountCents || 0, status: previous?.status || 'pending', createdAt, updatedAt };
+      if (!consultation) return [main];
+      const previousConsultation = previousLines.find((item) => item.isAssociatedConsultation && item.sourceAttendanceId === main.id);
+      return [main, {
+        id: previousConsultation?.id || `consultation-${main.id}`,
+        recordId,
+        workplaceId: selectedWorkplaceId,
+        modalityId: consultation.id,
+        modalityName: consultation.name,
+        modalityType: consultation.type,
+        quantity,
+        occurredAt: attendanceDraft.occurredAt,
+        dueAt: calculateDueDate(attendanceDraft.occurredAt, consultation.rule),
+        amountCents: consultation.amountCents * quantity,
+        unitAmountCents: consultation.amountCents,
+        baseAmountCents: consultation.amountCents,
+        evidence: '',
+        notes: '',
+        status: previousConsultation?.status || previous?.status || 'pending',
+        createdAt,
+        updatedAt,
+        isAssociatedConsultation: true,
+        sourceAttendanceId: main.id,
+        sourceModalityId: modality.id,
+      }];
     });
     appState.attendances = [...attendances, ...appState.attendances.filter((item) => attendanceRecordId(item) !== recordId)];
     if (!saveState()) {
@@ -1577,7 +1967,19 @@ function handleSubmit(event) {
     editingAttendanceId = '';
     renderAttendance();
     const quantity = attendanceCount(attendances);
-    showToast(corrected ? 'Correção salva no registro.' : `${quantity} ${quantity === 1 ? 'atendimento salvo' : 'atendimentos salvos'} e adicionados ao Dashboard.`);
+    const successMessage = corrected ? 'Correção salva no registro.' : `${quantity} ${quantity === 1 ? 'atendimento salvo' : 'atendimentos salvos'} e adicionados ao Dashboard.`;
+    showToast(localEvidence && isCloudMode() ? `${successMessage} Sincronizando comprovante…` : successMessage);
+    if (localEvidence && isCloudMode()) {
+      void syncEvidenceForRecord(recordId)
+        .then(() => {
+          if (currentRoute === 'attendance') renderAttendance();
+          showToast('Comprovante sincronizado e disponível em outros dispositivos.');
+        })
+        .catch(() => {
+          if (currentRoute === 'attendance') renderAttendance();
+          showToast('Atendimento salvo. O comprovante será enviado quando a conexão voltar.');
+        });
+    }
   }
   if (event.target.id === 'channel-form') {
     event.preventDefault();
@@ -1587,7 +1989,7 @@ function handleSubmit(event) {
     workplace.reconciliationCc = $('#channel-cc').value.trim().toLowerCase();
     appState.reconciliationMessage = $('#channel-message').value.trim();
     saveState();
-    showToast('Canal e mensagem salvos neste aparelho.');
+    showToast(isCloudMode() ? 'Canal e mensagem sincronizados.' : 'Canal e mensagem salvos neste aparelho.');
   }
   if (event.target.id === 'feedback-form') {
     event.preventDefault();

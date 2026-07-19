@@ -11,9 +11,18 @@ function safeState(input: unknown): Record<string, unknown> {
     source.attendances = source.attendances.slice(0, 10_000).map((item) => {
       if (!item || typeof item !== 'object' || Array.isArray(item)) return item;
       const attendance = { ...(item as Record<string, unknown>) };
-      attendance.evidenceOnDevice = Boolean(attendance.evidence || attendance.evidenceOnDevice);
+      attendance.evidenceAvailable = Boolean(attendance.evidence || attendance.evidenceDocumentId || attendance.evidenceAvailable);
       attendance.evidence = '';
+      attendance.evidenceRemoteUrl = '';
       return attendance;
+    });
+  }
+  if (Array.isArray(source.invoices)) {
+    source.invoices = source.invoices.slice(0, 100).map((item) => {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) return item;
+      const invoice = { ...(item as Record<string, unknown>) };
+      invoice.documentUrl = '';
+      return invoice;
     });
   }
   if (Array.isArray(source.workplaces)) source.workplaces = source.workplaces.slice(0, 500);
