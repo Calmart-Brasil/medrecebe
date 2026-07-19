@@ -104,6 +104,51 @@ function extractIssuedAt(text: string): string {
   return `${year}-${month}-${day}`;
 }
 
+function hasPdfSignature(bytes: Uint8Array): boolean {
+  return bytes.length >= 5 && String.fromCharCode(...bytes.slice(0, 5)) === '%PDF-';
+}
+
+function hasXmlSignature(text: string): boolean {
+  return text.replace(/^\uFEFF/, '').trimStart().startsWith('<');
+}
+
+function invoiceDocumentKind(text: string, isXml: boolean): 'nfse' | 'nfe' | 'unknown' {
+  if (/<(?:[^:>]+:)?(?:CompNfse|Nfse|InfNfse|ListaNfse|DPS)\b/i.test(text) || /NFS-?E|NOTA\s+FISCAL\s+DE\s+SERVI[CÇ]OS/i.test(text)) return 'nfse';
+  if (/<(?:[^:>]+:)?(?:NFe|infNFe|nfeProc)\b/i.test(text) || /DANFE|DOCUMENTO\s+AUXILIAR\s+DA\s+NOTA\s+FISCAL/i.test(text)) return 'nfe';
+  return isXml ? 'unknown' : 'unknown';
+}
+
+function isRecognizedInvoice(text: string, isXml: boolean, evidence: {
+  cnpjs: string[];
+  amountCents: number | null;
+  invoiceNumber: string;
+  issuedAt: string;
+}): boolean {
+  const hasFiscalXmlStructure = /<(?:[^:>]+:)?(?:NFe|infNFe|nfeProc|CompNfse|Nfse|InfNfse|ListaNfse)\b/i.test(text);
+  const hasFiscalLabel = /NOTA\s+FISCAL|NFS-?E|DANFE|DOCUMENTO\s+AUXILIAR\s+DA\s+NOTA\s+FISCAL/i.test(text);
+  const hasVerification = /(?:CHAVE\s+DE\s+ACESSO|C[ÓO]DIGO\s+DE\s+VERIFICA[CÇ][ÃA]O)|\b\d{44}\b|<(?:[^:>]+:)?Signature\b/i.test(text);
+  const fiscalSignals = [evidence.amountCents !== null, Boolean(evidence.invoiceNumber), Boolean(evidence.issuedAt), hasVerification].filter(Boolean).length;
+  if (!evidence.cnpjs.length) return false;
+  if (isXml) return hasFiscalXmlStructure && fiscalSignals >= 1;
+  return hasFiscalLabel && (Boolean(evidence.invoiceNumber) || hasVerification) && fiscalSignals >= 2;
+}
+
+function extractSuggestedPayer(text: string, cnpjs: string[], legalNames: string[]): { cnpj: string; legalName: string } {
+  const xmlParty = firstMatch(text, [
+    /<(?:[^:>]+:)?(?:emit|PrestadorServico|Prestador)\b[^>]*>([\s\S]{1,12000}?)<\/(?:[^:>]+:)?(?:emit|PrestadorServico|Prestador)>/i,
+  ]);
+  const pdfParty = firstMatch(text, [
+    /(?:PRESTADOR\s+(?:DE|DO)\s+SERVI[CÇ]O(?:S)?|EMITENTE)([\s\S]{1,1800})/i,
+  ]);
+  const partyText = xmlParty || pdfParty;
+  const partyCnpj = extractCnpjs(partyText)[0] || cnpjs[0] || '';
+  const partyName = firstMatch(partyText, [
+    /<(?:[^:>]+:)?(?:xNome|RazaoSocial|NomeRazaoSocial)\b[^>]*>([^<]{3,160})<\//i,
+    /(?:Raz[aã]o\s+Social|Nome\/Raz[aã]o\s+Social)\s*:?\s*(.{3,140})$/im,
+  ]) || legalNames[0] || '';
+  return { cnpj: partyCnpj, legalName: partyName.replace(/\s+/g, ' ').trim() };
+}
+
 Deno.serve(async (request) => {
   const preflight = options(request);
   if (preflight) return preflight;
@@ -131,17 +176,26 @@ Deno.serve(async (request) => {
     const bytes = decodeBase64(dataBase64);
     let text = '';
     if (isPdf) {
+      if (!hasPdfSignature(bytes)) return publicError(request, 'O arquivo selecionado não é um PDF válido.', 422);
       const pdf = await getDocumentProxy(bytes);
       const extracted = await extractText(pdf, { mergePages: true });
       text = extracted.text;
     } else {
       text = new TextDecoder('utf-8').decode(bytes);
+      if (!hasXmlSignature(text)) return publicError(request, 'O arquivo selecionado não é um XML válido.', 422);
     }
     text = text.slice(0, 1_000_000);
     if (normalize(text).length < 20) return publicError(request, 'O arquivo não contém texto legível. Tente o XML ou o PDF digital da Nota Fiscal.', 422);
 
     const cnpjs = extractCnpjs(text);
     const legalNames = extractLegalNames(text);
+    const amountCents = extractAmountCents(text);
+    const invoiceNumber = extractInvoiceNumber(text);
+    const issuedAt = extractIssuedAt(text);
+    if (!isRecognizedInvoice(text, isXml, { cnpjs, amountCents, invoiceNumber, issuedAt })) {
+      return publicError(request, 'O documento não foi reconhecido como Nota Fiscal. Selecione o PDF ou XML fiscal original.', 422);
+    }
+    const suggestedPayer = extractSuggestedPayer(text, cnpjs, legalNames);
     const normalizedText = normalize(text);
     const payers = Array.isArray(body.payers) ? body.payers.slice(0, 100) : [];
     const matchedPayerIds = payers
@@ -154,14 +208,18 @@ Deno.serve(async (request) => {
       .filter(Boolean);
 
     return json(request, {
+      isInvoice: true,
+      documentKind: invoiceDocumentKind(text, isXml),
       fileName,
       mimeType: isPdf ? 'application/pdf' : 'application/xml',
       cnpjs,
       legalNames,
+      suggestedPayerCnpj: suggestedPayer.cnpj,
+      suggestedPayerLegalName: suggestedPayer.legalName,
       matchedPayerIds,
-      amountCents: extractAmountCents(text),
-      invoiceNumber: extractInvoiceNumber(text),
-      issuedAt: extractIssuedAt(text),
+      amountCents,
+      invoiceNumber,
+      issuedAt,
     });
   } catch (error) {
     console.error('analyze-invoice', error);

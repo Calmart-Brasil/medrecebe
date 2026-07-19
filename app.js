@@ -38,6 +38,7 @@ let evidenceSyncRunning = false;
 let institutionDirectory = [];
 let institutionDirectoryMeta = null;
 let institutionDirectoryPromise = null;
+let pendingInvoiceWorkplaceId = '';
 
 const TITLES = {
   home: 'Início',
@@ -1245,6 +1246,8 @@ function recordInvoiceAnalysis(analysis, invoiceId = id('invoice'), document = n
     amountCents,
     cnpjs: extractedCnpjs,
     legalNames: Array.isArray(analysis.legalNames) ? analysis.legalNames.slice(0, 6) : [],
+    suggestedPayerCnpj: cnpjDigits(analysis.suggestedPayerCnpj || extractedCnpjs[0] || ''),
+    suggestedPayerLegalName: String(analysis.suggestedPayerLegalName || analysis.legalNames?.[0] || ''),
     workplaceId: workplace?.id || '',
     workplaceName: workplace?.name || '',
     groupId: group?.id || '',
@@ -1264,6 +1267,32 @@ function recordInvoiceAnalysis(analysis, invoiceId = id('invoice'), document = n
   return record;
 }
 
+function reconcileStoredInvoice(invoice, preferredWorkplace = null) {
+  if (!invoice) return null;
+  const extractedCnpjs = Array.isArray(invoice.cnpjs) ? invoice.cnpjs.map(cnpjDigits) : [];
+  const workplace = preferredWorkplace
+    || appState.workplaces.find((item) => extractedCnpjs.includes(cnpjDigits(item.payerCnpj)) && legalNameMatches(item.payerLegalName, invoice.legalNames));
+  const groups = workplace ? reconciliationGroups().filter((group) => group.workplace.id === workplace.id) : [];
+  const amountCents = Number.isFinite(Number(invoice.amountCents)) ? Number(invoice.amountCents) : null;
+  const group = amountCents === null
+    ? groups[0]
+    : [...groups].sort((a, b) => Math.abs(a.totalCents - amountCents) - Math.abs(b.totalCents - amountCents))[0];
+  const differenceCents = group && amountCents !== null ? amountCents - group.totalCents : null;
+  Object.assign(invoice, {
+    workplaceId: workplace?.id || '',
+    workplaceName: workplace?.name || '',
+    groupId: group?.id || '',
+    expectedCents: group?.totalCents ?? null,
+    differenceCents,
+    status: !workplace ? 'payer_not_matched' : !group ? 'group_not_found' : differenceCents === 0 ? 'matched' : 'divergent',
+    analyzedAt: new Date().toISOString(),
+  });
+  selectedInvoiceId = invoice.id;
+  if (workplace) selectedChannelWorkplace = workplace.id;
+  if (group) selectedReconciliationGroup = group.id;
+  return invoice;
+}
+
 function invoiceCard(invoice) {
   if (!invoice) return '';
   const status = {
@@ -1272,7 +1301,10 @@ function invoiceCard(invoice) {
     group_not_found: ['warning', 'Pagador identificado', 'O local foi encontrado, mas não há grupo vencido para comparar.'],
     payer_not_matched: ['warning', 'Pagador não identificado', 'Confira se o CNPJ e a Razão Social do pagador estão iguais ao documento.'],
   }[invoice.status] || ['warning', 'Conferência pendente', 'Revise os dados extraídos.'];
-  return `<article class="card workplace-summary"><div class="card-head"><span class="round-icon">NF</span><div><h3>${escapeHtml(status[1])}</h3><p>${escapeHtml(invoice.fileName)}${invoice.invoiceNumber ? ` • Nota ${escapeHtml(invoice.invoiceNumber)}` : ''}${invoice.workplaceName ? `<br/>${escapeHtml(invoice.workplaceName)}` : ''}</p></div><span class="badge ${status[0] === 'success' ? '' : 'inactive'}">${status[0] === 'success' ? 'CONCILIADO' : 'REVISAR'}</span></div><div class="value-row"><span><small>VALOR DA NOTA</small><strong>${invoice.amountCents === null ? 'Não identificado' : currency(invoice.amountCents)}</strong></span><span><small>CONTABILIZADO</small><b>${invoice.expectedCents === null ? '—' : currency(invoice.expectedCents)}</b></span></div><p class="field-hint">${escapeHtml(status[2])}</p>${invoice.documentUrl ? `<a class="button secondary small" href="${escapeHtml(invoice.documentUrl)}" target="_blank" rel="noopener">Abrir Nota Fiscal</a>` : ''}</article>`;
+  const unmatchedAction = invoice.status === 'payer_not_matched'
+    ? '<button class="button primary small" data-action="create-workplace-from-invoice" data-id="' + invoice.id + '" type="button">Cadastrar local pela Nota Fiscal</button>'
+    : '';
+  return `<article class="card workplace-summary invoice-result-card"><div class="card-head"><span class="round-icon">NF</span><div><h3>${escapeHtml(status[1])}</h3><p>${escapeHtml(invoice.fileName)}${invoice.invoiceNumber ? ` • Nota ${escapeHtml(invoice.invoiceNumber)}` : ''}${invoice.workplaceName ? `<br/>${escapeHtml(invoice.workplaceName)}` : ''}</p></div><div class="invoice-card-actions"><span class="badge ${status[0] === 'success' ? '' : 'inactive'}">${status[0] === 'success' ? 'CONCILIADO' : 'REVISAR'}</span><button class="invoice-delete" data-action="delete-invoice" data-id="${invoice.id}" type="button" aria-label="Apagar Nota Fiscal anexada" title="Apagar anexo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3m-9 0 1 14h10l1-14M10 11v6m4-6v6"/></svg></button></div></div><div class="value-row"><span><small>VALOR DA NOTA</small><strong>${invoice.amountCents === null ? 'Não identificado' : currency(invoice.amountCents)}</strong></span><span><small>CONTABILIZADO</small><b>${invoice.expectedCents === null ? '—' : currency(invoice.expectedCents)}</b></span></div><p class="field-hint">${escapeHtml(status[2])}</p>${unmatchedAction}${invoice.documentUrl ? `<a class="button secondary small" href="${escapeHtml(invoice.documentUrl)}" target="_blank" rel="noopener">Abrir Nota Fiscal</a>` : ''}</article>`;
 }
 
 function fileAsBase64(file) {
@@ -1302,6 +1334,7 @@ async function analyzeInvoiceFile(file) {
     dataBase64,
     payers: appState.workplaces.map((workplace) => ({ id: workplace.id, cnpj: cnpjDigits(workplace.payerCnpj), legalName: workplace.payerLegalName })),
   });
+  if (analysis.isInvoice !== true) throw new Error('O arquivo não foi reconhecido como uma Nota Fiscal válida.');
   const uploaded = await cloud.uploadDocument({ documentId, recordId: invoiceId, documentType: 'invoice', fileName: name, mimeType, dataBase64 });
   return recordInvoiceAnalysis(analysis, invoiceId, uploaded.document);
 }
@@ -1431,6 +1464,7 @@ function openInstallModal() {
 }
 
 function newWorkplace() {
+  pendingInvoiceWorkplaceId = '';
   draftWorkplace = { id: id('work'), name: '', address: '', payerCnpj: '', payerLegalName: '', reconciliationEmail: '', reconciliationCc: '', active: true, modalities: [] };
   editingModalityIndex = null;
   renderWorkplaceModal();
@@ -1439,16 +1473,47 @@ function newWorkplace() {
 function editWorkplace(workplaceId) {
   const workplace = appState.workplaces.find((item) => item.id === workplaceId);
   if (!workplace) return;
+  pendingInvoiceWorkplaceId = '';
   draftWorkplace = structuredClone(workplace);
   editingModalityIndex = null;
   renderWorkplaceModal();
 }
 
+function invoicePayerSuggestion(invoice) {
+  const payerCnpj = cnpjDigits(invoice?.suggestedPayerCnpj || invoice?.cnpjs?.[0] || '');
+  const payerLegalName = String(invoice?.suggestedPayerLegalName || invoice?.legalNames?.[0] || '').trim();
+  return { payerCnpj, payerLegalName };
+}
+
+function newWorkplaceFromInvoice(invoiceId) {
+  const invoice = (appState.invoices || []).find((item) => item.id === invoiceId);
+  if (!invoice) return showToast('A Nota Fiscal não está mais disponível.');
+  const suggestion = invoicePayerSuggestion(invoice);
+  pendingInvoiceWorkplaceId = invoice.id;
+  draftWorkplace = {
+    id: id('work'),
+    name: suggestion.payerLegalName || 'Novo local',
+    address: '',
+    payerCnpj: suggestion.payerCnpj,
+    payerLegalName: suggestion.payerLegalName,
+    reconciliationEmail: '',
+    reconciliationCc: '',
+    active: true,
+    modalities: [],
+  };
+  editingModalityIndex = null;
+  renderWorkplaceModal();
+}
+
 function renderWorkplaceModal() {
+  const sourceInvoice = (appState.invoices || []).find((item) => item.id === pendingInvoiceWorkplaceId);
+  const invoiceNotice = sourceInvoice
+    ? `<div class="notice success"><strong>Cadastro iniciado pela Nota Fiscal</strong><br/>Revise o CNPJ e a Razão Social extraídos, informe o nome do local e cadastre ao menos uma modalidade. Ao salvar, você voltará automaticamente para a Conciliação.</div>`
+    : '';
   const modalityRows = draftWorkplace.modalities.map((modality, index) => `<div class="editor-row"><span><strong>${escapeHtml(modality.name)} • ${currency(modality.amountCents)}</strong><small>${escapeHtml(modalityTypeLabel(modality))} • ${escapeHtml(describeRule(modality.rule))}</small></span><span><button data-action="edit-modality" data-index="${index}" type="button">Editar</button><button data-action="delete-modality" data-index="${index}" type="button">Excluir</button></span></div>`).join('');
   const editing = editingModalityIndex === null ? null : draftWorkplace.modalities[editingModalityIndex];
   const modality = editing || { name: '', type: 'plan', amountCents: 0, rule: { kind: 'calendar_days', days: 30 } };
-  modalRoot.innerHTML = `<div class="modal-wrap"><section class="modal-sheet" role="dialog" aria-modal="true"><header class="modal-header simple"><span></span><h2>${appState.workplaces.some((item) => item.id === draftWorkplace.id) ? 'Editar local' : 'Novo local'}</h2><button data-action="close-modal" aria-label="Fechar" type="button">×</button></header><div class="modal-body"><div class="form-grid"><label>Nome do local<input id="work-name" value="${escapeHtml(draftWorkplace.name)}" placeholder="Ex.: Clínica Horizonte"/></label><label>Razão Social do pagador<input id="work-legal-name" value="${escapeHtml(draftWorkplace.payerLegalName || '')}" placeholder="Razão Social exibida na Nota Fiscal"/></label><label>CNPJ do pagador<input id="work-cnpj" inputmode="numeric" maxlength="18" value="${formatCnpj(draftWorkplace.payerCnpj || '')}" placeholder="00.000.000/0000-00"/></label><label>Endereço<input id="work-address" value="${escapeHtml(draftWorkplace.address)}" placeholder="Rua, número e cidade"/></label><label>E-mail oficial para conciliação<input id="work-email" type="email" value="${escapeHtml(draftWorkplace.reconciliationEmail)}" placeholder="financeiro@clinica.com.br"/></label><label>E-mail em cópia<input id="work-cc" value="${escapeHtml(draftWorkplace.reconciliationCc || '')}" placeholder="gestor@clinica.com.br"/></label></div><div class="notice">O CNPJ e a Razão Social são usados para identificar automaticamente o pagador na Nota Fiscal.</div><div class="modality-form"><h3>${editing ? 'Editar modalidade' : 'Adicionar modalidade'}</h3><label>Nome<input id="mod-name" value="${escapeHtml(modality.name)}" placeholder="Ex.: Consulta, Unimed ou imunobiológico"/></label><div class="inline-grid"><label>Tipo<select id="mod-type"><option value="plan" ${modality.type === 'plan' ? 'selected' : ''}>Plano</option><option value="private" ${modality.type === 'private' ? 'selected' : ''}>Particular</option><option value="recurring" ${modality.type === 'recurring' ? 'selected' : ''}>Receita recorrente</option><option value="custom" ${modality.type === 'custom' ? 'selected' : ''}>Personalizado</option></select></label><label>Valor (R$)<input id="mod-value" inputmode="decimal" value="${modality.amountCents ? (modality.amountCents / 100).toFixed(2).replace('.', ',') : ''}" placeholder="0,00"/></label></div><label id="mod-custom-type-wrap" ${modality.type === 'custom' ? '' : 'hidden'}>Nome do tipo personalizado<input id="mod-custom-type" value="${escapeHtml(modality.customType || '')}" placeholder="Ex.: Teleinterconsulta"/></label>${modality.type === 'recurring' ? '<div class="notice success">No atendimento, será possível identificar o paciente, o medicamento e contabilizar também uma consulta.</div>' : ''}<label>Regra de pagamento<select id="mod-rule">${ruleOptions(modality.rule.kind)}</select></label><div id="rule-fields">${ruleFields(modality.rule)}</div><button class="button secondary small" data-action="save-modality" type="button">${editing ? 'Atualizar modalidade' : 'Adicionar e continuar'}</button><p class="field-hint">A modalidade é adicionada automaticamente à lista abaixo e o formulário permanece disponível para o próximo cadastro.</p></div><h3 class="section-title">Modalidades cadastradas</h3><div class="modalities-editor">${modalityRows || '<div class="notice warning">Cadastre pelo menos uma modalidade.</div>'}</div><div class="modal-final-actions"><button class="button primary" data-action="save-workplace" type="button">Salvar</button><button class="button secondary" data-action="close-modal" type="button">Cancelar</button></div></div></section></div>`;
+  modalRoot.innerHTML = `<div class="modal-wrap"><section class="modal-sheet" role="dialog" aria-modal="true"><header class="modal-header simple"><span></span><h2>${appState.workplaces.some((item) => item.id === draftWorkplace.id) ? 'Editar local' : 'Novo local'}</h2><button data-action="close-modal" aria-label="Fechar" type="button">×</button></header><div class="modal-body">${invoiceNotice}<div class="form-grid"><label>Nome do local<input id="work-name" value="${escapeHtml(draftWorkplace.name)}" placeholder="Ex.: Clínica Horizonte"/></label><label>Razão Social do pagador<input id="work-legal-name" value="${escapeHtml(draftWorkplace.payerLegalName || '')}" placeholder="Razão Social exibida na Nota Fiscal"/></label><label>CNPJ do pagador<input id="work-cnpj" inputmode="numeric" maxlength="18" value="${formatCnpj(draftWorkplace.payerCnpj || '')}" placeholder="00.000.000/0000-00"/></label><label>Endereço<input id="work-address" value="${escapeHtml(draftWorkplace.address)}" placeholder="Rua, número e cidade"/></label><label>E-mail oficial para conciliação<input id="work-email" type="email" value="${escapeHtml(draftWorkplace.reconciliationEmail)}" placeholder="financeiro@clinica.com.br"/></label><label>E-mail em cópia<input id="work-cc" value="${escapeHtml(draftWorkplace.reconciliationCc || '')}" placeholder="gestor@clinica.com.br"/></label></div><div class="notice">O CNPJ e a Razão Social são usados para identificar automaticamente o pagador na Nota Fiscal.</div><div class="modality-form"><h3>${editing ? 'Editar modalidade' : 'Adicionar modalidade'}</h3><label>Nome<input id="mod-name" value="${escapeHtml(modality.name)}" placeholder="Ex.: Consulta, Unimed ou imunobiológico"/></label><div class="inline-grid"><label>Tipo<select id="mod-type"><option value="plan" ${modality.type === 'plan' ? 'selected' : ''}>Plano</option><option value="private" ${modality.type === 'private' ? 'selected' : ''}>Particular</option><option value="recurring" ${modality.type === 'recurring' ? 'selected' : ''}>Receita recorrente</option><option value="custom" ${modality.type === 'custom' ? 'selected' : ''}>Personalizado</option></select></label><label>Valor (R$)<input id="mod-value" inputmode="decimal" value="${modality.amountCents ? (modality.amountCents / 100).toFixed(2).replace('.', ',') : ''}" placeholder="0,00"/></label></div><label id="mod-custom-type-wrap" ${modality.type === 'custom' ? '' : 'hidden'}>Nome do tipo personalizado<input id="mod-custom-type" value="${escapeHtml(modality.customType || '')}" placeholder="Ex.: Teleinterconsulta"/></label>${modality.type === 'recurring' ? '<div class="notice success">No atendimento, será possível identificar o paciente, o medicamento e contabilizar também uma consulta.</div>' : ''}<label>Regra de pagamento<select id="mod-rule">${ruleOptions(modality.rule.kind)}</select></label><div id="rule-fields">${ruleFields(modality.rule)}</div><button class="button secondary small" data-action="save-modality" type="button">${editing ? 'Atualizar modalidade' : 'Adicionar e continuar'}</button><p class="field-hint">A modalidade é adicionada automaticamente à lista abaixo e o formulário permanece disponível para o próximo cadastro.</p></div><h3 class="section-title">Modalidades cadastradas</h3><div class="modalities-editor">${modalityRows || '<div class="notice warning">Cadastre pelo menos uma modalidade.</div>'}</div><div class="modal-final-actions"><button class="button primary" data-action="save-workplace" type="button">Salvar</button><button class="button secondary" data-action="close-modal" type="button">Cancelar</button></div></div></section></div>`;
   const workNameInput = $('#work-name');
   const workNameLabel = workNameInput?.closest('label');
   if (workNameLabel?.firstChild) workNameLabel.firstChild.textContent = 'Nome fantasia / nome do local';
@@ -1708,9 +1773,31 @@ async function handleClick(event) {
   if (action === 'confirm-cancel-subscription') void performCancellation(target);
   if (action === 'cancel-cancellation') navigate('account');
   if (action === 'install') openInstallModal();
-  if (action === 'close-modal') modalRoot.innerHTML = '';
+  if (action === 'close-modal') {
+    modalRoot.innerHTML = '';
+    pendingInvoiceWorkplaceId = '';
+  }
   if (action === 'new-workplace') newWorkplace();
   if (action === 'edit-workplace') editWorkplace(targetId);
+  if (action === 'create-workplace-from-invoice') newWorkplaceFromInvoice(targetId);
+  if (action === 'delete-invoice') {
+    const invoice = (appState.invoices || []).find((item) => item.id === targetId);
+    if (invoice && confirm('Apagar esta Nota Fiscal anexada? O documento será removido da conciliação e dos seus dispositivos.')) {
+      appState.invoices = appState.invoices.filter((item) => item.id !== targetId);
+      if (selectedInvoiceId === targetId) selectedInvoiceId = appState.invoices[0]?.id || '';
+      if (pendingInvoiceWorkplaceId === targetId) pendingInvoiceWorkplaceId = '';
+      saveState();
+      renderReconciliation();
+      if (isCloudMode()) {
+        try {
+          await cloud.deleteDocumentsForRecord(targetId);
+          showToast('Nota Fiscal e anexo removidos.');
+        } catch {
+          showToast('Anexo removido da conciliação. A exclusão na nuvem será retomada.');
+        }
+      } else showToast('Nota Fiscal removida.');
+    }
+  }
   if (action === 'select-directory-institution') selectDirectoryInstitution(targetId);
   if (action === 'toggle-workplace') {
     const workplace = appState.workplaces.find((item) => item.id === targetId);
@@ -1879,7 +1966,11 @@ function handleChange(event) {
     analyzeInvoiceFile(file)
       .then((invoice) => {
         renderReconciliation();
-        showToast(invoice.status === 'matched' ? 'Nota Fiscal conciliada com os atendimentos.' : 'Nota Fiscal lida. Revise o resultado da conferência.');
+        showToast(invoice.status === 'matched'
+          ? 'Nota Fiscal conciliada com os atendimentos.'
+          : invoice.status === 'payer_not_matched'
+            ? 'Pagador não cadastrado. Use a sugestão para criar o local.'
+            : 'Nota Fiscal lida. Revise o resultado da conferência.');
       })
       .catch((error) => {
         renderReconciliation();
@@ -2062,12 +2153,23 @@ function saveWorkplace() {
   if (!isValidCnpj(draftWorkplace.payerCnpj)) return showToast('Informe um CNPJ válido do pagador.');
   if (!draftWorkplace.modalities.length) return showToast('Cadastre pelo menos uma modalidade.');
   const exists = appState.workplaces.some((item) => item.id === draftWorkplace.id);
-  if (exists) appState.workplaces = appState.workplaces.map((item) => (item.id === draftWorkplace.id ? structuredClone(draftWorkplace) : item));
-  else appState.workplaces.push(structuredClone(draftWorkplace));
+  const savedWorkplace = structuredClone(draftWorkplace);
+  if (exists) appState.workplaces = appState.workplaces.map((item) => (item.id === draftWorkplace.id ? savedWorkplace : item));
+  else appState.workplaces.push(savedWorkplace);
+  const sourceInvoice = (appState.invoices || []).find((item) => item.id === pendingInvoiceWorkplaceId);
+  if (sourceInvoice) reconcileStoredInvoice(sourceInvoice, savedWorkplace);
   saveState();
   modalRoot.innerHTML = '';
-  renderWorkplaces();
-  showToast('Local e modalidades salvos.');
+  pendingInvoiceWorkplaceId = '';
+  if (sourceInvoice) {
+    renderReconciliation();
+    showToast(sourceInvoice.status === 'group_not_found'
+      ? 'Local cadastrado. Ainda não há grupo vencido deste pagador para comparar.'
+      : 'Local cadastrado e Nota Fiscal vinculada à conciliação.');
+  } else {
+    renderWorkplaces();
+    showToast('Local e modalidades salvos.');
+  }
 }
 
 function logout() {

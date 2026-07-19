@@ -34,6 +34,8 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 
+body[data-route="attendance"] { overflow-x: clip; }
+
 button, input, select, textarea { font: inherit; }
 button { cursor: pointer; }
 button, a { touch-action: manipulation; }
@@ -187,6 +189,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--blue-600); box-s
 .icon-button.dark { color: var(--muted); font-size: 29px; }
 
 #screen { min-height: calc(100vh - 130px); padding: 20px 18px calc(102px + env(safe-area-inset-bottom)); outline: 0; }
+#screen, .screen-stack, #attendance-form, .choice-list, .attendance-history-section { min-width: 0; }
 .screen-stack { display: grid; gap: 17px; }
 .page-heading { display: grid; gap: 0; }
 .eyebrow { margin: 0 0 6px; color: var(--blue-700); font-size: 10px; font-weight: 900; letter-spacing: 1.2px; text-transform: uppercase; }
@@ -350,9 +353,9 @@ input:focus, select:focus, textarea:focus { border-color: var(--blue-600); box-s
 .choice small { color: var(--muted); font-size: 9px; }
 .choice > b { display: grid; gap: 2px; color: var(--navy); font-size: 12px; text-align: right; }
 .choice > b small { font-weight: 550; }
-.quantity-row { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 10px; padding-top: 11px; border-top: 1px solid var(--line); }
+.quantity-row { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px 10px; min-width: 0; padding-top: 11px; border-top: 1px solid var(--line); }
 .quantity-row > span { color: var(--muted); font-size: 10px; font-weight: 700; }
-.quantity-row > strong { min-width: 72px; color: var(--blue-700); text-align: right; }
+.quantity-row > strong { grid-column: 1 / -1; min-width: 0; max-width: 100%; color: var(--blue-700); overflow-wrap: anywhere; text-align: right; }
 .quantity-stepper { display: grid; grid-template-columns: 34px 48px 34px; overflow: hidden; border: 1px solid var(--line); border-radius: 10px; background: white; }
 .quantity-stepper button { min-height: 34px; border: 0; background: var(--blue-050); color: var(--blue-700); font-size: 18px; font-weight: 850; }
 .quantity-stepper input { width: 48px; min-height: 34px; padding: 4px 2px; border: 0; border-right: 1px solid var(--line); border-left: 1px solid var(--line); border-radius: 0; background: white; color: var(--ink); text-align: center; font-size: 13px; font-weight: 850; }
@@ -384,18 +387,19 @@ input:focus, select:focus, textarea:focus { border-color: var(--blue-600); box-s
 .attendance-record small { color: var(--muted); line-height: 1.45; }
 .attendance-record .row-actions { justify-content: flex-end; }
 .attendance-record-lines { display: grid; gap: 8px; padding: 10px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
-.attendance-record-line { display: flex; justify-content: space-between; gap: 12px; }
-.attendance-record-line > span { display: grid; gap: 2px; }
+.attendance-record-line { display: flex; justify-content: space-between; gap: 12px; min-width: 0; }
+.attendance-record-line > span { display: grid; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
 .attendance-record-line > span:last-child { flex: none; text-align: right; }
 .attendance-total-card { display: grid; gap: 12px; border-color: var(--navy); background: var(--navy); color: white; }
-.attendance-total-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 14px; }
+.attendance-total-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 14px; min-width: 0; }
 .attendance-total-head > span { display: grid; gap: 4px; }
 .attendance-total-head > span:last-child { text-align: right; }
 .attendance-total-head small { color: #b9e4fb; font-size: 9px; font-weight: 800; }
 .attendance-total-head strong { color: white; font-size: 20px; }
 .attendance-total-head em { color: #d9e7f8; font-size: 10px; font-style: normal; }
 .attendance-summary-lines { display: grid; gap: 6px; padding-top: 10px; border-top: 1px solid rgb(255 255 255 / 18%); }
-.attendance-summary-line { display: flex; justify-content: space-between; gap: 10px; color: #d9e7f8; font-size: 9px; }
+.attendance-summary-line { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 5px 10px; min-width: 0; color: #d9e7f8; font-size: 9px; }
+.attendance-summary-line span { min-width: 0; overflow-wrap: anywhere; }
 .attendance-summary-line span:last-child { text-align: right; }
 .attendance-breakdown summary { margin-top: 2px; color: #b9e4fb; cursor: pointer; font-size: 11px; font-weight: 750; list-style: none; }
 .attendance-breakdown summary::-webkit-details-marker { display: none; }
@@ -406,6 +410,11 @@ input:focus, select:focus, textarea:focus { border-color: var(--blue-600); box-s
 .attendance-history-toggle { justify-self: center; }
 
 .settings { display: grid; gap: 13px; }
+.invoice-result-card { position: relative; }
+.invoice-card-actions { display: grid; flex: none; justify-items: end; gap: 8px; }
+.invoice-delete { display: grid; width: 36px; min-height: 36px; place-items: center; padding: 0; border: 1px solid #f0bcc2; border-radius: 10px; background: var(--red-soft); color: var(--red); font-size: 20px; font-weight: 900; }
+.invoice-delete svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+.invoice-delete:hover, .invoice-delete:focus-visible { border-color: var(--red); box-shadow: 0 0 0 3px rgb(200 61 75 / 12%); }
 .group-card { display: grid; grid-template-columns: 24px 1fr auto; align-items: center; gap: 11px; width: 100%; text-align: left; }
 .group-check { display: grid; place-items: center; width: 24px; height: 24px; border: 2px solid var(--line); border-radius: 7px; color: white; }
 .group-card.selected { border-color: var(--blue-600); background: var(--blue-050); }

@@ -5,9 +5,13 @@ import type { AppData, InvoiceReconciliation, Workplace } from '../types';
 import { isPastOrToday } from './paymentRules';
 
 export interface InvoiceAnalysis {
+  isInvoice: true;
+  documentKind: 'nfse' | 'nfe' | 'unknown';
   fileName: string;
   cnpjs: string[];
   legalNames: string[];
+  suggestedPayerCnpj: string;
+  suggestedPayerLegalName: string;
   amountCents: number | null;
   invoiceNumber: string;
   issuedAt: string;
@@ -109,6 +113,34 @@ function extractIssuedAt(text: string): string {
   return `${year}-${month}-${day}`;
 }
 
+function isRecognizedInvoice(text: string, isXml: boolean, evidence: {
+  cnpjs: string[];
+  amountCents: number | null;
+  invoiceNumber: string;
+  issuedAt: string;
+}): boolean {
+  const hasFiscalXmlStructure = /<(?:[^:>]+:)?(?:NFe|infNFe|nfeProc|CompNfse|Nfse|InfNfse|ListaNfse)\b/i.test(text);
+  const hasFiscalLabel = /NOTA\s+FISCAL|NFS-?E|DANFE|DOCUMENTO\s+AUXILIAR\s+DA\s+NOTA\s+FISCAL/i.test(text);
+  const hasVerification = /(?:CHAVE\s+DE\s+ACESSO|C[ÓO]DIGO\s+DE\s+VERIFICA[CÇ][ÃA]O)|\b\d{44}\b|<(?:[^:>]+:)?Signature\b/i.test(text);
+  const fiscalSignals = [evidence.amountCents !== null, Boolean(evidence.invoiceNumber), Boolean(evidence.issuedAt), hasVerification].filter(Boolean).length;
+  if (!evidence.cnpjs.length) return false;
+  return isXml ? hasFiscalXmlStructure && fiscalSignals >= 1 : hasFiscalLabel && (Boolean(evidence.invoiceNumber) || hasVerification) && fiscalSignals >= 2;
+}
+
+function extractSuggestedPayer(text: string, cnpjs: string[], legalNames: string[]): { cnpj: string; legalName: string } {
+  const partyText = firstMatch(text, [
+    /<(?:[^:>]+:)?(?:emit|PrestadorServico|Prestador)\b[^>]*>([\s\S]{1,12000}?)<\/(?:[^:>]+:)?(?:emit|PrestadorServico|Prestador)>/i,
+    /(?:PRESTADOR\s+(?:DE|DO)\s+SERVI[CÇ]O(?:S)?|EMITENTE)([\s\S]{1,1800})/i,
+  ]);
+  return {
+    cnpj: extractCnpjs(partyText)[0] ?? cnpjs[0] ?? '',
+    legalName: firstMatch(partyText, [
+      /<(?:[^:>]+:)?(?:xNome|RazaoSocial|NomeRazaoSocial)\b[^>]*>([^<]{3,160})<\//i,
+      /(?:Raz[aã]o\s+Social|Nome\/Raz[aã]o\s+Social)\s*:?\s*(.{3,140})$/im,
+    ]) || legalNames[0] || '',
+  };
+}
+
 export async function analyzeInvoiceSource(source: InvoiceSource): Promise<InvoiceAnalysis> {
   const extension = source.fileName.split('.').pop()?.toLowerCase();
   const isPdf = source.mimeType === 'application/pdf' || extension === 'pdf';
@@ -118,24 +150,40 @@ export async function analyzeInvoiceSource(source: InvoiceSource): Promise<Invoi
   if (file.size > 5 * 1024 * 1024) throw new Error('Escolha um arquivo de até 5 MB.');
   let text = '';
   if (isPdf) {
-    const pdf = await getDocumentProxy(await file.bytes());
+    const bytes = await file.bytes();
+    if (String.fromCharCode(...bytes.slice(0, 5)) !== '%PDF-') throw new Error('O arquivo selecionado não é um PDF válido.');
+    const pdf = await getDocumentProxy(bytes);
     text = (await extractText(pdf, { mergePages: true })).text;
   } else {
     text = await file.text();
+    if (!text.replace(/^\uFEFF/, '').trimStart().startsWith('<')) throw new Error('O arquivo selecionado não é um XML válido.');
   }
   text = text.slice(0, 1_000_000);
   const normalized = normalize(text);
   if (normalized.length < 20) throw new Error('O arquivo não contém texto legível. Tente o XML ou o PDF digital da Nota Fiscal.');
+  const cnpjs = extractCnpjs(text);
+  const legalNames = extractLegalNames(text);
+  const amountCents = extractAmount(text);
+  const invoiceNumber = firstMatch(text, [
+    /(?:N[uú]mero\s+da\s+Nota|N[uú]mero\s+da\s+NFS-?e|NFS-?e\s*(?:n[ºo.]|n[uú]mero))\s*:?\s*([A-Z0-9./-]{1,40})/i,
+    /<(?:[^:>]+:)?(?:Numero|NumeroNfse|nNF)\b[^>]*>([^<]{1,40})<\//i,
+  ]);
+  const issuedAt = extractIssuedAt(text);
+  if (!isRecognizedInvoice(text, isXml, { cnpjs, amountCents, invoiceNumber, issuedAt })) {
+    throw new Error('O documento não foi reconhecido como Nota Fiscal. Selecione o PDF ou XML fiscal original.');
+  }
+  const suggestedPayer = extractSuggestedPayer(text, cnpjs, legalNames);
   return {
+    isInvoice: true,
+    documentKind: /<(?:[^:>]+:)?(?:CompNfse|Nfse|InfNfse|ListaNfse|DPS)\b|NFS-?E|NOTA\s+FISCAL\s+DE\s+SERVI[CÇ]OS/i.test(text) ? 'nfse' : /<(?:[^:>]+:)?(?:NFe|infNFe|nfeProc)\b|DANFE/i.test(text) ? 'nfe' : 'unknown',
     fileName: source.fileName,
-    cnpjs: extractCnpjs(text),
-    legalNames: extractLegalNames(text),
-    amountCents: extractAmount(text),
-    invoiceNumber: firstMatch(text, [
-      /(?:N[uú]mero\s+da\s+Nota|N[uú]mero\s+da\s+NFS-?e|NFS-?e\s*(?:n[ºo.]|n[uú]mero))\s*:?\s*([A-Z0-9./-]{1,40})/i,
-      /<(?:[^:>]+:)?(?:Numero|NumeroNfse|nNF)\b[^>]*>([^<]{1,40})<\//i,
-    ]),
-    issuedAt: extractIssuedAt(text),
+    cnpjs,
+    legalNames,
+    suggestedPayerCnpj: suggestedPayer.cnpj,
+    suggestedPayerLegalName: suggestedPayer.legalName.replace(/\s+/g, ' ').trim(),
+    amountCents,
+    invoiceNumber,
+    issuedAt,
     rawNormalizedText: normalized,
   };
 }
@@ -174,12 +222,46 @@ export function reconcileInvoice(analysis: InvoiceAnalysis, data: AppData): Invo
     amountCents: analysis.amountCents,
     cnpjs: analysis.cnpjs,
     legalNames: analysis.legalNames,
+    suggestedPayerCnpj: analysis.suggestedPayerCnpj,
+    suggestedPayerLegalName: analysis.suggestedPayerLegalName,
     workplaceId: workplace?.id ?? '',
     workplaceName: workplace?.name ?? '',
     groupId: group?.id ?? '',
     expectedCents: group?.totalCents ?? null,
     differenceCents,
     status,
+    analyzedAt: new Date().toISOString(),
+  };
+}
+
+export function reconcileStoredInvoiceWithWorkplace(
+  invoice: InvoiceReconciliation,
+  data: AppData,
+  workplace: Workplace,
+): InvoiceReconciliation {
+  const groups = new Map<string, { id: string; totalCents: number }>();
+  data.attendances
+    .filter((attendance) => attendance.workplaceId === workplace.id && attendance.status === 'pending' && isPastOrToday(attendance.dueAt))
+    .forEach((attendance) => {
+      const month = attendance.dueAt.slice(0, 7);
+      const id = `${workplace.id}:${month}`;
+      const current = groups.get(id) ?? { id, totalCents: 0 };
+      current.totalCents += attendance.amountCents;
+      groups.set(id, current);
+    });
+  const candidates = [...groups.values()];
+  const group = invoice.amountCents === null
+    ? candidates[0]
+    : candidates.sort((a, b) => Math.abs(a.totalCents - invoice.amountCents!) - Math.abs(b.totalCents - invoice.amountCents!))[0];
+  const differenceCents = group && invoice.amountCents !== null ? invoice.amountCents - group.totalCents : null;
+  return {
+    ...invoice,
+    workplaceId: workplace.id,
+    workplaceName: workplace.name,
+    groupId: group?.id ?? '',
+    expectedCents: group?.totalCents ?? null,
+    differenceCents,
+    status: !group ? 'group_not_found' : differenceCents === 0 ? 'matched' : 'divergent',
     analyzedAt: new Date().toISOString(),
   };
 }

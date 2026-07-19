@@ -72,6 +72,8 @@ export interface InvoiceReconciliation {
   amountCents: number | null;
   cnpjs: string[];
   legalNames: string[];
+  suggestedPayerCnpj: string;
+  suggestedPayerLegalName: string;
   workplaceId: string;
   workplaceName: string;
   groupId: string;
@@ -131,7 +133,7 @@ export type AppRoute =
   | { name: 'home' }
   | { name: 'dashboard' }
   | { name: 'workplaces' }
-  | { name: 'workplace_form'; workplaceId?: string }
+  | { name: 'workplace_form'; workplaceId?: string; invoiceId?: string }
   | { name: 'attendance_form'; workplaceId: string }
   | { name: 'reconciliation' }
   | { name: 'account' };

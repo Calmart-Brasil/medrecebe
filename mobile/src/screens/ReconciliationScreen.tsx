@@ -7,7 +7,7 @@ import { Button, Card, Chip, EmptyState, Eyebrow, Field, InlineNotice, PageTitle
 import { formatCurrency, formatDate, isPastOrToday } from '../services/paymentRules';
 import type { InvoiceSource } from '../services/invoice';
 import { colors, radius } from '../theme';
-import type { AppData, Attendance, UserProfile, Workplace } from '../types';
+import type { AppData, Attendance, InvoiceReconciliation, UserProfile, Workplace } from '../types';
 
 interface ReconciliationGroup {
   id: string;
@@ -66,12 +66,16 @@ export function ReconciliationScreen({
   onSaveSettings,
   onMarkRequested,
   onImportInvoice,
+  onCreateWorkplace,
+  onDeleteInvoice,
 }: {
   data: AppData;
   profile: UserProfile;
   onSaveSettings: (workplace: Workplace, message: string) => void;
   onMarkRequested: (attendanceIds: string[]) => void;
   onImportInvoice: (source: InvoiceSource) => Promise<void>;
+  onCreateWorkplace: (invoice: InvoiceReconciliation) => void;
+  onDeleteInvoice: (invoiceId: string) => void;
 }) {
   const groups = useMemo(() => buildGroups(data), [data]);
   const [channelWorkplaceId, setChannelWorkplaceId] = useState(data.workplaces[0]?.id ?? '');
@@ -212,7 +216,23 @@ export function ReconciliationScreen({
             <Text style={styles.invoiceResultTitle}>
               {latestInvoice.status === 'matched' ? 'Valores coincidem' : latestInvoice.status === 'divergent' ? 'Divergência encontrada' : latestInvoice.status === 'group_not_found' ? 'Pagador identificado' : 'Pagador não identificado'}
             </Text>
-            <Text style={styles.invoiceBadge}>{latestInvoice.status === 'matched' ? 'CONCILIADO' : 'REVISAR'}</Text>
+            <View style={styles.invoiceHeaderActions}>
+              <Text style={styles.invoiceBadge}>{latestInvoice.status === 'matched' ? 'CONCILIADO' : 'REVISAR'}</Text>
+              <Pressable
+                accessibilityLabel="Apagar Nota Fiscal anexada"
+                onPress={() => Alert.alert(
+                  'Apagar Nota Fiscal?',
+                  'O documento será removido da conciliação.',
+                  [
+                    { text: 'Cancelar', style: 'cancel' },
+                    { text: 'Apagar', style: 'destructive', onPress: () => onDeleteInvoice(latestInvoice.id) },
+                  ],
+                )}
+                style={({ pressed }) => [styles.invoiceTrash, pressed && styles.pressed]}
+              >
+                <Text style={styles.invoiceTrashIcon}>🗑</Text>
+              </Pressable>
+            </View>
           </View>
           <Text style={styles.invoiceFile}>{latestInvoice.fileName}{latestInvoice.workplaceName ? ` • ${latestInvoice.workplaceName}` : ''}</Text>
           <View style={styles.invoiceValues}>
@@ -228,6 +248,9 @@ export function ReconciliationScreen({
                   ? 'Não há grupo vencido deste local para comparar.'
                   : 'A Nota Fiscal corresponde ao total contabilizado do grupo.'}
           </Text>
+          {latestInvoice.status === 'payer_not_matched' ? (
+            <Button compact onPress={() => onCreateWorkplace(latestInvoice)} title="Cadastrar local pela Nota Fiscal" />
+          ) : null}
         </Card>
       ) : null}
 
@@ -343,7 +366,10 @@ const styles = StyleSheet.create({
   invoiceResult: { backgroundColor: '#FFF8E9', borderColor: '#F2C979', gap: 10 },
   invoiceResultMatched: { backgroundColor: colors.greenSoft, borderColor: '#8ED8B1' },
   invoiceResultTitle: { color: colors.navy, flex: 1, fontSize: 17, fontWeight: '900' },
+  invoiceHeaderActions: { alignItems: 'flex-end', gap: 8 },
   invoiceBadge: { color: colors.blue700, fontSize: 10, fontWeight: '900' },
+  invoiceTrash: { alignItems: 'center', backgroundColor: '#FFF0F1', borderColor: '#F0BCC2', borderRadius: 10, borderWidth: 1, height: 38, justifyContent: 'center', width: 38 },
+  invoiceTrashIcon: { color: '#C83D4B', fontSize: 17 },
   invoiceFile: { color: colors.muted, fontSize: 12 },
   invoiceValues: { flexDirection: 'row', justifyContent: 'space-between' },
   invoiceValueLabel: { color: colors.muted, fontSize: 9, fontWeight: '800' },

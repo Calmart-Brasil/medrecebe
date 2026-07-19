@@ -94,7 +94,7 @@ assert.ok(
   'appState só pode ser carregado depois da mensagem padrão usada pelo estado vazio',
 );
 assert.ok(!appHtml.includes('Beta local:'), 'o aviso antigo de beta local não deve aparecer na entrada');
-assert.ok(appHtml.includes('styles.css?v=14') && appHtml.includes('cloud.js?v=6') && appHtml.includes('app.js?v=20'), 'os arquivos corrigidos precisam de cache busting');
+assert.ok(appHtml.includes('styles.css?v=15') && appHtml.includes('cloud.js?v=6') && appHtml.includes('app.js?v=21'), 'os arquivos corrigidos precisam de cache busting');
 for (const marker of ['aria-label="Home"', 'aria-label="Registro dos locais e modalidades"', 'aria-label="Registro de atendimentos"', 'aria-label="Conciliação"']) assert.ok(appHtml.includes(marker), `barra inferior sem: ${marker}`);
 const bottomNavigation = appHtml.match(/<nav class="bottom-nav"[\s\S]*?<\/nav>/)?.[0] || '';
 assert.equal((bottomNavigation.match(/<button data-nav=/g) || []).length, 4, 'a barra inferior deve manter exatamente quatro destinos');
@@ -103,6 +103,8 @@ assert.ok(bottomNavigation.indexOf('aria-label="Registro dos locais e modalidade
 assert.ok(bottomNavigation.indexOf('aria-label="Registro de atendimentos"') < bottomNavigation.indexOf('aria-label="Conciliação"'), 'Conciliação deve ser o último destino');
 for (const marker of ['Tirar foto', 'Galeria', 'attendance-quantity-input', 'recordId', 'attendanceQuantity']) assert.ok(app.includes(marker), `registro em lote sem: ${marker}`);
 for (const marker of ['dashboardAttendanceDetails', 'dashboard-expandable', 'dashboard-status-row', 'Marcar grupo como recebido', 'Registrar neste local']) assert.ok(app.includes(marker) || appCss.includes(marker), `Dashboard expansível sem: ${marker}`);
+for (const marker of ['pendingInvoiceWorkplaceId', 'create-workplace-from-invoice', 'delete-invoice', 'reconcileStoredInvoice', 'Cadastrar local pela Nota Fiscal']) assert.ok(app.includes(marker), `fluxo de Nota Fiscal sem: ${marker}`);
+for (const marker of ['invoice-delete', 'body[data-route="attendance"]', 'quantity-row > strong']) assert.ok(appCss.includes(marker), `interface responsiva ou remoção de anexo sem: ${marker}`);
 assert.equal(institutionDirectory.meta.municipalities, 39, 'o diretório deve cobrir os 39 municípios da RMSP');
 assert.ok(institutionDirectory.meta.total >= 1000, 'o diretório institucional está incompleto');
 assert.ok(institutionDirectory.meta.countsByCategory.hospital >= 500, 'o diretório hospitalar está incompleto');
@@ -154,11 +156,11 @@ for (const marker of ['cancelPreapproval', "['cancelled', 'canceled']", 'Mercado
 assert.ok(adminUpdateFunction.includes('cancelPreapproval'), 'exclusão administrativa não cancela a assinatura de forma compatível');
 assert.ok(createSubscriptionFunction.includes('cancelPreapproval'), 'substituição de assinatura pendente não cancela a anterior de forma compatível');
 assert.ok(cancelSubscriptionFunction.includes('cancelPreapproval'), 'cancelamento do cliente não usa a rotina compatível');
-for (const marker of ['unpdf@1.6.2', 'matchedPayerIds', 'amountCents', '5 * 1024 * 1024']) {
+for (const marker of ['unpdf@1.6.2', 'matchedPayerIds', 'amountCents', '5 * 1024 * 1024', 'isRecognizedInvoice', 'hasPdfSignature', 'suggestedPayerCnpj', 'isInvoice: true']) {
   assert.ok(invoiceFunction.includes(marker), `leitura de Nota Fiscal sem: ${marker}`);
 }
 for (const marker of ['expo-sharing', 'supportsFileWithMaxCount']) assert.ok(mobileConfig.includes(marker), `extensão iOS sem: ${marker}`);
-for (const marker of ['getDocumentProxy', 'reconcileInvoice', 'payerMatches']) assert.ok(mobileInvoice.includes(marker), `leitura nativa sem: ${marker}`);
+for (const marker of ['getDocumentProxy', 'reconcileInvoice', 'payerMatches', 'isRecognizedInvoice', 'isInvoice: true']) assert.ok(mobileInvoice.includes(marker), `leitura nativa sem: ${marker}`);
 for (const [name, document, markers] of [
   ['Termos', terms, ['garantia de 7 dias', 'R$ 39,90', 'plano único']],
   ['Privacidade', privacy, ['Controlador', 'Direitos do titular', 'Notas Fiscais']],
@@ -171,7 +173,7 @@ for (const [name, document] of [['Landing', landing], ['Aplicativo', `${appHtml}
   }
 }
 
-for (const marker of ['install', 'activate', 'fetch', 'caches.open', 'medrecebe-app-v19', './app.html', 'institution-directory-rmsp.json']) {
+for (const marker of ['install', 'activate', 'fetch', 'caches.open', 'medrecebe-app-v20', './app.html', 'institution-directory-rmsp.json']) {
   assert.ok(worker.includes(marker), `sw.js sem: ${marker}`);
 }
 

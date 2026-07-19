@@ -18,7 +18,7 @@ import { WorkplaceFormScreen } from './src/screens/WorkplaceFormScreen';
 import { WorkplacesScreen } from './src/screens/WorkplacesScreen';
 import { DEMO_CPF, deleteLocalAccount } from './src/services/auth';
 import { clearEvidence } from './src/services/evidence';
-import { analyzeInvoiceSource, reconcileInvoice, type InvoiceSource } from './src/services/invoice';
+import { analyzeInvoiceSource, reconcileInvoice, reconcileStoredInvoiceWithWorkplace, type InvoiceSource } from './src/services/invoice';
 import { colors } from './src/theme';
 import type { AppData, AppRoute, Attendance, UserProfile, Workplace } from './src/types';
 
@@ -189,13 +189,35 @@ export default function App() {
           />
         );
       case 'workplace_form': {
-        const workplace = data.workplaces.find((item) => item.id === route.workplaceId);
+        const sourceInvoice = data.invoices.find((item) => item.id === route.invoiceId);
+        const workplace = data.workplaces.find((item) => item.id === route.workplaceId) || (sourceInvoice ? {
+          id: `work-${sourceInvoice.id}`,
+          name: sourceInvoice.suggestedPayerLegalName || 'Novo local',
+          address: '',
+          payerCnpj: sourceInvoice.suggestedPayerCnpj || sourceInvoice.cnpjs[0] || '',
+          payerLegalName: sourceInvoice.suggestedPayerLegalName || sourceInvoice.legalNames[0] || '',
+          reconciliationEmail: '',
+          reconciliationCc: '',
+          modalities: [],
+          active: true,
+        } : undefined);
         return (
           <WorkplaceFormScreen
-            onCancel={() => setRoute({ name: 'workplaces' })}
+            onCancel={() => sourceInvoice ? setRoute({ name: 'reconciliation' }) : setRoute({ name: 'workplaces' })}
             onSave={(saved) => {
-              upsertWorkplace(saved);
-              setRoute({ name: 'workplaces' });
+              if (sourceInvoice) {
+                const nextWorkplaces = data.workplaces.some((item) => item.id === saved.id)
+                  ? data.workplaces.map((item) => (item.id === saved.id ? saved : item))
+                  : [...data.workplaces, saved];
+                const nextData = { ...data, workplaces: nextWorkplaces };
+                const reconciled = reconcileStoredInvoiceWithWorkplace(sourceInvoice, nextData, saved);
+                commit({ ...nextData, invoices: data.invoices.map((item) => (item.id === sourceInvoice.id ? reconciled : item)) });
+                setRoute({ name: 'reconciliation' });
+                Alert.alert('Local cadastrado', reconciled.status === 'group_not_found' ? 'O pagador foi vinculado. Ainda não há grupo vencido para comparar.' : 'A Nota Fiscal foi vinculada e a conciliação foi atualizada.');
+              } else {
+                upsertWorkplace(saved);
+                setRoute({ name: 'workplaces' });
+              }
             }}
             workplace={workplace}
           />
@@ -213,6 +235,8 @@ export default function App() {
         return (
           <ReconciliationScreen
             data={data}
+            onCreateWorkplace={(invoice) => setRoute({ name: 'workplace_form', invoiceId: invoice.id })}
+            onDeleteInvoice={(invoiceId) => commit({ ...data, invoices: data.invoices.filter((item) => item.id !== invoiceId) })}
             onImportInvoice={importInvoice}
             onMarkRequested={(ids) => {
               const requestedAt = new Date().toISOString();
