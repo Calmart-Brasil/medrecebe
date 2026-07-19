@@ -2,9 +2,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import * as MailComposer from 'expo-mail-composer';
+import * as Sharing from 'expo-sharing';
 
 import { Button, Card, Chip, EmptyState, Eyebrow, Field, InlineNotice, PageTitle, Screen, SectionTitle } from '../components/ui';
 import { formatCurrency, formatDate, isPastOrToday } from '../services/paymentRules';
+import { createReconciliationPdf } from '../services/reconciliationPdf';
 import type { InvoiceSource } from '../services/invoice';
 import { colors, radius } from '../theme';
 import type { AppData, Attendance, InvoiceReconciliation, UserProfile, Workplace } from '../types';
@@ -85,6 +87,7 @@ export function ReconciliationScreen({
   const [message, setMessage] = useState(data.reconciliation.defaultMessage);
   const [selectedGroupId, setSelectedGroupId] = useState(groups[0]?.id ?? '');
   const [sending, setSending] = useState(false);
+  const [sharing, setSharing] = useState(false);
   const [importingInvoice, setImportingInvoice] = useState(false);
   const latestInvoice = data.invoices[0];
 
@@ -191,11 +194,49 @@ export function ReconciliationScreen({
     }
   };
 
+  const shareOnWhatsApp = async () => {
+    if (!selectedGroup) return;
+    setSharing(true);
+    try {
+      if (!(await Sharing.isAvailableAsync())) {
+        Alert.alert('Compartilhamento indisponível', 'Não foi possível abrir o compartilhamento deste iPhone. Use o envio por e-mail.');
+        return;
+      }
+      const result = await createReconciliationPdf(selectedGroup, profile, data.reconciliation.defaultMessage);
+      await Sharing.shareAsync(result.uri, {
+        UTI: 'com.adobe.pdf',
+        mimeType: 'application/pdf',
+        dialogTitle: 'Compartilhar conciliação',
+      });
+      const attachmentNotice = result.omittedAttachments
+        ? ` ${result.omittedAttachments} comprovante(s) não puderam entrar no PDF e estão sinalizados no documento.`
+        : '';
+      Alert.alert(
+        'Envio concluído?',
+        `O iPhone retornou ao MedRecebe.${attachmentNotice} Você concluiu o envio da conciliação no WhatsApp?`,
+        [
+          { text: 'Ainda não', style: 'cancel' },
+          {
+            text: 'Sim, marcar como enviada',
+            onPress: () => {
+              onMarkRequested(selectedGroup.attendances.map((attendance) => attendance.id));
+              Alert.alert('Conciliação registrada', 'Os atendimentos foram marcados como “em conciliação”.');
+            },
+          },
+        ],
+      );
+    } catch (error) {
+      Alert.alert('Não foi possível preparar o PDF', error instanceof Error ? error.message : 'Tente novamente em alguns instantes.');
+    } finally {
+      setSharing(false);
+    }
+  };
+
   return (
     <Screen keyboard>
       <View style={styles.heading}>
         <Eyebrow>Conferência de pagamentos</Eyebrow>
-        <PageTitle subtitle="Selecione um grupo vencido e abra o e-mail do iPhone com mensagem, valores e comprovantes preenchidos.">
+        <PageTitle subtitle="Selecione um grupo vencido e envie a conferência com os valores e comprovantes consolidados.">
           Conciliação
         </PageTitle>
       </View>
@@ -348,10 +389,13 @@ export function ReconciliationScreen({
         </Card>
       ) : null}
 
-      <Button disabled={!selectedGroup} loading={sending} onPress={() => void send()} title="Solicitar conferência por e-mail" />
+      <View style={styles.sendActions}>
+        <Button disabled={!selectedGroup || sending} loading={sharing} onPress={() => void shareOnWhatsApp()} title="Compartilhar PDF no WhatsApp" />
+        <Button disabled={!selectedGroup || sharing} loading={sending} onPress={() => void send()} title="Solicitar por e-mail" variant="secondary" />
+      </View>
 
       <Text style={styles.disclaimer}>
-        No MVP, o aplicativo nunca envia sozinho: ele abre o compositor nativo para o médico revisar e confirmar o envio.
+        O aplicativo abre o compartilhamento do iPhone para você escolher o contato, revisar e confirmar o envio.
       </Text>
     </Screen>
   );
@@ -397,6 +441,7 @@ const styles = StyleSheet.create({
   groupMeta: { color: colors.muted, fontSize: 11, marginTop: 3 },
   chevron: { color: colors.blue700, fontSize: 25 },
   selectedSummary: { backgroundColor: colors.navy, borderColor: colors.navy, gap: 8 },
+  sendActions: { gap: 8 },
   summaryRow: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' },
   summaryLabel: { color: '#B9E4FB', fontSize: 12, fontWeight: '700' },
   summaryValue: { color: colors.paper, fontSize: 23, fontWeight: '900' },

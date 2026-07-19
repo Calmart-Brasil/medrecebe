@@ -94,6 +94,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--blue-600); box-s
 }
 .button.primary { background: var(--blue-700); color: white; }
 .button.secondary { border-color: var(--blue-700); background: white; color: var(--blue-700); }
+.button.whatsapp { background: #1f9d61; color: white; box-shadow: 0 7px 18px rgb(31 157 97 / 18%); }
+.button.whatsapp:hover, .button.whatsapp:focus-visible { background: #178552; }
 .button.danger { border-color: #f1c8cc; background: var(--red-soft); color: var(--red); }
 .button.small { min-height: 38px; padding: 8px 12px; border-radius: 10px; font-size: 12px; }
 .text-button { min-height: 36px; padding: 4px; border: 0; background: transparent; color: var(--blue-700); }
@@ -340,6 +342,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--blue-600); box-s
 .evidence-status.synced { color: var(--green); }
 .evidence-status.pending { color: #8a6300; }
 .document-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.reconciliation-send-actions { display: grid; grid-template-columns: minmax(0, 1fr); gap: 9px; }
 .file-button { position: relative; overflow: hidden; }
 .file-button input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
 .photo-source-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; width: 100%; }
@@ -423,6 +426,10 @@ input:focus, select:focus, textarea:focus { border-color: var(--blue-600); box-s
 .group-card p { margin: 0; color: var(--blue-700); font-size: 10px; font-weight: 750; }
 .group-card small { display: block; margin-top: 4px; color: var(--muted); font-size: 9px; }
 .group-card b { color: var(--ink); font-size: 12px; }
+
+@media (min-width: 760px) {
+  .reconciliation-send-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 
 .feedback-form { display: grid; gap: 14px; }
 .rating { display: grid; grid-template-columns: repeat(5, 1fr); gap: 7px; }
