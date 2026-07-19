@@ -17,7 +17,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="styles.css?v=9" />
+    <link rel="stylesheet" href="styles.css?v=11" />
   </head>
   <body>
     <noscript>Ative o JavaScript para usar o MedRecebe.</noscript>
@@ -80,14 +80,15 @@
     <section class="app-shell" id="app-view" hidden>
       <header class="app-header">
         <button class="icon-button" id="header-action" aria-label="Abrir menu" type="button">☰</button>
-        <div><strong id="header-title">Início</strong><small>GESTÃO DE REPASSES</small></div>
-        <button class="feedback-shortcut" id="feedback-shortcut" type="button" aria-label="Enviar feedback">♡</button>
+        <div><strong id="header-title">Início</strong></div>
+        <span class="header-spacer" aria-hidden="true"></span>
       </header>
       <main id="screen" tabindex="-1"></main>
       <nav class="bottom-nav" aria-label="Navegação rápida">
         <button data-nav="home" type="button"><span>＋</span>Registrar</button>
         <button data-nav="dashboard" type="button"><span>▦</span>Dashboard</button>
-        <button data-nav="feedback" type="button"><span>♡</span>Feedback</button>
+        <button data-nav="reconciliation" type="button"><span>⇄</span>Conciliar</button>
+        <button data-nav="account" type="button"><span>•••</span>Mais</button>
       </nav>
     </section>
 
@@ -104,8 +105,7 @@
         <button data-nav="reconciliation" type="button"><span>⇄</span>Conciliação</button>
         <hr />
         <button data-nav="home" type="button"><span>＋</span>Registrar atendimento</button>
-        <button data-nav="feedback" type="button"><span>♡</span>Enviar feedback</button>
-        <button data-nav="account" type="button"><span>○</span>Conta e instalação</button>
+        <button data-nav="account" type="button"><span>○</span>Mais</button>
       </nav>
       <div class="drawer-profile">
         <span class="avatar" id="drawer-avatar">M</span>
@@ -119,6 +119,6 @@
 
     <script>document.write('<script src="runtime-config.js?v=' + Date.now() + '"><\/script>');</script>
     <script src="cloud.js?v=5"></script>
-    <script src="app.js?v=16" defer></script>
+    <script src="app.js?v=17" defer></script>
   </body>
 </html>

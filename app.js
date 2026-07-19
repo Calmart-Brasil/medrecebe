@@ -25,6 +25,7 @@ let draftWorkplace = null;
 let editingModalityIndex = null;
 let attendanceDraft = null;
 let editingAttendanceId = '';
+let attendanceHistoryExpanded = false;
 let attendanceRenderTimer = 0;
 let cloudAccount = null;
 let activeStateKey = APP_KEY;
@@ -42,7 +43,7 @@ const TITLES = {
   workplaces: 'Locais e repasses',
   reconciliation: 'Conciliação',
   feedback: 'Feedback',
-  account: 'Conta e instalação',
+  account: 'Mais',
   cancellation: 'Cancelamento',
 };
 
@@ -692,14 +693,15 @@ function navigate(route) {
   const subpage = ['attendance', 'cancellation'].includes(route);
   $('#header-action').textContent = subpage ? '‹' : '☰';
   $('#header-action').setAttribute('aria-label', subpage ? 'Voltar' : 'Abrir menu');
-  $$('[data-nav]').forEach((button) => button.classList.toggle('active', button.dataset.nav === route));
+  const activeNavRoute = route === 'attendance' ? 'home' : ['feedback', 'cancellation'].includes(route) ? 'account' : route;
+  $$('[data-nav]').forEach((button) => button.classList.toggle('active', button.dataset.nav === activeNavRoute));
   renderRoute();
   screen.focus({ preventScroll: true });
   window.scrollTo(0, 0);
 }
 
 function pageHeading(eyebrow, title, subtitle) {
-  return `<header><p class="eyebrow">${escapeHtml(eyebrow)}</p><h1 class="page-title">${escapeHtml(title)}</h1><p class="page-subtitle">${escapeHtml(subtitle)}</p></header>`;
+  return `<header class="page-heading">${eyebrow ? `<p class="eyebrow">${escapeHtml(eyebrow)}</p>` : ''}<h1 class="page-title">${escapeHtml(title)}</h1>${subtitle ? `<p class="page-subtitle">${escapeHtml(subtitle)}</p>` : ''}</header>`;
 }
 
 function emptyCard(title, description, button = '') {
@@ -738,27 +740,24 @@ function renderHome() {
   const pending = appState.attendances.filter((attendance) => attendance.status !== 'paid');
   const total = pending.reduce((sum, attendance) => sum + attendance.amountCents, 0);
   const active = appState.workplaces.filter((workplace) => workplace.active);
-  const firstName = (appState.profile?.name || 'Doutor(a)').split(/\s+/)[0];
-  const install = isStandalone()
-    ? ''
-    : `<div class="card install-card"><span class="install-icon">⇧</span><div><strong>Instale o MedRecebe</strong><p>Adicione à Tela de Início para abrir como aplicativo e usar offline.</p></div><button class="link-button" data-action="install" type="button">Como instalar</button></div>`;
-  const cards = active.length
-    ? active
+  const lastWorkplaceId = [...appState.attendances].sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))[0]?.workplaceId || '';
+  const orderedWorkplaces = [...active].sort((a, b) => Number(b.id === lastWorkplaceId) - Number(a.id === lastWorkplaceId));
+  const cards = orderedWorkplaces.length
+    ? orderedWorkplaces
         .map((workplace) => {
           const modalities = workplace.modalities.filter((modality) => modality.active);
           return `<button class="card location-card" data-action="open-attendance" data-id="${workplace.id}" type="button" ${modalities.length ? '' : 'disabled'}>
-            <span class="round-icon">＋</span><span class="location-copy"><strong>${escapeHtml(workplace.name)}</strong><small>${escapeHtml(workplace.address || 'Endereço não informado')}</small><em>${modalities.length} ${modalities.length === 1 ? 'modalidade ativa' : 'modalidades ativas'}</em></span><span class="chevron">›</span>
+            <span class="round-icon">＋</span><span class="location-copy"><strong>${escapeHtml(workplace.name)}</strong><small>${escapeHtml(workplace.address || 'Endereço não informado')}</small><em>${workplace.id === lastWorkplaceId ? 'Usado por último' : `${modalities.length} ${modalities.length === 1 ? 'modalidade' : 'modalidades'}`}</em></span><span class="chevron">›</span>
           </button>`;
         })
         .join('')
-    : emptyCard('Nenhum local cadastrado', 'Adicione o local, as modalidades, os valores e as regras de pagamento.', '<button class="button primary small" data-action="new-workplace" type="button">Cadastrar primeiro local</button>');
+    : emptyCard('Nenhum local cadastrado', 'Cadastre seu primeiro pagador para começar.', '<button class="button primary small" data-action="new-workplace" type="button">Cadastrar local</button>');
 
   screen.innerHTML = `<div class="screen-stack">
-    ${pageHeading(`Olá, ${firstName}`, 'Registrar atendimento', 'Escolha onde você atendeu para fazer um novo registro.')}
-    ${install}
-    <div class="overview-grid"><div class="card summary-card"><span class="summary-main"><small>A RECEBER</small><strong>${currency(total)}</strong><span class="desktop-summary-note">Valores ainda não marcados como recebidos</span></span><span class="summary-count"><strong>${attendanceCount(pending)}</strong><small>atendimentos</small></span></div><div class="card desktop-stat"><span class="round-icon">⌂</span><div><small>LOCAIS ATIVOS</small><strong>${active.length}</strong><p>Com modalidades disponíveis</p></div></div><button class="card desktop-action" data-action="new-workplace" type="button"><span>＋</span><div><small>ATALHO</small><strong>Novo local</strong><p>Cadastre um pagador e suas regras</p></div></button></div>
-    <h2 class="section-title">Onde foi o atendimento?</h2><div class="location-list">${cards}</div>
-    ${appState.demo ? '<div class="notice warning demo-notice">Você está vendo dados fictícios. Use-os livremente para explorar o MedRecebe.</div>' : ''}
+    ${pageHeading('', 'Registrar atendimento', '')}
+    <div class="overview-grid"><div class="card summary-card"><span class="summary-main"><small>A RECEBER</small><strong>${currency(total)}</strong><span class="desktop-summary-note">Atendimentos ainda não recebidos</span></span><span class="summary-count"><strong>${attendanceCount(pending)}</strong><small>atendimentos</small></span></div><div class="card desktop-stat"><span class="round-icon">⌂</span><div><small>LOCAIS</small><strong>${active.length}</strong></div></div><button class="card desktop-action" data-action="new-workplace" type="button"><span>＋</span><div><small>ATALHO</small><strong>Novo local</strong></div></button></div>
+    <div class="section-heading compact"><h2 class="section-title">Local do atendimento</h2><button class="link-button" data-action="new-workplace" type="button">Novo local</button></div><div class="location-list">${cards}</div>
+    ${appState.demo ? '<div class="notice warning demo-notice">Demonstração com dados fictícios.</div>' : ''}
   </div>`;
 }
 
@@ -774,7 +773,7 @@ function renderDashboard() {
       const workplaceTotal = items.reduce((sum, attendance) => sum + attendance.amountCents, 0);
       const quantity = attendanceCount(items);
       const overdueCount = attendanceCount(items.filter((attendance) => isPastOrToday(attendance.dueAt)));
-      return `<article class="card workplace-summary"><div class="card-head"><span class="round-icon">⌂</span><div><h3>${escapeHtml(workplace.name)}</h3><p>${quantity} ${quantity === 1 ? 'atendimento' : 'atendimentos'} a receber</p></div>${overdueCount ? `<span class="badge overdue">${overdueCount} venc.</span>` : ''}</div><div class="value-row"><span><small>Valor a receber</small><strong>${currency(workplaceTotal)}</strong></span><span><small>Próximo crédito</small><b>${nextDue ? displayDate(nextDue) : '—'}</b></span></div></article>`;
+      return `<article class="card workplace-summary"><div class="card-head"><span class="round-icon">⌂</span><div><h3>${escapeHtml(workplace.name)}</h3><p>${quantity} ${quantity === 1 ? 'atendimento' : 'atendimentos'}</p></div>${overdueCount ? `<span class="badge overdue">${overdueCount} venc.</span>` : ''}</div><div class="value-row"><span><small>A RECEBER</small><strong>${currency(workplaceTotal)}</strong></span><span><small>PRÓXIMO</small><b>${nextDue ? displayDate(nextDue) : '—'}</b></span></div></article>`;
     })
     .join('');
   const dueGroups = groupDueDates(receivables);
@@ -783,10 +782,9 @@ function renderDashboard() {
     .join('');
 
   screen.innerHTML = `<div class="screen-stack">
-    ${pageHeading('Visão geral', 'Dashboard', 'Valores calculados pelas regras cadastradas em cada modalidade.')}
-    <div class="dashboard-overview"><div class="card summary-card"><div style="width:100%"><span class="summary-main"><small>TOTAL A RECEBER</small><strong>${currency(total)}</strong><span class="desktop-summary-note">Consolidado dos atendimentos em aberto</span></span><div class="metrics"><span class="metric"><strong>${attendanceCount(receivables)}</strong><small>PENDENTES</small></span><span class="metric overdue"><strong>${attendanceCount(overdue)}</strong><small>VENCIDOS</small></span><span class="metric"><strong>${attendanceCount(inReconciliation)}</strong><small>EM CONCILIAÇÃO</small></span></div></div></div><article class="card dashboard-insight"><span class="round-icon">⇄</span><small>CONCILIAÇÃO</small><strong>${currency(overdue.reduce((sum, item) => sum + item.amountCents, 0))}</strong><p>em créditos vencidos para revisar</p><button class="button secondary small" data-nav="reconciliation" type="button">Abrir conciliação</button></article></div>
-    <div class="dashboard-columns"><section><h2 class="section-title">Por local de trabalho</h2><div class="list">${workplaceCards || emptyCard('Ainda não há dados', 'Cadastre um local e comece a registrar atendimentos.')}</div></section>${dueCards ? `<section><h2 class="section-title">Confirmar créditos</h2><div class="list due-list">${dueCards}</div></section>` : `<section><h2 class="section-title">Próximos passos</h2>${emptyCard('Nenhum crédito vencido', 'Quando um repasse chegar à data prevista, ele aparecerá aqui para confirmação.')}</section>`}</div>
-    <p class="muted" style="text-align:center">Dias úteis consideram fins de semana. O aplicativo não consulta feriados bancários.</p>
+    ${pageHeading('', 'Dashboard', '')}
+    <div class="dashboard-overview"><div class="card summary-card"><div style="width:100%"><span class="summary-main"><small>TOTAL A RECEBER</small><strong>${currency(total)}</strong><span class="desktop-summary-note">Atendimentos em aberto</span></span><div class="metrics"><span class="metric"><strong>${attendanceCount(receivables)}</strong><small>PENDENTES</small></span><span class="metric overdue"><strong>${attendanceCount(overdue)}</strong><small>VENCIDOS</small></span><span class="metric"><strong>${attendanceCount(inReconciliation)}</strong><small>EM CONCILIAÇÃO</small></span></div></div></div><article class="card dashboard-insight"><span class="round-icon">⇄</span><small>VENCIDOS</small><strong>${currency(overdue.reduce((sum, item) => sum + item.amountCents, 0))}</strong><button class="button secondary small" data-nav="reconciliation" type="button">Conciliar</button></article></div>
+    <div class="dashboard-columns">${dueCards ? `<section class="attention-panel"><h2 class="section-title">Requer sua atenção</h2><div class="list due-list">${dueCards}</div></section>` : ''}<section class="locations-panel"><h2 class="section-title">Por local</h2><div class="list">${workplaceCards || emptyCard('Ainda não há dados', 'Cadastre um local para começar.')}</div></section></div>
   </div>`;
 }
 
@@ -811,7 +809,7 @@ function renderWorkplaces() {
       return `<article class="card workplace-summary"><div class="card-head"><span class="round-icon">⌂</span><div><h3>${escapeHtml(workplace.name)}</h3><p>${escapeHtml(workplace.payerLegalName || 'Razão Social não informada')}<br/>${workplace.payerCnpj ? `CNPJ ${formatCnpj(workplace.payerCnpj)}` : 'CNPJ não informado'}<br/>${escapeHtml(workplace.address || 'Endereço não informado')}</p></div><span class="badge ${workplace.active ? '' : 'inactive'}">${workplace.active ? 'Ativo' : 'Inativo'}</span></div><div class="modality-lines">${modes || '<p class="muted">Nenhuma modalidade cadastrada.</p>'}</div><div class="row-actions"><button class="danger-link" data-action="toggle-workplace" data-id="${workplace.id}" type="button">${workplace.active ? 'Desativar' : 'Reativar'}</button><button class="button secondary small" data-action="edit-workplace" data-id="${workplace.id}" type="button">Editar cadastro</button></div></article>`;
     })
     .join('');
-  screen.innerHTML = `<div class="screen-stack">${pageHeading('Cadastros', 'Locais e repasses', 'Configure locais, modalidades, valores e regras de crédito.')}<button class="button primary" data-action="new-workplace" type="button">Adicionar local de trabalho</button><h2 class="section-title">Locais cadastrados</h2><div class="list">${cards || emptyCard('Comece pelo primeiro local', 'Cada local pode ter várias modalidades e prazos diferentes.')}</div></div>`;
+  screen.innerHTML = `<div class="screen-stack">${pageHeading('', 'Locais e repasses', '')}<button class="button primary" data-action="new-workplace" type="button">Adicionar local</button><div class="list">${cards || emptyCard('Comece pelo primeiro local', 'Cadastre o pagador e suas modalidades.')}</div></div>`;
 }
 
 function renderAttendance() {
@@ -831,7 +829,7 @@ function renderAttendance() {
   const availableModalities = workplace.modalities.filter((item) => item.active || Number(attendanceDraft.items[item.id]?.quantity) > 0);
   const choices = availableModalities.map((item) => {
     const quantity = Math.max(0, Number(attendanceDraft.items[item.id]?.quantity) || 0);
-    return `<article class="choice modality-quantity-choice ${quantity ? 'selected' : ''}"><label class="modality-check"><input type="checkbox" name="modality" value="${item.id}" ${quantity ? 'checked' : ''}/><span><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(modalityTypeLabel(item))} • ${escapeHtml(describeRule(item.rule))}</small></span></label><b>${currency(item.amountCents)}<small>por atendimento</small></b>${quantity ? `<div class="quantity-row"><span>Quantidade realizada</span><div class="quantity-stepper"><button data-action="decrease-attendance-quantity" data-id="${item.id}" type="button" aria-label="Diminuir quantidade de ${escapeHtml(item.name)}">−</button><input class="attendance-quantity-input" data-modality-id="${item.id}" type="number" inputmode="numeric" min="1" max="999" value="${quantity}" aria-label="Quantidade de ${escapeHtml(item.name)}"/><button data-action="increase-attendance-quantity" data-id="${item.id}" type="button" aria-label="Aumentar quantidade de ${escapeHtml(item.name)}">+</button></div><strong>${currency(item.amountCents * quantity)}</strong></div>` : ''}</article>`;
+    return `<article class="choice modality-quantity-choice ${quantity ? 'selected' : ''}"><label class="modality-check"><input type="checkbox" name="modality" value="${item.id}" ${quantity ? 'checked' : ''}/><span><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(modalityTypeLabel(item))}</small></span></label><b>${currency(item.amountCents)}</b><details class="modality-rule"><summary>Ver prazo</summary><p>${escapeHtml(describeRule(item.rule))}</p></details>${quantity ? `<div class="quantity-row"><span>Qtd.</span><div class="quantity-stepper"><button data-action="decrease-attendance-quantity" data-id="${item.id}" type="button" aria-label="Diminuir quantidade de ${escapeHtml(item.name)}">−</button><input class="attendance-quantity-input" data-modality-id="${item.id}" type="number" inputmode="numeric" min="1" max="999" value="${quantity}" aria-label="Quantidade de ${escapeHtml(item.name)}"/><button data-action="increase-attendance-quantity" data-id="${item.id}" type="button" aria-label="Aumentar quantidade de ${escapeHtml(item.name)}">+</button></div><strong>${currency(item.amountCents * quantity)}</strong></div>` : ''}</article>`;
   }).join('');
   const selectedItems = selectedAttendanceItems(workplace);
   const itemSummaries = selectedItems.map(({ modality, draft }) => {
@@ -850,7 +848,7 @@ function renderAttendance() {
   const dueDates = [...new Set(itemSummaries.map((item) => item.dueAt))];
   const photo = attendanceDraft.evidence
     ? `<img class="photo-preview" src="${attendanceDraft.evidence}" alt="Prévia do comprovante"/><div class="photo-source-actions"><label class="button secondary small file-button">Tirar outra foto<input class="evidence-input" type="file" accept="image/*" capture="environment"/></label><label class="button secondary small file-button">Galeria<input class="evidence-input" type="file" accept="image/*"/></label><button class="danger-link" data-action="remove-photo" type="button">Remover</button></div>`
-    : `<span class="round-icon">▣</span><strong>Adicione a prova dos atendimentos</strong><p>Uma única imagem pode comprovar todas as modalidades e quantidades deste registro.</p><div class="photo-source-actions"><label class="button primary small file-button">Tirar foto<input class="evidence-input" type="file" accept="image/*" capture="environment"/></label><label class="button secondary small file-button">Galeria<input class="evidence-input" type="file" accept="image/*"/></label></div>`;
+    : `<strong>Adicionar comprovante</strong><p>Uma foto pode incluir vários atendimentos.</p><div class="photo-source-actions"><label class="button primary small file-button">Tirar foto<input class="evidence-input" type="file" accept="image/*" capture="environment"/></label><label class="button secondary small file-button">Galeria<input class="evidence-input" type="file" accept="image/*"/></label></div>`;
   const recurringFields = itemSummaries.filter(({ modality }) => modality.type === 'recurring').map(({ modality, draft }) => {
     const consultationOptions = workplace.modalities.filter((item) => item.active && item.id !== modality.id && item.type !== 'recurring');
     if (draft.includeConsultation && !consultationOptions.some((item) => item.id === draft.consultationModalityId)) draft.consultationModalityId = consultationOptions[0]?.id || '';
@@ -863,15 +861,18 @@ function renderAttendance() {
     group.push(item);
     recordGroups.set(recordId, group);
   });
-  const recorded = [...recordGroups.entries()].sort(([, a], [, b]) => String(b[0]?.createdAt).localeCompare(String(a[0]?.createdAt))).slice(0, 20).map(([recordId, lines]) => {
+  const allRecorded = [...recordGroups.entries()].sort(([, a], [, b]) => String(b[0]?.createdAt).localeCompare(String(a[0]?.createdAt)));
+  const visibleRecords = attendanceHistoryExpanded ? allRecorded.slice(0, 50) : allRecorded.slice(0, 3);
+  const recorded = visibleRecords.map(([recordId, lines]) => {
     const first = lines[0];
     const recordTotal = lines.reduce((sum, item) => sum + item.amountCents, 0);
     const recordQuantity = attendanceCount(lines);
     const lineRows = lines.map((item) => `<div class="attendance-record-line"><span><strong>${attendanceQuantity(item)} × ${escapeHtml(item.modalityName)}</strong>${item.patientReference ? `<small>${escapeHtml(item.patientReference)} • ${escapeHtml(item.medication || '')}</small>` : ''}</span><span><b>${currency(item.amountCents)}</b><small>${item.status === 'paid' ? 'Recebido' : `Crédito ${displayDate(item.dueAt)}`}</small></span></div>`).join('');
-    return `<article class="card attendance-record"><div><strong>${displayDate(first.occurredAt)} • ${recordQuantity} ${recordQuantity === 1 ? 'atendimento' : 'atendimentos'}</strong><small>${escapeHtml(first.notes || 'Sem observação')}</small></div><span><b>${currency(recordTotal)}</b><small>${lines.length} ${lines.length === 1 ? 'modalidade' : 'modalidades'}</small></span><div class="attendance-record-lines">${lineRows}</div><div class="row-actions"><button class="button secondary small" data-action="edit-attendance" data-id="${recordId}" type="button">Editar</button><button class="danger-link" data-action="delete-attendance" data-id="${recordId}" type="button">Excluir</button></div></article>`;
+    return `<details class="card attendance-record"><summary><span><strong>${displayDate(first.occurredAt)}</strong><small>${recordQuantity} ${recordQuantity === 1 ? 'atendimento' : 'atendimentos'}</small></span><span><b>${currency(recordTotal)}</b><small>Ver detalhes</small></span></summary><div class="attendance-record-body">${first.notes ? `<p>${escapeHtml(first.notes)}</p>` : ''}<div class="attendance-record-lines">${lineRows}</div><div class="row-actions"><button class="button secondary small" data-action="edit-attendance" data-id="${recordId}" type="button">Editar</button><button class="danger-link" data-action="delete-attendance" data-id="${recordId}" type="button">Excluir</button></div></div></details>`;
   }).join('');
   const summaryLines = itemSummaries.map((item) => `<div class="attendance-summary-line"><span>${item.quantity} × ${escapeHtml(item.modality.name)}</span><span>${currency(item.amountCents)} • ${displayDate(item.dueAt)}</span></div>`).join('');
-  screen.innerHTML = `<div class="screen-stack"><form class="screen-stack" id="attendance-form">${pageHeading(editingAttendanceId ? 'Corrigir registro' : 'Novo registro', workplace.name, editingAttendanceId ? 'Revise as modalidades, quantidades e salve a correção.' : 'Use uma única prova e informe todas as modalidades realizadas no período.')}<label>Data dos atendimentos<input id="attendance-date" type="date" value="${attendanceDraft.occurredAt}" required/></label><h2 class="section-title">Comprovante</h2><div class="attendance-photo">${photo}</div><div class="section-heading"><div><h2 class="section-title">Modalidade de repasse</h2><p>Selecione uma ou mais modalidades e informe a quantidade realizada.</p></div>${totalQuantity ? `<span class="badge">${totalQuantity} atend.</span>` : ''}</div><div class="choice-list">${choices}</div>${recurringFields}<label>Observação (opcional)<textarea id="attendance-notes" placeholder="Inclua somente informações necessárias.">${escapeHtml(attendanceDraft.notes)}</textarea></label>${itemSummaries.length ? `<div class="card attendance-total-card"><div class="attendance-total-head"><span><small>VALOR CONTABILIZADO</small><strong>${currency(totalCents)}</strong><em>${totalQuantity} ${totalQuantity === 1 ? 'atendimento' : 'atendimentos'}</em></span><span><small>CRÉDITO</small><strong>${dueDates.length === 1 ? displayDate(dueDates[0]) : `${dueDates.length} datas`}</strong></span></div><div class="attendance-summary-lines">${summaryLines}</div></div>` : ''}<div class="action-grid"><button class="button secondary" data-action="cancel-attendance" type="button">Cancelar</button><button class="button primary" type="submit">${editingAttendanceId ? 'Salvar correção' : 'Salvar'}</button></div></form><h2 class="section-title">Atendimentos registrados</h2><div class="list">${recorded || emptyCard('Nenhum atendimento registrado', 'Os registros deste local aparecerão aqui para consulta e correção.')}</div></div>`;
+  const historyToggle = allRecorded.length > 3 ? `<button class="link-button attendance-history-toggle" data-action="toggle-attendance-history" type="button">${attendanceHistoryExpanded ? 'Mostrar menos' : `Ver todos (${allRecorded.length})`}</button>` : '';
+  screen.innerHTML = `<div class="screen-stack"><form class="screen-stack" id="attendance-form">${pageHeading('', workplace.name, editingAttendanceId ? 'Editando registro' : '')}<label>Data<input id="attendance-date" type="date" value="${attendanceDraft.occurredAt}" required/></label><h2 class="section-title">Comprovante</h2><div class="attendance-photo">${photo}</div><div class="section-heading compact"><h2 class="section-title">Modalidade de repasse</h2>${totalQuantity ? `<span class="badge">${totalQuantity} atend.</span>` : ''}</div><div class="choice-list">${choices}</div>${recurringFields}<label>Observação (opcional)<textarea id="attendance-notes" placeholder="Adicionar observação">${escapeHtml(attendanceDraft.notes)}</textarea></label><div class="attendance-checkout">${itemSummaries.length ? `<div class="card attendance-total-card"><div class="attendance-total-head"><span><small>TOTAL</small><strong>${currency(totalCents)}</strong><em>${totalQuantity} ${totalQuantity === 1 ? 'atendimento' : 'atendimentos'}</em></span><span><small>PREVISÃO</small><strong>${dueDates.length === 1 ? displayDate(dueDates[0]) : `${dueDates.length} datas`}</strong></span></div><details class="attendance-breakdown"><summary>Ver composição</summary><div class="attendance-summary-lines">${summaryLines}</div></details></div>` : ''}<div class="attendance-actions"><button class="button primary" type="submit">${editingAttendanceId ? 'Salvar correção' : 'Salvar'}</button><button class="text-button" data-action="cancel-attendance" type="button">Cancelar</button></div></div></form><section class="attendance-history-section"><div class="section-heading compact"><h2 class="section-title">Atendimentos</h2><span class="badge">${allRecorded.length}</span></div><div class="list">${recorded || emptyCard('Nenhum atendimento', 'Seus registros aparecerão aqui.')}</div>${historyToggle}</section></div>`;
 }
 
 function legalNameMatches(registeredName, extractedNames = []) {
@@ -1002,7 +1003,7 @@ function renderAccount() {
     ? `<h2 class="section-title">Plano e acesso</h2><div class="card workplace-summary"><div class="card-head"><span class="round-icon">✓</span><div><h3>Plano único</h3><p>R$ 39,90 por mês</p></div><span class="badge ${accessStatus === 'active' ? '' : 'inactive'}">${escapeHtml(subscriptionLabels[accessStatus] || 'Em configuração')}</span></div><p class="field-hint">Cadastros, regras e atendimentos são sincronizados entre o celular e o computador.</p></div>`
     : '';
   const deleteLabel = isCloudMode() ? 'Excluir dados salvos neste aparelho' : 'Excluir conta e dados locais';
-  screen.innerHTML = `<div class="screen-stack">${pageHeading('Perfil e assinatura', 'Conta e instalação', 'Gerencie seu plano, seus dados e a instalação do MedRecebe.')}<div class="card card-head"><span class="avatar">${escapeHtml((appState.profile?.name || 'M').charAt(0))}</span><div><h3>${escapeHtml(appState.profile?.name || 'Médico')}</h3><p>${formatCpf(appState.profile?.cpf || '')}<br/>${escapeHtml(appState.profile?.email || '')}</p></div></div>${cloudSection}<div class="notice success"><strong>Sincronização protegida</strong><br/>Registros de gestão ficam disponíveis no celular e no computador; comprovantes fotográficos continuam somente no aparelho em que foram adicionados.</div><h2 class="section-title">Instalação</h2><div class="card install-card"><span class="install-icon">${isStandalone() ? '✓' : '⇧'}</span><div><strong>${isStandalone() ? 'MedRecebe instalado' : 'Adicionar à Tela de Início'}</strong><p>${isStandalone() ? 'Você está usando o modo aplicativo.' : 'No iPhone, abra no Safari e instale o atalho para usar offline.'}</p></div>${isStandalone() ? '' : '<button class="link-button" data-action="install" type="button">Ver passos</button>'}</div><h2 class="section-title">Privacidade e suporte</h2><div class="card account-links"><a class="account-link" href="./privacidade.html" target="_blank" rel="noopener">Política de Privacidade <span>›</span></a><a class="account-link" href="./termos.html" target="_blank" rel="noopener">Termos de Uso <span>›</span></a><a class="account-link" href="./cancelamento.html" target="_blank" rel="noopener">Política de cancelamento e reembolso <span>›</span></a><a class="account-link" href="./suporte.html" target="_blank" rel="noopener">Ajuda e suporte <span>›</span></a></div><button class="button secondary" data-action="logout" type="button">Sair</button><button class="button danger" data-action="delete-beta-data" type="button">${deleteLabel}</button><p class="muted" style="text-align:center">MedRecebe • versão web 2.1</p></div>`;
+  screen.innerHTML = `<div class="screen-stack">${pageHeading('', 'Mais', '')}<div class="card card-head"><span class="avatar">${escapeHtml((appState.profile?.name || 'M').charAt(0))}</span><div><h3>${escapeHtml(appState.profile?.name || 'Médico')}</h3><p>${formatCpf(appState.profile?.cpf || '')}<br/>${escapeHtml(appState.profile?.email || '')}</p></div></div>${cloudSection}<div class="notice success"><strong>Dados sincronizados</strong><br/>As fotos permanecem no aparelho em que foram adicionadas.</div><h2 class="section-title">Aplicativo</h2><div class="card install-card"><span class="install-icon">${isStandalone() ? '✓' : '⇧'}</span><div><strong>${isStandalone() ? 'MedRecebe instalado' : 'Adicionar à Tela de Início'}</strong><p>${isStandalone() ? 'Você está usando o modo aplicativo.' : 'Instale pelo Safari para abrir como aplicativo.'}</p></div>${isStandalone() ? '' : '<button class="link-button" data-action="install" type="button">Ver passos</button>'}</div><h2 class="section-title">Ajuda e preferências</h2><div class="card account-links"><button class="account-link" data-nav="feedback" type="button">Enviar feedback <span>›</span></button><a class="account-link" href="./privacidade.html" target="_blank" rel="noopener">Política de Privacidade <span>›</span></a><a class="account-link" href="./termos.html" target="_blank" rel="noopener">Termos de Uso <span>›</span></a><a class="account-link" href="./cancelamento.html" target="_blank" rel="noopener">Política de cancelamento e reembolso <span>›</span></a><a class="account-link" href="./suporte.html" target="_blank" rel="noopener">Ajuda e suporte <span>›</span></a></div><button class="button secondary" data-action="logout" type="button">Sair</button><button class="button danger" data-action="delete-beta-data" type="button">${deleteLabel}</button><p class="muted" style="text-align:center">MedRecebe • versão web 2.2</p></div>`;
 }
 
 function cancellationBackup() {
@@ -1319,7 +1320,6 @@ function bindEvents() {
   $('#billing-logout').addEventListener('click', logout);
 
   $('#header-action').addEventListener('click', () => (currentRoute === 'attendance' ? navigate('home') : currentRoute === 'cancellation' ? navigate('account') : openDrawer()));
-  $('#feedback-shortcut').addEventListener('click', () => navigate('feedback'));
   $('#drawer-close').addEventListener('click', closeDrawer);
   $('#drawer-backdrop').addEventListener('click', closeDrawer);
   $('#logout-button').addEventListener('click', logout);
@@ -1356,6 +1356,7 @@ function handleClick(event) {
     selectedWorkplaceId = targetId;
     attendanceDraft = null;
     editingAttendanceId = '';
+    attendanceHistoryExpanded = false;
     navigate('attendance');
   }
   if (action === 'cancel-attendance') {
@@ -1403,6 +1404,10 @@ function handleClick(event) {
   }
   if (action === 'remove-photo') {
     attendanceDraft.evidence = '';
+    renderAttendance();
+  }
+  if (action === 'toggle-attendance-history') {
+    attendanceHistoryExpanded = !attendanceHistoryExpanded;
     renderAttendance();
   }
   if (action === 'mark-paid') {

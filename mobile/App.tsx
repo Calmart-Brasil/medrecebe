@@ -31,7 +31,7 @@ const TITLES: Record<AppRoute['name'], string> = {
   workplace_form: 'Cadastro do local',
   attendance_form: 'Novo atendimento',
   reconciliation: 'Conciliação',
-  account: 'Conta e segurança',
+  account: 'Mais',
 };
 
 type DrawerRoute = Extract<AppRoute['name'], 'home' | 'dashboard' | 'workplaces' | 'reconciliation' | 'account'>;

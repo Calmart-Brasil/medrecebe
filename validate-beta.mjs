@@ -63,7 +63,7 @@ for (const marker of [
   'Dashboard',
   'Locais e repasses',
   'Conciliação',
-  'Enviar feedback',
+  'Mais',
 ]) assert.ok(appHtml.includes(marker), `app.html sem: ${marker}`);
 
 for (const marker of ['7 dias de garantia', 'R$ 39,90', 'Benefícios', 'Nota Fiscal', 'Cancelamento e reembolso']) {
@@ -91,7 +91,7 @@ assert.ok(
   'appState só pode ser carregado depois da mensagem padrão usada pelo estado vazio',
 );
 assert.ok(!appHtml.includes('Beta local:'), 'o aviso antigo de beta local não deve aparecer na entrada');
-assert.ok(appHtml.includes('styles.css?v=9') && appHtml.includes('app.js?v=16'), 'os arquivos corrigidos precisam de cache busting');
+assert.ok(appHtml.includes('styles.css?v=11') && appHtml.includes('app.js?v=17'), 'os arquivos corrigidos precisam de cache busting');
 for (const marker of ['Tirar foto', 'Galeria', 'attendance-quantity-input', 'recordId', 'attendanceQuantity']) assert.ok(app.includes(marker), `registro em lote sem: ${marker}`);
 assert.equal(institutionDirectory.meta.municipalities, 39, 'o diretório deve cobrir os 39 municípios da RMSP');
 assert.ok(institutionDirectory.meta.total >= 1000, 'o diretório institucional está incompleto');
@@ -156,7 +156,7 @@ for (const [name, document] of [['Landing', landing], ['Aplicativo', `${appHtml}
   }
 }
 
-for (const marker of ['install', 'activate', 'fetch', 'caches.open', 'medrecebe-app-v14', './app.html', 'institution-directory-rmsp.json']) {
+for (const marker of ['install', 'activate', 'fetch', 'caches.open', 'medrecebe-app-v16', './app.html', 'institution-directory-rmsp.json']) {
   assert.ok(worker.includes(marker), `sw.js sem: ${marker}`);
 }
 

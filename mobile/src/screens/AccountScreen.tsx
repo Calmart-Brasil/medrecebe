@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Alert, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { Button, Card, Eyebrow, InlineNotice, PageTitle, Screen, SectionTitle } from '../components/ui';
+import { Button, Card, InlineNotice, PageTitle, Screen, SectionTitle } from '../components/ui';
 import {
   biometricAvailability,
   disableBiometricLogin,
@@ -69,10 +69,7 @@ export function AccountScreen({
 
   return (
     <Screen>
-      <View style={styles.heading}>
-        <Eyebrow>Perfil</Eyebrow>
-        <PageTitle subtitle="Gerencie seu acesso e os dados guardados neste aparelho.">Conta e segurança</PageTitle>
-      </View>
+      <PageTitle>Mais</PageTitle>
 
       <Card style={styles.profileCard}>
         <View style={styles.avatar}>
@@ -132,7 +129,6 @@ export function AccountScreen({
 }
 
 const styles = StyleSheet.create({
-  heading: { gap: 7 },
   profileCard: { alignItems: 'center', flexDirection: 'row', gap: 14 },
   avatar: { alignItems: 'center', backgroundColor: colors.navy, borderRadius: 30, height: 60, justifyContent: 'center', width: 60 },
   avatarText: { color: colors.paper, fontSize: 23, fontWeight: '900' },

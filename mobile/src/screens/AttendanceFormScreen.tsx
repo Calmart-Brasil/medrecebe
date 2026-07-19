@@ -7,7 +7,6 @@ import { createId } from '../data/store';
 import { persistEvidence } from '../services/evidence';
 import {
   calculateDueDate,
-  describePaymentRule,
   formatCurrency,
   formatDate,
   formatDateInput,
@@ -194,16 +193,14 @@ export function AttendanceFormScreen({
           <View style={[styles.checkbox, selected && styles.checkboxSelected]}>{selected ? <Text style={styles.checkmark}>✓</Text> : null}</View>
           <View style={styles.modalityCopy}>
             <Text style={[styles.modalityName, selected && styles.modalityNameSelected]}>{item.name}</Text>
-            <Text style={styles.modalityRule}>{describePaymentRule(item.rule)}</Text>
           </View>
           <View style={styles.modalityPrice}>
             <Text style={styles.modalityValue}>{formatCurrency(item.amountCents)}</Text>
-            <Text style={styles.modalityUnit}>por atendimento</Text>
           </View>
         </Pressable>
         {selected ? (
           <View style={styles.quantityRow}>
-            <Text style={styles.quantityLabel}>Quantidade realizada</Text>
+            <Text style={styles.quantityLabel}>Qtd.</Text>
             <View style={styles.stepper}>
               <Pressable accessibilityLabel={`Diminuir quantidade de ${item.name}`} onPress={() => setQuantity(item.id, quantity - 1)} style={styles.stepperButton}><Text style={styles.stepperButtonText}>−</Text></Pressable>
               <TextInput
@@ -225,18 +222,18 @@ export function AttendanceFormScreen({
 
   return (
     <Screen keyboard>
-      <PageTitle subtitle={workplace.name}>Novo atendimento</PageTitle>
+      <PageTitle>{workplace.name}</PageTitle>
 
       <Field
         keyboardType="number-pad"
-        label="Data do atendimento"
+        label="Data"
         maxLength={10}
         onChangeText={setOccurredAt}
         placeholder="DD/MM/AAAA"
         value={occurredAt}
       />
 
-      <SectionTitle>Comprovante do atendimento</SectionTitle>
+      <SectionTitle>Comprovante</SectionTitle>
       {photoUri ? (
         <Card style={styles.photoCard}>
           <Image source={{ uri: photoUri }} style={styles.photo} />
@@ -248,11 +245,8 @@ export function AttendanceFormScreen({
         </Card>
       ) : (
         <View style={styles.photoPlaceholder}>
-          <View style={styles.cameraIcon}>
-            <Text style={styles.cameraIconText}>▣</Text>
-          </View>
-          <Text style={styles.photoTitle}>Adicione a prova dos atendimentos</Text>
-          <Text style={styles.photoHelp}>Uma única imagem pode comprovar todas as modalidades e quantidades deste registro.</Text>
+          <Text style={styles.photoTitle}>Adicionar comprovante</Text>
+          <Text style={styles.photoHelp}>Uma foto pode incluir vários atendimentos.</Text>
           <View style={styles.photoButtons}>
             <View style={styles.photoButton}>
               <Button onPress={() => void takePhoto()} title="Tirar foto" />
@@ -265,7 +259,6 @@ export function AttendanceFormScreen({
       )}
 
       <SectionTitle>Modalidade de repasse</SectionTitle>
-      <Text style={styles.sectionHelp}>Selecione uma ou mais modalidades e informe a quantidade realizada em cada uma.</Text>
       <View style={styles.modalities}>{activeModalities.map(modalityCard)}</View>
 
       {summaries.filter((item) => item.modality.type === 'recurring').map(({ modality }) => {
@@ -321,7 +314,7 @@ export function AttendanceFormScreen({
         label="Observação (opcional)"
         multiline
         onChangeText={setNotes}
-        placeholder="Inclua somente informações necessárias para identificar ou conciliar o atendimento."
+        placeholder="Adicionar observação"
         value={notes}
       />
 
@@ -329,7 +322,7 @@ export function AttendanceFormScreen({
         <Card style={styles.summaryCard}>
           <View style={styles.summaryRow}>
             <View>
-              <Text style={styles.summaryLabel}>Valor contabilizado</Text>
+              <Text style={styles.summaryLabel}>TOTAL</Text>
               <Text style={styles.summaryCaption}>{totalQuantity} {totalQuantity === 1 ? 'atendimento' : 'atendimentos'}</Text>
             </View>
             <Text style={styles.summaryValue}>{formatCurrency(totalCents)}</Text>
@@ -350,12 +343,8 @@ export function AttendanceFormScreen({
       {error ? <InlineNotice tone="warning">{error}</InlineNotice> : null}
 
       <View style={styles.footerActions}>
-        <View style={styles.footerButton}>
-          <Button disabled={saving} onPress={onCancel} title="Cancelar" variant="secondary" />
-        </View>
-        <View style={styles.footerButton}>
-          <Button loading={saving} onPress={() => void save()} title="Salvar" />
-        </View>
+        <Button loading={saving} onPress={() => void save()} title="Salvar" />
+        <Button disabled={saving} onPress={onCancel} title="Cancelar" variant="ghost" />
       </View>
     </Screen>
   );
@@ -375,8 +364,6 @@ const styles = StyleSheet.create({
     gap: 9,
     padding: 22,
   },
-  cameraIcon: { alignItems: 'center', backgroundColor: colors.blue100, borderRadius: 27, height: 54, justifyContent: 'center', width: 54 },
-  cameraIconText: { color: colors.blue700, fontSize: 26 },
   photoTitle: { color: colors.navy, fontSize: 16, fontWeight: '800', textAlign: 'center' },
   photoHelp: { color: colors.muted, fontSize: 12, lineHeight: 18, maxWidth: 310, textAlign: 'center' },
   photoButtons: { flexDirection: 'row', gap: 9, marginTop: 6, width: '100%' },
@@ -384,7 +371,6 @@ const styles = StyleSheet.create({
   photoCard: { gap: 12, padding: 10 },
   photo: { aspectRatio: 4 / 3, backgroundColor: colors.mist, borderRadius: radius.sm, width: '100%' },
   photoActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'center', paddingHorizontal: 4 },
-  sectionHelp: { color: colors.muted, fontSize: 12, lineHeight: 18, marginTop: -7 },
   modalities: { gap: 9 },
   modality: {
     backgroundColor: colors.paper,
@@ -401,10 +387,8 @@ const styles = StyleSheet.create({
   modalityCopy: { flex: 1, gap: 3 },
   modalityName: { color: colors.ink, fontSize: 14, fontWeight: '800' },
   modalityNameSelected: { color: colors.blue700 },
-  modalityRule: { color: colors.muted, fontSize: 11 },
   modalityPrice: { alignItems: 'flex-end', gap: 2 },
   modalityValue: { color: colors.navy, fontSize: 14, fontWeight: '900' },
-  modalityUnit: { color: colors.muted, fontSize: 9 },
   quantityRow: { alignItems: 'center', borderTopColor: colors.line, borderTopWidth: 1, flexDirection: 'row', gap: 9, padding: 11 },
   quantityLabel: { color: colors.muted, flex: 1, fontSize: 11, fontWeight: '700' },
   stepper: { alignItems: 'center', backgroundColor: colors.paper, borderColor: colors.line, borderRadius: 9, borderWidth: 1, flexDirection: 'row', overflow: 'hidden' },
@@ -422,7 +406,6 @@ const styles = StyleSheet.create({
   summaryLineValue: { color: colors.paper, fontSize: 12, fontWeight: '800' },
   summaryLineDue: { color: '#B9E4FB', fontSize: 10 },
   summaryDivider: { backgroundColor: 'rgba(255,255,255,0.18)', height: 1 },
-  footerActions: { flexDirection: 'row', gap: 10 },
-  footerButton: { flex: 1 },
+  footerActions: { gap: 2 },
   pressed: { opacity: 0.72, transform: [{ scale: 0.99 }] },
 });

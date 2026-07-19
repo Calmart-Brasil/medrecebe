@@ -1,6 +1,6 @@
 import { Alert, StyleSheet, Text, View } from 'react-native';
 
-import { Button, Card, EmptyState, Eyebrow, PageTitle, Screen, SectionTitle } from '../components/ui';
+import { Button, Card, EmptyState, PageTitle, Screen, SectionTitle } from '../components/ui';
 import { formatCurrency, formatDate, isPastOrToday } from '../services/paymentRules';
 import { colors, radius } from '../theme';
 import type { AppData } from '../types';
@@ -50,10 +50,7 @@ export function DashboardScreen({ data, onMarkPaid }: { data: AppData; onMarkPai
 
   return (
     <Screen>
-      <View style={styles.heading}>
-        <Eyebrow>Visão geral</Eyebrow>
-        <PageTitle subtitle="Valores calculados a partir das regras cadastradas em cada modalidade.">Dashboard</PageTitle>
-      </View>
+      <PageTitle>Dashboard</PageTitle>
 
       <Card style={styles.heroCard}>
         <Text style={styles.heroLabel}>Total a receber</Text>
@@ -74,7 +71,27 @@ export function DashboardScreen({ data, onMarkPaid }: { data: AppData; onMarkPai
         </View>
       </Card>
 
-      <SectionTitle>Por local de trabalho</SectionTitle>
+      {dueGroups.length > 0 ? (
+        <>
+          <SectionTitle>Requer sua atenção</SectionTitle>
+          <View style={styles.dueGroups}>
+            {dueGroups.map((group) => (
+              <Card key={group.id} style={styles.dueGroupCard}>
+                <View style={styles.dueGroupCopy}>
+                  <Text style={styles.dueGroupName}>{group.workplaceName}</Text>
+                  <Text style={styles.dueGroupMeta}>Previsto em {formatDate(group.dueAt)} • {group.quantity} atend.</Text>
+                </View>
+                <View style={styles.dueGroupAction}>
+                  <Text style={styles.dueGroupValue}>{formatCurrency(group.totalCents)}</Text>
+                  <Button compact onPress={() => confirmPaid(group)} title="Recebido" variant="secondary" />
+                </View>
+              </Card>
+            ))}
+          </View>
+        </>
+      ) : null}
+
+      <SectionTitle>Por local</SectionTitle>
       {data.workplaces.length === 0 ? (
         <EmptyState description="Cadastre um local e comece a registrar atendimentos." title="Ainda não há dados" />
       ) : (
@@ -95,7 +112,7 @@ export function DashboardScreen({ data, onMarkPaid }: { data: AppData; onMarkPai
                   <View style={styles.workplaceCopy}>
                     <Text style={styles.workplaceName}>{workplace.name}</Text>
                     <Text style={styles.workplaceCount}>
-                      {quantity} {quantity === 1 ? 'atendimento' : 'atendimentos'} a receber
+                      {quantity} {quantity === 1 ? 'atendimento' : 'atendimentos'}
                     </Text>
                   </View>
                   {overdueCount > 0 ? (
@@ -106,11 +123,11 @@ export function DashboardScreen({ data, onMarkPaid }: { data: AppData; onMarkPai
                 </View>
                 <View style={styles.workplaceValues}>
                   <View>
-                    <Text style={styles.valueLabel}>Valor a receber</Text>
+                    <Text style={styles.valueLabel}>A RECEBER</Text>
                     <Text style={styles.value}>{formatCurrency(workplaceTotal)}</Text>
                   </View>
                   <View style={styles.dueBlock}>
-                    <Text style={styles.valueLabel}>Próximo crédito</Text>
+                    <Text style={styles.valueLabel}>PRÓXIMO</Text>
                     <Text style={styles.due}>{nextDue ? formatDate(nextDue) : '—'}</Text>
                   </View>
                 </View>
@@ -120,37 +137,11 @@ export function DashboardScreen({ data, onMarkPaid }: { data: AppData; onMarkPai
         </View>
       )}
 
-      {dueGroups.length > 0 ? (
-        <>
-          <SectionTitle>Confirmar créditos</SectionTitle>
-          <View style={styles.dueGroups}>
-            {dueGroups.map((group) => (
-              <Card key={group.id} style={styles.dueGroupCard}>
-                <View style={styles.dueGroupCopy}>
-                  <Text style={styles.dueGroupName}>{group.workplaceName}</Text>
-                  <Text style={styles.dueGroupMeta}>
-                    Previsto em {formatDate(group.dueAt)} • {group.quantity} {group.quantity === 1 ? 'atendimento' : 'atendimentos'}
-                  </Text>
-                </View>
-                <View style={styles.dueGroupAction}>
-                  <Text style={styles.dueGroupValue}>{formatCurrency(group.totalCents)}</Text>
-                  <Button compact onPress={() => confirmPaid(group)} title="Recebido" variant="secondary" />
-                </View>
-              </Card>
-            ))}
-          </View>
-        </>
-      ) : null}
-
-      <Text style={styles.disclaimer}>
-        Dias úteis consideram fins de semana. Feriados bancários entrarão na etapa de sincronização com o backend.
-      </Text>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  heading: { gap: 7 },
   heroCard: { backgroundColor: colors.navy, borderColor: colors.navy, gap: 5, padding: 20 },
   heroLabel: { color: '#B9E4FB', fontSize: 13, fontWeight: '700' },
   heroValue: { color: colors.paper, fontSize: 34, fontWeight: '900', letterSpacing: -0.8 },
@@ -181,5 +172,4 @@ const styles = StyleSheet.create({
   dueGroupMeta: { color: colors.muted, fontSize: 11, lineHeight: 16 },
   dueGroupAction: { alignItems: 'flex-end', gap: 7 },
   dueGroupValue: { color: colors.ink, fontSize: 15, fontWeight: '900' },
-  disclaimer: { color: colors.muted, fontSize: 11, lineHeight: 16, paddingHorizontal: 6, textAlign: 'center' },
 });

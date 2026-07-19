@@ -1,17 +1,12 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { Button, Card, EmptyState, Eyebrow, PageTitle, Screen, SectionTitle } from '../components/ui';
+import { Button, Card, EmptyState, PageTitle, Screen, SectionTitle } from '../components/ui';
 import { formatCurrency } from '../services/paymentRules';
 import { colors, radius } from '../theme';
 import type { AppData, UserProfile, Workplace } from '../types';
 
-function firstName(name: string): string {
-  return name.trim().split(/\s+/)[0] ?? name;
-}
-
 export function HomeScreen({
   data,
-  profile,
   onSelectWorkplace,
   onAddWorkplace,
 }: {
@@ -24,13 +19,12 @@ export function HomeScreen({
   const pendingTotal = pending.reduce((sum, attendance) => sum + attendance.amountCents, 0);
   const pendingQuantity = pending.reduce((sum, attendance) => sum + Math.max(1, attendance.quantity ?? 1), 0);
   const activeWorkplaces = data.workplaces.filter((workplace) => workplace.active);
+  const lastWorkplaceId = [...data.attendances].sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]?.workplaceId;
+  const orderedWorkplaces = [...activeWorkplaces].sort((a, b) => Number(b.id === lastWorkplaceId) - Number(a.id === lastWorkplaceId));
 
   return (
     <Screen>
-      <View style={styles.heading}>
-        <Eyebrow>Olá, {firstName(profile.name)}</Eyebrow>
-        <PageTitle subtitle="Escolha onde você atendeu para fazer um novo registro.">Registrar atendimento</PageTitle>
-      </View>
+      <PageTitle>Registrar atendimento</PageTitle>
 
       <Card style={styles.summary}>
         <View style={styles.summaryMain}>
@@ -44,17 +38,17 @@ export function HomeScreen({
         </View>
       </Card>
 
-      <SectionTitle>Onde foi o atendimento?</SectionTitle>
+      <SectionTitle>Local do atendimento</SectionTitle>
 
       {activeWorkplaces.length === 0 ? (
         <EmptyState
-          action={<Button compact onPress={onAddWorkplace} title="Cadastrar primeiro local" />}
-          description="Adicione o local, as modalidades, os valores e as regras de pagamento."
+          action={<Button compact onPress={onAddWorkplace} title="Cadastrar local" />}
+          description="Cadastre seu primeiro pagador para começar."
           title="Nenhum local cadastrado"
         />
       ) : (
         <View style={styles.workplaces}>
-          {activeWorkplaces.map((workplace) => {
+          {orderedWorkplaces.map((workplace) => {
             const activeModalities = workplace.modalities.filter((modality) => modality.active);
             const disabled = activeModalities.length === 0;
             return (
@@ -79,7 +73,7 @@ export function HomeScreen({
                     {workplace.address || 'Endereço não informado'}
                   </Text>
                   <Text style={styles.workplaceModes}>
-                    {activeModalities.length} {activeModalities.length === 1 ? 'modalidade ativa' : 'modalidades ativas'}
+                    {workplace.id === lastWorkplaceId ? 'Usado por último' : `${activeModalities.length} ${activeModalities.length === 1 ? 'modalidade' : 'modalidades'}`}
                   </Text>
                 </View>
                 <Text style={styles.chevron}>›</Text>
@@ -91,7 +85,7 @@ export function HomeScreen({
 
       {data.isDemoData ? (
         <View style={styles.demoNotice}>
-          <Text style={styles.demoText}>Você está vendo dados fictícios de demonstração. Eles podem ser editados ou excluídos.</Text>
+          <Text style={styles.demoText}>Demonstração com dados fictícios.</Text>
         </View>
       ) : null}
     </Screen>
@@ -99,7 +93,6 @@ export function HomeScreen({
 }
 
 const styles = StyleSheet.create({
-  heading: { gap: 7 },
   summary: { alignItems: 'center', backgroundColor: colors.navy, borderColor: colors.navy, flexDirection: 'row' },
   summaryMain: { flex: 1, gap: 4 },
   summaryLabel: { color: '#B9E4FB', fontSize: 12, fontWeight: '700', textTransform: 'uppercase' },
