@@ -94,7 +94,7 @@ assert.ok(
   'appState só pode ser carregado depois da mensagem padrão usada pelo estado vazio',
 );
 assert.ok(!appHtml.includes('Beta local:'), 'o aviso antigo de beta local não deve aparecer na entrada');
-assert.ok(appHtml.includes('styles.css?v=13') && appHtml.includes('cloud.js?v=6') && appHtml.includes('app.js?v=19'), 'os arquivos corrigidos precisam de cache busting');
+assert.ok(appHtml.includes('styles.css?v=14') && appHtml.includes('cloud.js?v=6') && appHtml.includes('app.js?v=20'), 'os arquivos corrigidos precisam de cache busting');
 for (const marker of ['aria-label="Home"', 'aria-label="Registro dos locais e modalidades"', 'aria-label="Registro de atendimentos"', 'aria-label="Conciliação"']) assert.ok(appHtml.includes(marker), `barra inferior sem: ${marker}`);
 const bottomNavigation = appHtml.match(/<nav class="bottom-nav"[\s\S]*?<\/nav>/)?.[0] || '';
 assert.equal((bottomNavigation.match(/<button data-nav=/g) || []).length, 4, 'a barra inferior deve manter exatamente quatro destinos');
@@ -102,6 +102,7 @@ assert.ok(bottomNavigation.indexOf('aria-label="Home"') < bottomNavigation.index
 assert.ok(bottomNavigation.indexOf('aria-label="Registro dos locais e modalidades"') < bottomNavigation.indexOf('aria-label="Registro de atendimentos"'), 'Locais e modalidades deve vir antes de atendimentos');
 assert.ok(bottomNavigation.indexOf('aria-label="Registro de atendimentos"') < bottomNavigation.indexOf('aria-label="Conciliação"'), 'Conciliação deve ser o último destino');
 for (const marker of ['Tirar foto', 'Galeria', 'attendance-quantity-input', 'recordId', 'attendanceQuantity']) assert.ok(app.includes(marker), `registro em lote sem: ${marker}`);
+for (const marker of ['dashboardAttendanceDetails', 'dashboard-expandable', 'dashboard-status-row', 'Marcar grupo como recebido', 'Registrar neste local']) assert.ok(app.includes(marker) || appCss.includes(marker), `Dashboard expansível sem: ${marker}`);
 assert.equal(institutionDirectory.meta.municipalities, 39, 'o diretório deve cobrir os 39 municípios da RMSP');
 assert.ok(institutionDirectory.meta.total >= 1000, 'o diretório institucional está incompleto');
 assert.ok(institutionDirectory.meta.countsByCategory.hospital >= 500, 'o diretório hospitalar está incompleto');
@@ -170,7 +171,7 @@ for (const [name, document] of [['Landing', landing], ['Aplicativo', `${appHtml}
   }
 }
 
-for (const marker of ['install', 'activate', 'fetch', 'caches.open', 'medrecebe-app-v18', './app.html', 'institution-directory-rmsp.json']) {
+for (const marker of ['install', 'activate', 'fetch', 'caches.open', 'medrecebe-app-v19', './app.html', 'institution-directory-rmsp.json']) {
   assert.ok(worker.includes(marker), `sw.js sem: ${marker}`);
 }
 

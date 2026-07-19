@@ -1052,13 +1052,37 @@ function renderHome() {
   </div>`;
 }
 
+function dashboardAttendanceDetails(attendances, { showWorkplace = false } = {}) {
+  if (!attendances.length) return '<p class="dashboard-detail-empty">Nenhum atendimento neste grupo.</p>';
+  return `<div class="dashboard-detail-list">${[...attendances]
+    .sort((a, b) => String(a.dueAt).localeCompare(String(b.dueAt)))
+    .map((attendance) => {
+      const workplace = appState.workplaces.find((item) => item.id === attendance.workplaceId);
+      const context = [
+        showWorkplace ? workplace?.name : '',
+        `Realizado em ${displayDate(attendance.occurredAt)}`,
+        attendanceStatusLabel(attendance),
+        attendance.patientReference || '',
+      ].filter(Boolean).join(' • ');
+      return `<div class="dashboard-detail-row"><span><strong>${attendanceQuantity(attendance)} × ${escapeHtml(attendance.modalityName)}</strong><small>${escapeHtml(context)}</small>${attendance.evidenceRemoteUrl ? `<a href="${escapeHtml(attendance.evidenceRemoteUrl)}" target="_blank" rel="noopener">Abrir comprovante</a>` : ''}</span><b>${currency(attendance.amountCents)}</b></div>`;
+    })
+    .join('')}</div>`;
+}
+
 function renderDashboard() {
   const receivables = appState.attendances.filter((attendance) => attendance.status !== 'paid');
   const pending = receivables.filter((attendance) => attendance.status === 'pending');
   const overdue = pending.filter((attendance) => isPast(attendance.dueAt));
   const dueToday = pending.filter((attendance) => isDueToday(attendance.dueAt));
+  const upcoming = pending.filter((attendance) => !isPast(attendance.dueAt) && !isDueToday(attendance.dueAt));
   const inReconciliation = receivables.filter((attendance) => attendance.status === 'in_reconciliation');
   const total = receivables.reduce((sum, attendance) => sum + attendance.amountCents, 0);
+  const statusBreakdown = [
+    ['A vencer', upcoming],
+    ['Vence hoje', dueToday],
+    ['Vencidos', overdue],
+    ['Em conciliação', inReconciliation],
+  ].map(([label, items]) => `<div class="dashboard-status-row"><span><strong>${label}</strong><small>${attendanceCount(items)} ${attendanceCount(items) === 1 ? 'atendimento' : 'atendimentos'}</small></span><b>${currency(items.reduce((sum, item) => sum + item.amountCents, 0))}</b></div>`).join('');
   const workplaceCards = appState.workplaces
     .map((workplace) => {
       const items = receivables.filter((attendance) => attendance.workplaceId === workplace.id);
@@ -1066,17 +1090,20 @@ function renderDashboard() {
       const workplaceTotal = items.reduce((sum, attendance) => sum + attendance.amountCents, 0);
       const quantity = attendanceCount(items);
       const overdueCount = attendanceCount(items.filter((attendance) => attendance.status === 'pending' && isPast(attendance.dueAt)));
-      return `<article class="card workplace-summary"><div class="card-head"><span class="round-icon">⌂</span><div><h3>${escapeHtml(workplace.name)}</h3><p>${quantity} ${quantity === 1 ? 'atendimento' : 'atendimentos'}</p></div>${overdueCount ? `<span class="badge overdue">${overdueCount} venc.</span>` : ''}</div><div class="value-row"><span><small>A RECEBER</small><strong>${currency(workplaceTotal)}</strong></span><span><small>PRÓXIMO</small><b>${nextDue ? displayDate(nextDue) : '—'}</b></span></div></article>`;
+      return `<details class="card workplace-summary dashboard-expandable"><summary><div class="card-head"><span class="round-icon">⌂</span><div><h3>${escapeHtml(workplace.name)}</h3><p>${quantity} ${quantity === 1 ? 'atendimento' : 'atendimentos'} • Toque para detalhar</p></div>${overdueCount ? `<span class="badge overdue">${overdueCount} venc.</span>` : ''}</div><div class="value-row"><span><small>A RECEBER</small><strong>${currency(workplaceTotal)}</strong></span><span><small>MAIS PRÓXIMO</small><b>${nextDue ? displayDate(nextDue) : '—'}</b></span></div></summary><div class="dashboard-expanded-content"><h4>Atendimentos em aberto</h4>${dashboardAttendanceDetails(items)}<button class="button secondary small" data-action="open-attendance" data-id="${workplace.id}" type="button">Registrar neste local</button></div></details>`;
     })
     .join('');
   const dueGroups = groupDueDates(pending);
   const dueCards = dueGroups
-    .map((group) => `<article class="card location-card"><span class="location-copy"><strong>${escapeHtml(group.workplaceName)}</strong><small>${isDueToday(group.dueAt) ? 'Vence hoje' : `Vencido em ${displayDate(group.dueAt)}`} • ${group.quantity} atend.</small><em>${currency(group.totalCents)}</em></span><button class="button secondary small" data-action="mark-paid" data-ids="${group.ids.join(',')}" type="button">Recebido</button></article>`)
+    .map((group) => {
+      const items = pending.filter((attendance) => group.ids.includes(attendance.id));
+      return `<details class="card dashboard-expandable due-expandable"><summary class="location-card"><span class="location-copy"><strong>${escapeHtml(group.workplaceName)}</strong><small>${isDueToday(group.dueAt) ? 'Vence hoje' : `Vencido em ${displayDate(group.dueAt)}`} • ${group.quantity} atend. • Toque para detalhar</small><em>${currency(group.totalCents)}</em></span></summary><div class="dashboard-expanded-content">${dashboardAttendanceDetails(items)}<button class="button secondary small" data-action="mark-paid" data-ids="${group.ids.join(',')}" type="button">Marcar grupo como recebido</button></div></details>`;
+    })
     .join('');
 
   screen.innerHTML = `<div class="screen-stack">
     ${pageHeading('', 'Dashboard', '')}
-    <div class="dashboard-overview"><div class="card summary-card"><div style="width:100%"><span class="summary-main"><small>TOTAL A RECEBER</small><strong>${currency(total)}</strong><span class="desktop-summary-note">Atendimentos em aberto</span></span><div class="metrics"><span class="metric"><strong>${attendanceCount(pending)}</strong><small>EM ABERTO</small></span><span class="metric"><strong>${attendanceCount(dueToday)}</strong><small>VENCE HOJE</small></span><span class="metric overdue"><strong>${attendanceCount(overdue)}</strong><small>VENCIDOS</small></span><span class="metric"><strong>${attendanceCount(inReconciliation)}</strong><small>EM CONCILIAÇÃO</small></span></div></div></div><article class="card dashboard-insight"><span class="round-icon">⇄</span><small>VENCIDOS</small><strong>${currency(overdue.reduce((sum, item) => sum + item.amountCents, 0))}</strong><button class="button secondary small" data-nav="reconciliation" type="button">Conciliar</button></article></div>
+    <div class="dashboard-overview"><details class="card summary-card dashboard-expandable dashboard-total-card"><summary><div><span class="summary-main"><small>TOTAL A RECEBER</small><strong>${currency(total)}</strong><span class="desktop-summary-note">Toque para ver a composição</span></span><div class="metrics"><span class="metric"><strong>${attendanceCount(pending)}</strong><small>EM ABERTO</small></span><span class="metric"><strong>${attendanceCount(dueToday)}</strong><small>VENCE HOJE</small></span><span class="metric overdue"><strong>${attendanceCount(overdue)}</strong><small>VENCIDOS</small></span><span class="metric"><strong>${attendanceCount(inReconciliation)}</strong><small>EM CONCILIAÇÃO</small></span></div></div></summary><div class="dashboard-expanded-content dashboard-status-list">${statusBreakdown}</div></details><details class="card dashboard-insight dashboard-expandable"><summary><span class="round-icon">⇄</span><small>VENCIDOS</small><strong>${currency(overdue.reduce((sum, item) => sum + item.amountCents, 0))}</strong><span class="dashboard-tap-hint">Ver detalhes</span></summary><div class="dashboard-expanded-content">${dashboardAttendanceDetails(overdue, { showWorkplace: true })}<button class="button secondary small" data-nav="reconciliation" type="button">Abrir conciliação</button></div></details></div>
     <div class="dashboard-columns">${dueCards ? `<section class="attention-panel"><h2 class="section-title">Requer sua atenção</h2><div class="list due-list">${dueCards}</div></section>` : ''}<section class="locations-panel"><h2 class="section-title">Por local</h2><div class="list">${workplaceCards || emptyCard('Ainda não há dados', 'Cadastre um local para começar.')}</div></section></div>
   </div>`;
 }

@@ -244,6 +244,66 @@ input:focus, select:focus, textarea:focus { border-color: var(--blue-600); box-s
 .value-row strong { color: var(--ink); font-size: 20px; }
 .value-row b { color: var(--blue-700); font-size: 13px; }
 
+.dashboard-expandable { padding: 0; overflow: hidden; }
+.dashboard-expandable > summary { position: relative; cursor: pointer; list-style: none; }
+.dashboard-expandable > summary::-webkit-details-marker { display: none; }
+.dashboard-expandable > summary::after {
+  content: '⌄';
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  color: var(--blue-700);
+  font-size: 18px;
+  font-weight: 850;
+  transition: transform .18s ease;
+}
+.dashboard-expandable[open] > summary::after { transform: rotate(180deg); }
+.dashboard-expandable > summary:focus-visible { outline: 3px solid rgb(86 160 232 / 30%); outline-offset: -3px; }
+.dashboard-total-card { display: block; }
+.dashboard-total-card > summary { padding: 16px 42px 16px 16px; }
+.dashboard-total-card > summary::after { color: #b9e4fb; }
+.dashboard-expandable.workplace-summary > summary { padding: 16px 42px 16px 16px; }
+.due-expandable > summary { padding: 16px 42px 16px 16px; }
+.dashboard-insight > summary { display: grid; gap: 7px; padding: 16px 42px 16px 16px; }
+.dashboard-tap-hint { color: var(--blue-700); font-size: 10px; font-weight: 800; }
+.dashboard-expanded-content {
+  display: grid;
+  gap: 11px;
+  padding: 0 16px 16px;
+  border-top: 1px solid var(--line);
+}
+.dashboard-expanded-content h4 { margin: 13px 0 0; color: var(--navy); font-size: 12px; }
+.dashboard-detail-list { display: grid; gap: 0; }
+.dashboard-detail-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--line);
+}
+.dashboard-detail-row:last-child { border-bottom: 0; }
+.dashboard-detail-row > span { display: grid; gap: 3px; min-width: 0; }
+.dashboard-detail-row strong { color: var(--ink); font-size: 11px; }
+.dashboard-detail-row small { color: var(--muted); font-size: 9px; line-height: 1.4; }
+.dashboard-detail-row a { color: var(--blue-700); font-size: 9px; font-weight: 800; }
+.dashboard-detail-row b { color: var(--navy); font-size: 11px; white-space: nowrap; }
+.dashboard-detail-empty { margin: 12px 0 0; color: var(--muted); font-size: 11px; }
+.dashboard-status-list { border-color: rgb(255 255 255 / 18%); }
+.dashboard-status-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 11px 0;
+  border-bottom: 1px solid rgb(255 255 255 / 14%);
+}
+.dashboard-status-row:last-child { border-bottom: 0; }
+.dashboard-status-row span { display: grid; gap: 2px; }
+.dashboard-status-row strong, .dashboard-status-row b { color: white; font-size: 11px; }
+.dashboard-status-row small { color: #b9e4fb; font-size: 9px; }
+.dashboard-total-card[open] { align-self: start; }
+
 .badge { padding: 5px 8px; border-radius: 999px; background: var(--green-soft); color: var(--green); font-size: 9px; font-weight: 850; }
 .badge.inactive { background: var(--mist); color: var(--muted); }
 .badge.overdue { background: var(--red-soft); color: var(--red); }
@@ -537,7 +597,7 @@ label, .drawer nav button { font-size: 14px; }
   body.web-plan .overview-grid .summary-card { min-height: 154px; }
   body.web-plan .desktop-stat, body.web-plan .desktop-action { display: flex; align-items: center; gap: 15px; min-height: 154px; text-align: left; }
   body.web-plan .desktop-stat > div, body.web-plan .desktop-action > div { display: grid; gap: 3px; }
-  body.web-plan .desktop-stat small, body.web-plan .desktop-action small, body.web-plan .dashboard-insight > small { color: var(--muted); font-size: 9px; font-weight: 850; letter-spacing: .8px; }
+  body.web-plan .desktop-stat small, body.web-plan .desktop-action small, body.web-plan .dashboard-insight > summary > small { color: var(--muted); font-size: 9px; font-weight: 850; letter-spacing: .8px; }
   body.web-plan .desktop-stat strong, body.web-plan .desktop-action strong { color: var(--deep); font-size: 22px; }
   body.web-plan .desktop-stat p, body.web-plan .desktop-action p, body.web-plan .dashboard-insight p { margin: 0; color: var(--muted); font-size: 11px; }
   body.web-plan .desktop-action { border-style: dashed; cursor: pointer; }
@@ -551,9 +611,9 @@ label, .drawer nav button { font-size: 14px; }
   body.web-plan .location-copy strong { font-size: 15px; }
   body.web-plan .location-copy small, body.web-plan .location-copy em { font-size: 11px; }
   body.web-plan .dashboard-overview { grid-template-columns: minmax(0,2fr) minmax(270px,.7fr); gap: 16px; }
-  body.web-plan .dashboard-insight { display: grid; align-content: center; gap: 7px; }
-  body.web-plan .dashboard-insight .round-icon { margin-bottom: 4px; }
-  body.web-plan .dashboard-insight > strong { color: var(--deep); font-size: 27px; }
+  body.web-plan .dashboard-insight { display: grid; align-content: start; gap: 0; }
+  body.web-plan .dashboard-insight > summary .round-icon { margin-bottom: 4px; }
+  body.web-plan .dashboard-insight > summary > strong { color: var(--deep); font-size: 27px; }
   body.web-plan .dashboard-insight .button { margin-top: 5px; }
   body.web-plan .dashboard-columns { grid-template-columns: minmax(0,1.35fr) minmax(330px,.65fr); gap: 24px; align-items: start; }
   body.web-plan .dashboard-columns > section { display: grid; gap: 15px; }
