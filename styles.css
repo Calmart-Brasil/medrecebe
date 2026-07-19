@@ -382,11 +382,10 @@ input:focus, select:focus, textarea:focus { border-color: var(--blue-600); box-s
   background: rgb(255 255 255 / 96%);
   backdrop-filter: blur(16px);
 }
-.bottom-nav button { display: grid; place-items: center; gap: 1px; border: 0; background: transparent; color: var(--muted); font-size: 9px; font-weight: 750; }
-.bottom-nav button span { font-size: 20px; line-height: 1; }
+.bottom-nav button { display: grid; place-items: center; align-content: center; gap: 3px; min-width: 0; padding: 4px 2px; border: 0; background: transparent; color: var(--muted); font-weight: 750; }
+.bottom-nav button svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.bottom-nav button small { overflow: hidden; max-width: 100%; font-size: 9px; line-height: 1.1; text-overflow: ellipsis; white-space: nowrap; }
 .bottom-nav button.active { color: var(--blue-700); }
-body[data-route="attendance"] .bottom-nav { display: none; }
-body[data-route="attendance"] #screen { padding-bottom: calc(28px + env(safe-area-inset-bottom)); }
 
 .drawer-backdrop { position: fixed; z-index: 50; inset: 0; background: rgb(10 24 38 / 48%); }
 .drawer {

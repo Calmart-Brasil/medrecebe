@@ -17,7 +17,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="styles.css?v=12" />
+    <link rel="stylesheet" href="styles.css?v=13" />
   </head>
   <body>
     <noscript>Ative o JavaScript para usar o MedRecebe.</noscript>
@@ -85,10 +85,10 @@
       </header>
       <main id="screen" tabindex="-1"></main>
       <nav class="bottom-nav" aria-label="Navegação rápida">
-        <button data-nav="home" type="button"><span>＋</span>Registrar</button>
-        <button data-nav="dashboard" type="button"><span>▦</span>Dashboard</button>
-        <button data-nav="reconciliation" type="button"><span>⇄</span>Conciliar</button>
-        <button data-nav="account" type="button"><span>•••</span>Mais</button>
+        <button data-nav="dashboard" aria-label="Home" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 10.5 12 3.8l8.5 6.7v9.2h-6v-5.6h-5v5.6h-6z"/></svg><small>Home</small></button>
+        <button data-nav="workplaces" aria-label="Registro dos locais e modalidades" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V6.5h10V20M14 10h6v10M7.5 10h3M7.5 13.5h3M7.5 17h3M17 13.5h1M17 17h1M2.5 20h19"/></svg><small>Locais</small></button>
+        <button data-nav="home" aria-label="Registro de atendimentos" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4.5h8M9 3v3M15 3v3M6 5h12v16H6zM9 11h6M12 8v6M9 17h6"/></svg><small>Atendimentos</small></button>
+        <button data-nav="reconciliation" aria-label="Conciliação" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h13M14 5l3 3-3 3M20 16H7M10 13l-3 3 3 3"/></svg><small>Conciliação</small></button>
       </nav>
     </section>
 
@@ -119,6 +119,6 @@
 
     <script>document.write('<script src="runtime-config.js?v=' + Date.now() + '"><\/script>');</script>
     <script src="cloud.js?v=6"></script>
-    <script src="app.js?v=18" defer></script>
+    <script src="app.js?v=19" defer></script>
   </body>
 </html>

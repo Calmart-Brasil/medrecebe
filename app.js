@@ -13,7 +13,7 @@ const modalRoot = $('#modal-root');
 const cloud = window.MedRecebeCloud;
 
 let authMode = 'login';
-let currentRoute = 'home';
+let currentRoute = 'dashboard';
 let selectedWorkplaceId = '';
 let selectedReconciliationGroup = '';
 let selectedChannelWorkplace = '';
@@ -2049,7 +2049,7 @@ function logout() {
   localStorage.removeItem(SESSION_KEY);
   activeStateKey = APP_KEY;
   appState = loadState(APP_KEY);
-  currentRoute = 'home';
+  currentRoute = 'dashboard';
   showLogin();
 }
 
