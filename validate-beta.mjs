@@ -81,7 +81,7 @@ for (const marker of [
   "navigator.serviceWorker.register('./sw.js')",
   'calculateDueDate',
   'compressImage',
-  'prepareReconciliationEmail',
+  'shareReconciliation',
   'feedback-form',
   'localStorage',
   'isValidCpf',
@@ -97,7 +97,7 @@ assert.ok(
   'appState só pode ser carregado depois da mensagem padrão usada pelo estado vazio',
 );
 assert.ok(!appHtml.includes('Beta local:'), 'o aviso antigo de beta local não deve aparecer na entrada');
-assert.ok(appHtml.includes('styles.css?v=16') && appHtml.includes('cloud.js?v=6') && appHtml.includes('reconciliation-pdf.js?v=1') && appHtml.includes('app.js?v=22'), 'os arquivos corrigidos precisam de cache busting');
+assert.ok(appHtml.includes('styles.css?v=17') && appHtml.includes('cloud.js?v=6') && appHtml.includes('reconciliation-pdf.js?v=2') && appHtml.includes('app.js?v=23'), 'os arquivos corrigidos precisam de cache busting');
 for (const marker of ['aria-label="Home"', 'aria-label="Registro dos locais e modalidades"', 'aria-label="Registro de atendimentos"', 'aria-label="Conciliação"']) assert.ok(appHtml.includes(marker), `barra inferior sem: ${marker}`);
 const bottomNavigation = appHtml.match(/<nav class="bottom-nav"[\s\S]*?<\/nav>/)?.[0] || '';
 assert.equal((bottomNavigation.match(/<button data-nav=/g) || []).length, 4, 'a barra inferior deve manter exatamente quatro destinos');
@@ -107,10 +107,11 @@ assert.ok(bottomNavigation.indexOf('aria-label="Registro de atendimentos"') < bo
 for (const marker of ['Tirar foto', 'Galeria', 'attendance-quantity-input', 'recordId', 'attendanceQuantity']) assert.ok(app.includes(marker), `registro em lote sem: ${marker}`);
 for (const marker of ['dashboardAttendanceDetails', 'dashboard-expandable', 'dashboard-status-row', 'Marcar grupo como recebido', 'Registrar neste local']) assert.ok(app.includes(marker) || appCss.includes(marker), `Dashboard expansível sem: ${marker}`);
 for (const marker of ['pendingInvoiceWorkplaceId', 'create-workplace-from-invoice', 'delete-invoice', 'reconcileStoredInvoice', 'Cadastrar local pela Nota Fiscal']) assert.ok(app.includes(marker), `fluxo de Nota Fiscal sem: ${marker}`);
-for (const marker of ['invoice-delete', 'body[data-route="attendance"]', 'quantity-row > strong']) assert.ok(appCss.includes(marker), `interface responsiva ou remoção de anexo sem: ${marker}`);
-for (const marker of ['prepareReconciliationWhatsApp', 'share-reconciliation-whatsapp', 'reconciliationAttachments', 'Compartilhar PDF no WhatsApp']) assert.ok(app.includes(marker), `conciliação por WhatsApp sem: ${marker}`);
-for (const marker of ['MedRecebePdf', 'Solicitação de conciliação de repasses', '/Subtype /Image', 'jpegDimensions']) assert.ok(reconciliationPdf.includes(marker), `PDF consolidado sem: ${marker}`);
-assert.ok(appCss.includes('.button.whatsapp') && appCss.includes('.reconciliation-send-actions'), 'interface sem ações de compartilhamento da conciliação');
+for (const marker of ['invoice-delete', 'body[data-route="attendance"]', 'touch-action: pan-y', 'quantity-row > strong']) assert.ok(appCss.includes(marker), `interface responsiva ou remoção de anexo sem: ${marker}`);
+for (const marker of ['shareReconciliation', 'exportReconciliationPdf', 'share-reconciliation', 'export-reconciliation-pdf', 'reconciliationAttachments', 'Enviar conciliação', 'Exportar PDF']) assert.ok(app.includes(marker), `conciliação unificada sem: ${marker}`);
+for (const forbidden of ['Compartilhar PDF no WhatsApp', 'Preparar solicitação no e-mail', 'A Nota Fiscal fica protegida e disponível nos seus outros dispositivos.', 'O PDF reúne a mensagem, os valores, o detalhamento e os comprovantes.']) assert.ok(!app.includes(forbidden), `conciliação ainda contém texto removido: ${forbidden}`);
+for (const marker of ['MedRecebePdf', 'Solicitação de conferência financeira', 'Resumo financeiro por modalidade', '/Subtype /Image', '/Subtype /Link', 'https://medrecebe.com.br', 'jpegDimensions']) assert.ok(reconciliationPdf.includes(marker), `PDF consolidado sem: ${marker}`);
+assert.ok(appCss.includes('.reconciliation-send-actions') && appCss.includes('.reconciliation-export'), 'interface sem ações responsivas da conciliação');
 assert.equal(institutionDirectory.meta.municipalities, 39, 'o diretório deve cobrir os 39 municípios da RMSP');
 assert.ok(institutionDirectory.meta.total >= 1000, 'o diretório institucional está incompleto');
 assert.ok(institutionDirectory.meta.countsByCategory.hospital >= 500, 'o diretório hospitalar está incompleto');
@@ -168,7 +169,8 @@ for (const marker of ['unpdf@1.6.2', 'matchedPayerIds', 'amountCents', '5 * 1024
 for (const marker of ['expo-sharing', 'supportsFileWithMaxCount']) assert.ok(mobileConfig.includes(marker), `extensão iOS sem: ${marker}`);
 for (const marker of ['getDocumentProxy', 'reconcileInvoice', 'payerMatches', 'isRecognizedInvoice', 'isInvoice: true']) assert.ok(mobileInvoice.includes(marker), `leitura nativa sem: ${marker}`);
 for (const marker of ['PDFDocument', 'manipulateAsync', 'createReconciliationPdf', 'embedJpg']) assert.ok(mobileReconciliationPdf.includes(marker), `PDF nativo sem: ${marker}`);
-for (const marker of ['Sharing.shareAsync', 'shareOnWhatsApp', 'Compartilhar PDF no WhatsApp', 'Sim, marcar como enviada']) assert.ok(mobileReconciliationScreen.includes(marker), `compartilhamento nativo sem: ${marker}`);
+for (const marker of ['Sharing.shareAsync', 'shareReconciliation', 'Enviar conciliação', 'Sim, marcar como enviada']) assert.ok(mobileReconciliationScreen.includes(marker), `compartilhamento nativo sem: ${marker}`);
+assert.ok(!mobileReconciliationScreen.includes('MailComposer') && !mobileReconciliationScreen.includes('Compartilhar PDF no WhatsApp'), 'o mobile ainda expõe canais específicos');
 for (const [name, document, markers] of [
   ['Termos', terms, ['garantia de 7 dias', 'R$ 39,90', 'plano único']],
   ['Privacidade', privacy, ['Controlador', 'Direitos do titular', 'Notas Fiscais']],
@@ -181,7 +183,7 @@ for (const [name, document] of [['Landing', landing], ['Aplicativo', `${appHtml}
   }
 }
 
-for (const marker of ['install', 'activate', 'fetch', 'caches.open', 'medrecebe-app-v21', './app.html', 'reconciliation-pdf.js?v=1', 'institution-directory-rmsp.json']) {
+for (const marker of ['install', 'activate', 'fetch', 'caches.open', 'medrecebe-app-v22', './app.html', 'reconciliation-pdf.js?v=2', 'institution-directory-rmsp.json']) {
   assert.ok(worker.includes(marker), `sw.js sem: ${marker}`);
 }
 

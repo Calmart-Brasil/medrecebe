@@ -2,8 +2,23 @@
   const PAGE_WIDTH = 595.28;
   const PAGE_HEIGHT = 841.89;
   const MARGIN = 42;
-  const HEADER_BOTTOM = 752;
-  const FOOTER_TOP = 42;
+  const CONTENT_WIDTH = PAGE_WIDTH - MARGIN * 2;
+  const HEADER_BOTTOM = 746;
+  const FOOTER_TOP = 45;
+  const SITE_URL = 'https://medrecebe.com.br';
+
+  const COLORS = Object.freeze({
+    navy: '0.039 0.122 0.267',
+    blue: '0 0.302 0.714',
+    sky: '0.337 0.627 0.910',
+    green: '0.169 0.714 0.451',
+    ice: '0.851 0.906 0.973',
+    mist: '0.937 0.957 0.984',
+    ink: '0.067 0.102 0.169',
+    muted: '0.353 0.392 0.447',
+    white: '1 1 1',
+    danger: '0.722 0.165 0.204',
+  });
 
   const CP1252 = new Map([
     [0x2013, 0x96], [0x2014, 0x97], [0x2018, 0x91], [0x2019, 0x92],
@@ -71,9 +86,7 @@
         if (!objects[id]) throw new Error(`Objeto PDF ${id} ausente.`);
         offsets[id] = length;
         const object = concatBytes([
-          bytesFromBinary(`${id} 0 obj\n`),
-          objects[id],
-          bytesFromBinary('\nendobj\n'),
+          bytesFromBinary(`${id} 0 obj\n`), objects[id], bytesFromBinary('\nendobj\n'),
         ]);
         parts.push(object);
         length += object.length;
@@ -88,14 +101,17 @@
     return { add, reserve, set, build };
   }
 
-  function textCommand(value, x, y, size = 10, bold = false, color = '0.067 0.102 0.169') {
+  function textCommand(value, x, y, size = 10, bold = false, color = COLORS.ink) {
     return `BT /${bold ? 'F2' : 'F1'} ${size} Tf ${color} rg ${x.toFixed(2)} ${y.toFixed(2)} Td (${pdfText(value)}) Tj ET\n`;
   }
 
+  function fillRect(x, y, width, height, color) {
+    return `q ${color} rg ${x} ${y} ${width} ${height} re f Q\n`;
+  }
+
   function wrapText(value, maxCharacters) {
-    const paragraphs = String(value ?? '').replace(/\r/g, '').split('\n');
     const result = [];
-    paragraphs.forEach((paragraph) => {
+    String(value ?? '').replace(/\r/g, '').split('\n').forEach((paragraph) => {
       const words = paragraph.trim().split(/\s+/).filter(Boolean);
       if (!words.length) {
         result.push('');
@@ -118,20 +134,28 @@
     return result;
   }
 
-  function headerCommands(subtitle) {
+  function truncate(value, maxCharacters) {
+    const text = String(value ?? '');
+    return text.length > maxCharacters ? `${text.slice(0, Math.max(1, maxCharacters - 1))}…` : text;
+  }
+
+  function headerCommands(label) {
     return [
-      'q 0.039 0.122 0.267 rg 0 752 595.28 89.89 re f Q\n',
-      'q 0.169 0.714 0.451 rg 0 752 8 89.89 re f Q\n',
-      textCommand('MedRecebe', MARGIN, 807, 19, true, '1 1 1'),
-      textCommand(subtitle, MARGIN, 781, 10, false, '0.851 0.906 0.973'),
+      fillRect(0, HEADER_BOTTOM, PAGE_WIDTH, PAGE_HEIGHT - HEADER_BOTTOM, COLORS.navy),
+      fillRect(0, HEADER_BOTTOM, 8, PAGE_HEIGHT - HEADER_BOTTOM, COLORS.green),
+      textCommand('MedRecebe', MARGIN, 807, 20, true, COLORS.white),
+      textCommand('Gestão de recebíveis médicos', MARGIN, 786, 9, false, COLORS.ice),
+      textCommand(label.toUpperCase(), 344, 807, 8, true, COLORS.sky),
+      textCommand('medrecebe.com.br', 419, 786, 9, true, COLORS.white),
     ];
   }
 
-  function footerCommands(page, total) {
+  function footerCommands(page, total, generatedAt) {
     return [
-      'q 0.851 0.906 0.973 RG 42 42 m 553.28 42 l S Q\n',
-      textCommand('Documento de conferência financeira gerado pelo MedRecebe', MARGIN, 25, 8, false, '0.353 0.392 0.447'),
-      textCommand(`${page}/${total}`, PAGE_WIDTH - MARGIN - 20, 25, 8, true, '0.039 0.122 0.267'),
+      `q ${COLORS.ice} RG ${MARGIN} ${FOOTER_TOP} m ${PAGE_WIDTH - MARGIN} ${FOOTER_TOP} l S Q\n`,
+      textCommand('medrecebe.com.br', MARGIN, 26, 8, true, COLORS.blue),
+      textCommand(`Gerado em ${generatedAt || ''}`, 212, 26, 7.5, false, COLORS.muted),
+      textCommand(`Página ${page} de ${total}`, PAGE_WIDTH - MARGIN - 58, 26, 8, true, COLORS.navy),
     ];
   }
 
@@ -151,10 +175,7 @@
       const length = (bytes[offset] << 8) | bytes[offset + 1];
       if (length < 2 || offset + length > bytes.length) break;
       if (startOfFrame.has(marker)) {
-        return {
-          height: (bytes[offset + 3] << 8) | bytes[offset + 4],
-          width: (bytes[offset + 5] << 8) | bytes[offset + 6],
-        };
+        return { height: (bytes[offset + 3] << 8) | bytes[offset + 4], width: (bytes[offset + 5] << 8) | bytes[offset + 6] };
       }
       offset += length;
     }
@@ -163,60 +184,122 @@
 
   function build(input) {
     const pages = [];
-    let commands = headerCommands('Solicitação de conciliação de repasses');
-    let y = 724;
+    let commands = headerCommands('Conciliação de repasses');
+    let y = 714;
 
-    const flushTextPage = () => {
+    const flushTextPage = (continuationLabel = 'Conciliação de repasses • continuação') => {
       pages.push({ commands });
-      commands = headerCommands('Solicitação de conciliação de repasses — continuação');
-      y = 724;
+      commands = headerCommands(continuationLabel);
+      y = 714;
     };
-    const ensureSpace = (height) => {
-      if (y - height < FOOTER_TOP + 18) flushTextPage();
+    const ensureSpace = (height, continuationSection) => {
+      if (y - height < FOOTER_TOP + 20) {
+        flushTextPage();
+        if (continuationSection) {
+          commands.push(textCommand(continuationSection.toUpperCase(), MARGIN, y, 9, true, COLORS.blue));
+          y -= 22;
+        }
+      }
     };
-    const addLine = (value, options = {}) => {
+    const addWrapped = (value, options = {}) => {
       const size = options.size || 10;
       const lineHeight = options.lineHeight || size * 1.45;
-      const lines = wrapText(value, options.maxCharacters || Math.max(24, Math.floor(94 * (10 / size))));
-      ensureSpace(lines.length * lineHeight + (options.after || 0));
+      const lines = wrapText(value, options.maxCharacters || Math.max(25, Math.floor(96 * (10 / size))));
+      ensureSpace(lines.length * lineHeight + (options.after || 0), options.continuationSection);
       lines.forEach((line) => {
-        commands.push(textCommand(line, options.x || MARGIN, y, size, Boolean(options.bold), options.color));
+        commands.push(textCommand(line, options.x ?? MARGIN, y, size, Boolean(options.bold), options.color || COLORS.ink));
         y -= lineHeight;
       });
       y -= options.after || 0;
     };
-    const addSection = (value) => {
-      ensureSpace(31);
-      y -= 5;
-      commands.push(textCommand(value.toUpperCase(), MARGIN, y, 9, true, '0 0.302 0.714'));
-      y -= 19;
+    const addSection = (title, subtitle = '') => {
+      ensureSpace(subtitle ? 43 : 29);
+      y -= 4;
+      commands.push(textCommand(title.toUpperCase(), MARGIN, y, 9, true, COLORS.blue));
+      y -= 18;
+      if (subtitle) {
+        commands.push(textCommand(subtitle, MARGIN, y, 8.5, false, COLORS.muted));
+        y -= 18;
+      }
     };
 
-    addSection('Resumo da solicitação');
-    addLine(`Local: ${input.workplaceName || 'Não informado'}`, { bold: true, size: 12, after: 3 });
-    if (input.payerLegalName) addLine(`Razão Social do pagador: ${input.payerLegalName}`);
-    if (input.payerCnpj) addLine(`CNPJ do pagador: ${input.payerCnpj}`);
-    addLine(`Período: ${input.period || 'Não informado'}`);
-    addLine(`Médico solicitante: ${input.doctorName || 'Não informado'}`);
-    addLine(`Gerado em: ${input.generatedAt || ''}`, { after: 8 });
-    addLine('VALOR CONTABILIZADO', { size: 8, bold: true, color: '0.353 0.392 0.447' });
-    addLine(input.total || 'R$ 0,00', { size: 24, bold: true, color: '0 0.302 0.714', lineHeight: 31 });
-    addLine(`${input.quantity || 0} atendimentos • ${input.attachmentCount || 0} comprovantes incluídos`, { after: 8 });
+    commands.push(textCommand('Solicitação de conferência financeira', MARGIN, y, 22, true, COLORS.navy));
+    y -= 27;
+    commands.push(textCommand('Documento consolidado para validação dos repasses médicos contabilizados.', MARGIN, y, 9.5, false, COLORS.muted));
+    y -= 24;
 
-    addSection('Mensagem de conferência');
-    addLine(input.message || 'Solicito a conferência dos repasses relacionados abaixo.', { lineHeight: 15, after: 8 });
+    const payerBoxHeight = 104;
+    commands.push(fillRect(MARGIN, y - payerBoxHeight, CONTENT_WIDTH, payerBoxHeight, COLORS.mist));
+    commands.push(textCommand('PAGADOR E PERÍODO', MARGIN + 16, y - 20, 8, true, COLORS.blue));
+    commands.push(textCommand(truncate(input.workplaceName || 'Local não informado', 52), MARGIN + 16, y - 41, 13, true, COLORS.navy));
+    commands.push(textCommand(truncate(input.payerLegalName || 'Razão Social não informada', 66), MARGIN + 16, y - 59, 9, false, COLORS.ink));
+    commands.push(textCommand(`CNPJ: ${input.payerCnpj || 'não informado'}`, MARGIN + 16, y - 79, 8.5, false, COLORS.muted));
+    commands.push(textCommand(`Período: ${input.period || 'não informado'}`, MARGIN + 274, y - 79, 8.5, true, COLORS.navy));
+    commands.push(textCommand(`Solicitante: ${truncate(input.doctorName || 'não informado', 34)}`, MARGIN + 274, y - 59, 8.5, false, COLORS.ink));
+    y -= payerBoxHeight + 13;
 
-    addSection('Atendimentos consolidados');
-    (input.details || []).forEach((detail, index) => {
-      addLine(`${index + 1}. ${detail}`, { size: 9, lineHeight: 13, after: 3 });
+    const totalBoxHeight = 70;
+    commands.push(fillRect(MARGIN, y - totalBoxHeight, CONTENT_WIDTH, totalBoxHeight, COLORS.navy));
+    commands.push(textCommand('VALOR CONTABILIZADO', MARGIN + 16, y - 19, 8, true, COLORS.sky));
+    commands.push(textCommand(input.total || 'R$ 0,00', MARGIN + 16, y - 49, 24, true, COLORS.white));
+    commands.push(textCommand('VOLUME DO PERÍODO', MARGIN + 322, y - 19, 8, true, COLORS.sky));
+    commands.push(textCommand(`${input.quantity || 0} atendimentos`, MARGIN + 322, y - 43, 14, true, COLORS.white));
+    commands.push(textCommand(`${input.attachmentCount || 0} comprovantes anexados`, MARGIN + 322, y - 58, 8, false, COLORS.ice));
+    y -= totalBoxHeight + 13;
+
+    addSection('Objetivo da solicitação');
+    addWrapped(input.message || 'Solicito a conferência dos repasses descritos neste documento.', { size: 9.5, lineHeight: 14, after: 10 });
+
+    addSection('Resumo financeiro por modalidade');
+    const summaryRows = input.modalitySummaries || [];
+    ensureSpace(25 + Math.max(1, summaryRows.length) * 22, 'Resumo financeiro por modalidade');
+    commands.push(fillRect(MARGIN, y - 20, CONTENT_WIDTH, 20, COLORS.ice));
+    commands.push(textCommand('MODALIDADE', MARGIN + 9, y - 14, 7.5, true, COLORS.navy));
+    commands.push(textCommand('QTD.', 410, y - 14, 7.5, true, COLORS.navy));
+    commands.push(textCommand('VALOR', 480, y - 14, 7.5, true, COLORS.navy));
+    y -= 25;
+    (summaryRows.length ? summaryRows : [{ modality: 'Sem detalhamento', quantity: 0, amount: 'R$ 0,00' }]).forEach((row) => {
+      ensureSpace(23, 'Resumo financeiro por modalidade');
+      commands.push(textCommand(truncate(row.modality, 52), MARGIN + 9, y - 13, 8.5, true, COLORS.ink));
+      commands.push(textCommand(String(row.quantity), 410, y - 13, 8.5, false, COLORS.ink));
+      commands.push(textCommand(row.amount, 480, y - 13, 8.5, true, COLORS.blue));
+      commands.push(`q ${COLORS.ice} RG ${MARGIN} ${y - 20} m ${PAGE_WIDTH - MARGIN} ${y - 20} l S Q\n`);
+      y -= 23;
     });
-    if (!(input.details || []).length) addLine('Nenhum atendimento detalhado.', { size: 9 });
+    y -= 8;
+
+    addSection('Detalhamento dos registros', 'Datas, modalidades, vencimentos previstos e valores registrados no MedRecebe.');
+    const rows = input.detailRows || [];
+    const drawDetailHeader = () => {
+      commands.push(fillRect(MARGIN, y - 21, CONTENT_WIDTH, 21, COLORS.ice));
+      commands.push(textCommand('DATA', MARGIN + 8, y - 14, 7, true, COLORS.navy));
+      commands.push(textCommand('MODALIDADE', 108, y - 14, 7, true, COLORS.navy));
+      commands.push(textCommand('QTD.', 340, y - 14, 7, true, COLORS.navy));
+      commands.push(textCommand('VENCIMENTO', 387, y - 14, 7, true, COLORS.navy));
+      commands.push(textCommand('VALOR', 492, y - 14, 7, true, COLORS.navy));
+      y -= 26;
+    };
+    ensureSpace(48, 'Detalhamento dos registros');
+    drawDetailHeader();
+    (rows.length ? rows : [{ date: '-', modality: 'Nenhum registro detalhado', quantity: '-', dueDate: '-', amount: '-' }]).forEach((row) => {
+      if (y - 24 < FOOTER_TOP + 20) {
+        flushTextPage();
+        commands.push(textCommand('DETALHAMENTO DOS REGISTROS • CONTINUAÇÃO', MARGIN, y, 9, true, COLORS.blue));
+        y -= 22;
+        drawDetailHeader();
+      }
+      commands.push(textCommand(row.date || '-', MARGIN + 8, y - 14, 8, false, COLORS.ink));
+      commands.push(textCommand(truncate(row.modality || '-', 38), 108, y - 14, 8, false, COLORS.ink));
+      commands.push(textCommand(String(row.quantity ?? '-'), 340, y - 14, 8, false, COLORS.ink));
+      commands.push(textCommand(row.dueDate || '-', 387, y - 14, 8, false, COLORS.ink));
+      commands.push(textCommand(row.amount || '-', 492, y - 14, 8, true, COLORS.navy));
+      commands.push(`q ${COLORS.ice} RG ${MARGIN} ${y - 21} m ${PAGE_WIDTH - MARGIN} ${y - 21} l S Q\n`);
+      y -= 24;
+    });
+
     if (input.omittedAttachments) {
-      addLine(`${input.omittedAttachments} comprovante(s) não puderam ser incluídos. Confira os registros no MedRecebe.`, {
-        size: 9,
-        bold: true,
-        color: '0.722 0.165 0.204',
-        after: 4,
+      addWrapped(`${input.omittedAttachments} comprovante(s) não puderam ser incluídos. Revise os anexos no MedRecebe.`, {
+        size: 8.5, bold: true, color: COLORS.danger, after: 3,
       });
     }
     pages.push({ commands });
@@ -225,24 +308,26 @@
       const dimensions = attachment.width && attachment.height
         ? { width: attachment.width, height: attachment.height }
         : jpegDimensions(attachment.bytes);
-      const maxWidth = PAGE_WIDTH - MARGIN * 2;
-      const maxHeight = HEADER_BOTTOM - FOOTER_TOP - 88;
+      const maxWidth = CONTENT_WIDTH - 20;
+      const maxHeight = 592;
       const scale = Math.min(maxWidth / dimensions.width, maxHeight / dimensions.height, 1);
       const width = dimensions.width * scale;
       const height = dimensions.height * scale;
       const x = (PAGE_WIDTH - width) / 2;
-      const imageY = FOOTER_TOP + 34 + (maxHeight - height) / 2;
+      const imageY = 82 + (maxHeight - height) / 2;
       pages.push({
         commands: [
-          ...headerCommands(`Comprovante ${index + 1} de ${input.attachments.length}`),
-          textCommand(attachment.label || `Comprovante ${index + 1}`, MARGIN, 724, 10, true, '0.039 0.122 0.267'),
+          ...headerCommands('Documento comprobatório'),
+          textCommand(`Comprovante ${index + 1} de ${input.attachments.length}`, MARGIN, 714, 17, true, COLORS.navy),
+          textCommand(truncate(attachment.label || `Comprovante ${index + 1}`, 76), MARGIN, 692, 9, false, COLORS.muted),
+          fillRect(MARGIN, 72, CONTENT_WIDTH, 608, COLORS.mist),
           `q ${width.toFixed(2)} 0 0 ${height.toFixed(2)} ${x.toFixed(2)} ${imageY.toFixed(2)} cm /Im1 Do Q\n`,
         ],
         image: { bytes: attachment.bytes, ...dimensions },
       });
     });
 
-    pages.forEach((page, index) => page.commands.push(...footerCommands(index + 1, pages.length)));
+    pages.forEach((page, index) => page.commands.push(...footerCommands(index + 1, pages.length, input.generatedAt)));
 
     const pdf = createDocument();
     const catalogId = pdf.reserve();
@@ -259,10 +344,10 @@
           page.image.bytes,
         ));
       }
-      const content = bytesFromBinary(page.commands.join(''));
-      const contentId = pdf.add(streamObject('<<', content));
+      const contentId = pdf.add(streamObject('<<', bytesFromBinary(page.commands.join(''))));
+      const linkId = pdf.add(`<< /Type /Annot /Subtype /Link /Rect [${MARGIN} 17 155 38] /Border [0 0 0] /A << /S /URI /URI (${SITE_URL}) >> >>`);
       const resources = `/Font << /F1 ${regularFontId} 0 R /F2 ${boldFontId} 0 R >>${imageId ? ` /XObject << /Im1 ${imageId} 0 R >>` : ''}`;
-      pdf.set(pageIds[index], `<< /Type /Page /Parent ${pagesId} 0 R /MediaBox [0 0 ${PAGE_WIDTH} ${PAGE_HEIGHT}] /Resources << ${resources} >> /Contents ${contentId} 0 R >>`);
+      pdf.set(pageIds[index], `<< /Type /Page /Parent ${pagesId} 0 R /MediaBox [0 0 ${PAGE_WIDTH} ${PAGE_HEIGHT}] /Resources << ${resources} >> /Contents ${contentId} 0 R /Annots [${linkId} 0 R] >>`);
     });
 
     pdf.set(pagesId, `<< /Type /Pages /Count ${pageIds.length} /Kids [${pageIds.map((id) => `${id} 0 R`).join(' ')}] >>`);

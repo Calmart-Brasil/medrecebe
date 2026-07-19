@@ -1350,7 +1350,7 @@ function renderReconciliation() {
   const groupCards = groups.map((group) => `<button class="card group-card ${group.id === selectedReconciliationGroup ? 'selected' : ''}" data-action="select-reconciliation" data-id="${group.id}" type="button"><span class="group-check">${group.id === selectedReconciliationGroup ? '✓' : ''}</span><span><h3>${escapeHtml(group.workplace.name)}</h3><p>${monthLabel(group.month)}</p><small>${group.quantity} atend. • ${group.attachments} comprov. ${group.status === 'in_reconciliation' ? '• Em conciliação' : ''}</small></span><b>${currency(group.totalCents)}</b></button>`).join('');
   const latestInvoice = (appState.invoices || []).find((invoice) => invoice.id === selectedInvoiceId) || appState.invoices?.[0];
   const documentLinks = selected ? [...selected.documents.values()].map((document, index) => document.remoteUrl ? `<a class="button secondary small" href="${escapeHtml(document.remoteUrl)}" target="_blank" rel="noopener">Abrir comprovante ${index + 1}</a>` : '').join('') : '';
-  screen.innerHTML = `<div class="screen-stack">${pageHeading('Conferência de pagamentos', 'Conciliação', 'Envie uma Nota Fiscal para identificar o pagador e comparar automaticamente os valores.')}<h2 class="section-title">Conferir Nota Fiscal</h2><div class="card settings"><p>Selecione o PDF ou XML recebido. O arquivo é lido para extrair CNPJ, Razão Social e valor; depois, o MedRecebe compara esses dados com o cadastro e os atendimentos contabilizados.</p><label class="button primary file-button">Selecionar Nota Fiscal<input id="invoice-file" type="file" accept="application/pdf,application/xml,text/xml,.pdf,.xml"/></label><p class="field-hint">A Nota Fiscal fica protegida e disponível nos seus outros dispositivos.</p></div>${invoiceCard(latestInvoice)}<h2 class="section-title">Canal oficial</h2>${channel ? `<form class="card settings" id="channel-form"><label>Local<select id="channel-workplace">${options}</select></label><label>E-mail oficial<input id="channel-email" type="email" value="${escapeHtml(channel.reconciliationEmail)}" placeholder="repasses@local.com.br"/></label><label>Cópia (opcional)<input id="channel-cc" value="${escapeHtml(channel.reconciliationCc || '')}" placeholder="gestor@local.com.br"/></label><label>Mensagem padrão<textarea id="channel-message">${escapeHtml(appState.reconciliationMessage)}</textarea></label><p class="field-hint">Tokens: {{local}}, {{periodo}}, {{quantidade}}, {{valor}}, {{detalhes}} e {{medico}}.</p><button class="button secondary small" type="submit">Salvar canal e mensagem</button></form>` : '<div class="notice warning">Cadastre um local antes de configurar a conciliação.</div>'}<h2 class="section-title">Grupos para conciliar</h2><div class="list">${groupCards || emptyCard('Nenhum repasse vencido', 'O vencimento de hoje só aparecerá aqui a partir de amanhã, se não houver baixa.')}</div>${selected ? `<div class="card summary-card"><span class="summary-main"><small>${selected.status === 'in_reconciliation' ? 'EM CONCILIAÇÃO' : 'SELECIONADO'}</small><strong>${currency(selected.totalCents)}</strong><small>${selected.quantity} atendimentos • ${monthLabel(selected.month)}</small></span></div>${documentLinks ? `<div class="document-actions">${documentLinks}</div>` : '<div class="notice warning">Este grupo ainda não possui comprovante sincronizado.</div>'}<div class="reconciliation-send-actions"><button class="button whatsapp" data-action="share-reconciliation-whatsapp" type="button">${selected.status === 'in_reconciliation' ? 'Compartilhar novamente no WhatsApp' : 'Compartilhar PDF no WhatsApp'}</button><button class="button secondary" data-action="open-reconciliation-email" type="button">${selected.status === 'in_reconciliation' ? 'Reabrir solicitação no e-mail' : 'Preparar solicitação no e-mail'}</button></div><div class="notice success">O PDF reúne a mensagem, os valores, o detalhamento e os comprovantes. Você escolhe o contato e confirma o envio.</div>` : ''}</div>`;
+  screen.innerHTML = `<div class="screen-stack">${pageHeading('Conferência de pagamentos', 'Conciliação', 'Envie uma Nota Fiscal para identificar o pagador e comparar automaticamente os valores.')}<h2 class="section-title">Conferir Nota Fiscal</h2><div class="card settings"><label class="button primary file-button">Selecionar Nota Fiscal<input id="invoice-file" type="file" accept="application/pdf,application/xml,text/xml,.pdf,.xml"/></label></div>${invoiceCard(latestInvoice)}<h2 class="section-title">Canal oficial</h2>${channel ? `<form class="card settings" id="channel-form"><label>Local<select id="channel-workplace">${options}</select></label><label>E-mail oficial<input id="channel-email" type="email" value="${escapeHtml(channel.reconciliationEmail)}" placeholder="repasses@local.com.br"/></label><label>Cópia (opcional)<input id="channel-cc" value="${escapeHtml(channel.reconciliationCc || '')}" placeholder="gestor@local.com.br"/></label><label>Mensagem padrão<textarea id="channel-message">${escapeHtml(appState.reconciliationMessage)}</textarea></label><p class="field-hint">Tokens: {{local}}, {{periodo}}, {{quantidade}}, {{valor}}, {{detalhes}} e {{medico}}.</p><button class="button secondary small" type="submit">Salvar canal e mensagem</button></form>` : '<div class="notice warning">Cadastre um local antes de configurar a conciliação.</div>'}<h2 class="section-title">Grupos para conciliar</h2><div class="list">${groupCards || emptyCard('Nenhum repasse vencido', 'O vencimento de hoje só aparecerá aqui a partir de amanhã, se não houver baixa.')}</div>${selected ? `<div class="card summary-card"><span class="summary-main"><small>${selected.status === 'in_reconciliation' ? 'EM CONCILIAÇÃO' : 'SELECIONADO'}</small><strong>${currency(selected.totalCents)}</strong><small>${selected.quantity} atendimentos • ${monthLabel(selected.month)}</small></span></div>${documentLinks ? `<div class="document-actions">${documentLinks}</div>` : '<div class="notice warning">Este grupo ainda não possui comprovante sincronizado.</div>'}<div class="reconciliation-send-actions"><button class="button primary" data-action="share-reconciliation" type="button">Enviar conciliação</button><button class="button secondary reconciliation-export" data-action="export-reconciliation-pdf" type="button">Exportar PDF</button></div>` : ''}</div>`;
 }
 
 function reconciliationGroups() {
@@ -1690,7 +1690,67 @@ function reconciliationFileName(group) {
   return `conciliacao-medrecebe-${workplace}-${group.month}.pdf`;
 }
 
-async function prepareReconciliationWhatsApp(button) {
+function reconciliationPdfInput(group, attachments, omitted, pdfBody) {
+  const modalityMap = new Map();
+  group.attendances.forEach((attendance) => {
+    const current = modalityMap.get(attendance.modalityName) || { modality: attendance.modalityName, quantity: 0, amountCents: 0 };
+    current.quantity += attendanceQuantity(attendance);
+    current.amountCents += attendance.amountCents;
+    modalityMap.set(attendance.modalityName, current);
+  });
+  return {
+    workplaceName: group.workplace.name,
+    payerLegalName: group.workplace.payerLegalName,
+    payerCnpj: group.workplace.payerCnpj ? formatCnpj(group.workplace.payerCnpj) : '',
+    period: monthLabel(group.month),
+    doctorName: appState.profile.name,
+    generatedAt: new Date().toLocaleString('pt-BR'),
+    total: currency(group.totalCents),
+    quantity: group.quantity,
+    attachmentCount: attachments.length,
+    message: pdfBody,
+    modalitySummaries: [...modalityMap.values()].map((item) => ({
+      modality: item.modality,
+      quantity: item.quantity,
+      amount: currency(item.amountCents),
+    })),
+    detailRows: group.attendances.map((attendance) => ({
+      date: displayDate(attendance.occurredAt),
+      modality: attendance.modalityName,
+      quantity: attendanceQuantity(attendance),
+      dueDate: displayDate(attendance.dueAt),
+      amount: currency(attendance.amountCents),
+    })),
+    attachments,
+    omittedAttachments: omitted,
+  };
+}
+
+async function buildReconciliationFile(group) {
+  if (!window.MedRecebePdf?.build) throw new Error('O gerador do PDF não foi carregado. Atualize a página e tente novamente.');
+  const { pdfBody, subject, shareText } = reconciliationContent(group);
+  const { attachments, omitted } = await reconciliationAttachments(group);
+  const pdfBytes = window.MedRecebePdf.build(reconciliationPdfInput(group, attachments, omitted, pdfBody));
+  return {
+    file: new File([pdfBytes], reconciliationFileName(group), { type: 'application/pdf' }),
+    omitted,
+    subject,
+    shareText,
+  };
+}
+
+function downloadReconciliationFile(file) {
+  const url = URL.createObjectURL(file);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = file.name;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
+}
+
+async function shareReconciliation(button) {
   const group = reconciliationGroups().find((item) => item.id === selectedReconciliationGroup);
   if (!group) return;
   const originalLabel = button?.textContent || '';
@@ -1699,44 +1759,16 @@ async function prepareReconciliationWhatsApp(button) {
     button.textContent = 'Gerando PDF…';
   }
   try {
-    if (!window.MedRecebePdf?.build) throw new Error('O gerador do PDF não foi carregado. Atualize a página e tente novamente.');
-    const { pdfBody, details, subject, shareText } = reconciliationContent(group);
-    const { attachments, omitted } = await reconciliationAttachments(group);
-    const pdfBytes = window.MedRecebePdf.build({
-      workplaceName: group.workplace.name,
-      payerLegalName: group.workplace.payerLegalName,
-      payerCnpj: group.workplace.payerCnpj ? formatCnpj(group.workplace.payerCnpj) : '',
-      period: monthLabel(group.month),
-      doctorName: appState.profile.name,
-      generatedAt: new Date().toLocaleString('pt-BR'),
-      total: currency(group.totalCents),
-      quantity: group.quantity,
-      attachmentCount: attachments.length,
-      message: pdfBody,
-      details: details.split('\n').map((line) => line.replace(/^\d+\.\s*/, '')),
-      attachments,
-      omittedAttachments: omitted,
-    });
-    const file = new File([pdfBytes], reconciliationFileName(group), { type: 'application/pdf' });
-    if (navigator.canShare?.({ files: [file] })) {
-      await navigator.share({ title: subject, text: shareText, files: [file] });
-      if (confirm('Você concluiu o envio da conciliação no WhatsApp?')) {
-        markReconciliationRequested(group);
-        renderReconciliation();
-        showToast('Conciliação marcada como solicitada.');
-      }
-      return;
+    const { file, subject, shareText } = await buildReconciliationFile(group);
+    if (!navigator.share || !navigator.canShare?.({ files: [file] })) {
+      throw new Error('O compartilhamento de arquivos não está disponível neste navegador. Use “Exportar PDF”.');
     }
-    const url = URL.createObjectURL(file);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = file.name;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
-    try { await navigator.clipboard?.writeText(shareText); } catch {}
-    showToast('PDF baixado. Anexe-o no WhatsApp; o texto da solicitação foi copiado quando permitido.');
+    await navigator.share({ title: subject, text: shareText, files: [file] });
+    if (confirm('Você concluiu o envio da conciliação?')) {
+      markReconciliationRequested(group);
+      renderReconciliation();
+      showToast('Conciliação marcada como solicitada.');
+    }
   } catch (error) {
     if (error?.name !== 'AbortError') showToast(error instanceof Error ? error.message : 'Não foi possível preparar o PDF.');
   } finally {
@@ -1747,18 +1779,26 @@ async function prepareReconciliationWhatsApp(button) {
   }
 }
 
-function prepareReconciliationEmail() {
+async function exportReconciliationPdf(button) {
   const group = reconciliationGroups().find((item) => item.id === selectedReconciliationGroup);
   if (!group) return;
-  if (!group.workplace.reconciliationEmail || group.workplace.reconciliationEmail.endsWith('.exemplo')) {
-    showToast('Cadastre um e-mail oficial válido antes de abrir a solicitação.');
-    selectedChannelWorkplace = group.workplace.id;
-    return;
+  const originalLabel = button?.textContent || '';
+  if (button) {
+    button.disabled = true;
+    button.textContent = 'Gerando PDF…';
   }
-  const { body, subject } = reconciliationContent(group);
-  const cc = group.workplace.reconciliationCc ? `&cc=${encodeURIComponent(group.workplace.reconciliationCc)}` : '';
-  markReconciliationRequested(group);
-  window.location.href = `mailto:${encodeURIComponent(group.workplace.reconciliationEmail)}?subject=${encodeURIComponent(subject)}${cc}&body=${encodeURIComponent(body)}`;
+  try {
+    const { file } = await buildReconciliationFile(group);
+    downloadReconciliationFile(file);
+    showToast('PDF exportado.');
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : 'Não foi possível exportar o PDF.');
+  } finally {
+    if (button?.isConnected) {
+      button.disabled = false;
+      button.textContent = originalLabel;
+    }
+  }
 }
 
 function setAuthMode(mode) {
@@ -2037,8 +2077,8 @@ async function handleClick(event) {
     if (group) selectedChannelWorkplace = group.workplace.id;
     renderReconciliation();
   }
-  if (action === 'share-reconciliation-whatsapp') await prepareReconciliationWhatsApp(target);
-  if (action === 'open-reconciliation-email') prepareReconciliationEmail();
+  if (action === 'share-reconciliation') await shareReconciliation(target);
+  if (action === 'export-reconciliation-pdf') await exportReconciliationPdf(target);
   if (action === 'rate-feedback') {
     feedbackRating = Number(value);
     $$('.rating button').forEach((button) => button.classList.toggle('selected', Number(button.dataset.value) === feedbackRating));

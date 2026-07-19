@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
-import * as MailComposer from 'expo-mail-composer';
 import * as Sharing from 'expo-sharing';
 
 import { Button, Card, Chip, EmptyState, Eyebrow, Field, InlineNotice, PageTitle, Screen, SectionTitle } from '../components/ui';
@@ -58,10 +57,6 @@ function buildGroups(data: AppData): ReconciliationGroup[] {
   return [...map.values()].sort((a, b) => a.month.localeCompare(b.month));
 }
 
-function replaceAll(source: string, token: string, value: string): string {
-  return source.split(token).join(value);
-}
-
 export function ReconciliationScreen({
   data,
   profile,
@@ -86,7 +81,6 @@ export function ReconciliationScreen({
   const [cc, setCc] = useState(channelWorkplace?.reconciliationCc ?? '');
   const [message, setMessage] = useState(data.reconciliation.defaultMessage);
   const [selectedGroupId, setSelectedGroupId] = useState(groups[0]?.id ?? '');
-  const [sending, setSending] = useState(false);
   const [sharing, setSharing] = useState(false);
   const [importingInvoice, setImportingInvoice] = useState(false);
   const latestInvoice = data.invoices[0];
@@ -139,67 +133,12 @@ export function ReconciliationScreen({
     }
   };
 
-  const send = async () => {
-    if (!selectedGroup) return;
-    const recipientEmail = selectedGroup.workplace.reconciliationEmail.trim();
-    if (!recipientEmail) {
-      setChannelWorkplaceId(selectedGroup.workplace.id);
-      Alert.alert('Canal não configurado', 'Cadastre o e-mail oficial deste local antes de solicitar a conciliação.');
-      return;
-    }
-
-    setSending(true);
-    try {
-      const available = await MailComposer.isAvailableAsync();
-      if (!available) {
-        Alert.alert('E-mail indisponível', 'Configure uma conta no app Mail deste iPhone e tente novamente.');
-        return;
-      }
-
-      const detail = selectedGroup.attendances
-        .map(
-          (attendance, index) =>
-            `${index + 1}. ${formatDate(attendance.occurredAt)} — ${quantityOf(attendance)} × ${attendance.modalityName} — ${formatCurrency(attendance.amountCents)}`,
-        )
-        .join('\n');
-      let body = data.reconciliation.defaultMessage;
-      body = replaceAll(body, '{{local}}', selectedGroup.workplace.name);
-      body = replaceAll(body, '{{periodo}}', monthLabel(selectedGroup.month));
-      body = replaceAll(body, '{{quantidade}}', String(selectedGroup.quantity));
-      body = replaceAll(body, '{{valor}}', formatCurrency(selectedGroup.totalCents));
-      body = replaceAll(body, '{{detalhes}}', detail);
-      body = replaceAll(body, '{{medico}}', profile.name);
-
-      const result = await MailComposer.composeAsync({
-        recipients: [recipientEmail],
-        ccRecipients: selectedGroup.workplace.reconciliationCc
-          .split(',')
-          .map((address) => address.trim())
-          .filter(Boolean),
-        subject: `Conciliação de repasses — ${selectedGroup.workplace.name} — ${monthLabel(selectedGroup.month)}`,
-        body,
-        attachments: [...new Set(selectedGroup.attendances.map((attendance) => attendance.evidenceUri).filter(Boolean))],
-      });
-
-      if (result.status === MailComposer.MailComposerStatus.SENT) {
-        onMarkRequested(selectedGroup.attendances.map((attendance) => attendance.id));
-        Alert.alert('Solicitação enviada', 'Os atendimentos foram marcados como “em conciliação”.');
-      } else if (result.status === MailComposer.MailComposerStatus.SAVED) {
-        Alert.alert('Rascunho salvo', 'Os atendimentos só serão marcados após o envio da mensagem.');
-      }
-    } catch {
-      Alert.alert('Não foi possível abrir o e-mail', 'Tente novamente após conferir a conta configurada no app Mail.');
-    } finally {
-      setSending(false);
-    }
-  };
-
-  const shareOnWhatsApp = async () => {
+  const shareReconciliation = async () => {
     if (!selectedGroup) return;
     setSharing(true);
     try {
       if (!(await Sharing.isAvailableAsync())) {
-        Alert.alert('Compartilhamento indisponível', 'Não foi possível abrir o compartilhamento deste iPhone. Use o envio por e-mail.');
+        Alert.alert('Compartilhamento indisponível', 'Não foi possível abrir o compartilhamento deste aparelho.');
         return;
       }
       const result = await createReconciliationPdf(selectedGroup, profile, data.reconciliation.defaultMessage);
@@ -213,7 +152,7 @@ export function ReconciliationScreen({
         : '';
       Alert.alert(
         'Envio concluído?',
-        `O iPhone retornou ao MedRecebe.${attachmentNotice} Você concluiu o envio da conciliação no WhatsApp?`,
+        `O aparelho retornou ao MedRecebe.${attachmentNotice} Você concluiu o envio da conciliação?`,
         [
           { text: 'Ainda não', style: 'cancel' },
           {
@@ -384,19 +323,15 @@ export function ReconciliationScreen({
             {selectedGroup.quantity} atendimentos • {monthLabel(selectedGroup.month)}
           </Text>
           {selectedGroup.attendances.some((attendance) => !attendance.evidenceUri) ? (
-            <InlineNotice tone="warning">Alguns registros demonstrativos não possuem anexo; eles serão listados no texto do e-mail.</InlineNotice>
+            <InlineNotice tone="warning">Alguns registros não possuem anexo e serão sinalizados no relatório.</InlineNotice>
           ) : null}
         </Card>
       ) : null}
 
       <View style={styles.sendActions}>
-        <Button disabled={!selectedGroup || sending} loading={sharing} onPress={() => void shareOnWhatsApp()} title="Compartilhar PDF no WhatsApp" />
-        <Button disabled={!selectedGroup || sharing} loading={sending} onPress={() => void send()} title="Solicitar por e-mail" variant="secondary" />
+        <Button disabled={!selectedGroup} loading={sharing} onPress={() => void shareReconciliation()} title="Enviar conciliação" />
       </View>
 
-      <Text style={styles.disclaimer}>
-        O aplicativo abre o compartilhamento do iPhone para você escolher o contato, revisar e confirmar o envio.
-      </Text>
     </Screen>
   );
 }

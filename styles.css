@@ -21,11 +21,14 @@
 
 * { box-sizing: border-box; }
 
-html { background: var(--mist); color-scheme: light; }
+html { width: 100%; max-width: 100%; overflow-x: hidden; background: var(--mist); color-scheme: light; }
 
 body {
+  width: 100%;
+  max-width: 100%;
   margin: 0;
   min-height: 100vh;
+  overflow-x: hidden;
   background: var(--mist);
   color: var(--ink);
   font-family: "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -34,7 +37,21 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 
-body[data-route="attendance"] { overflow-x: clip; }
+body[data-route="attendance"] { overflow-x: hidden; overscroll-behavior-x: none; }
+body[data-route="attendance"] .app-shell,
+body[data-route="attendance"] #screen,
+body[data-route="attendance"] .screen-stack,
+body[data-route="attendance"] #attendance-form {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: hidden;
+  overscroll-behavior-x: none;
+  touch-action: pan-y pinch-zoom;
+}
+body[data-route="attendance"] #attendance-form > *,
+body[data-route="attendance"] .choice-list > *,
+body[data-route="attendance"] .attendance-history-section > * { max-width: 100%; min-width: 0; }
 
 button, input, select, textarea { font: inherit; }
 button { cursor: pointer; }
@@ -94,8 +111,6 @@ input:focus, select:focus, textarea:focus { border-color: var(--blue-600); box-s
 }
 .button.primary { background: var(--blue-700); color: white; }
 .button.secondary { border-color: var(--blue-700); background: white; color: var(--blue-700); }
-.button.whatsapp { background: #1f9d61; color: white; box-shadow: 0 7px 18px rgb(31 157 97 / 18%); }
-.button.whatsapp:hover, .button.whatsapp:focus-visible { background: #178552; }
 .button.danger { border-color: #f1c8cc; background: var(--red-soft); color: var(--red); }
 .button.small { min-height: 38px; padding: 8px 12px; border-radius: 10px; font-size: 12px; }
 .text-button { min-height: 36px; padding: 4px; border: 0; background: transparent; color: var(--blue-700); }
@@ -343,20 +358,22 @@ input:focus, select:focus, textarea:focus { border-color: var(--blue-600); box-s
 .evidence-status.pending { color: #8a6300; }
 .document-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .reconciliation-send-actions { display: grid; grid-template-columns: minmax(0, 1fr); gap: 9px; }
+.reconciliation-export { display: none; }
 .file-button { position: relative; overflow: hidden; }
 .file-button input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
-.photo-source-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; width: 100%; }
+.photo-source-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; width: 100%; max-width: 100%; min-width: 0; }
+.photo-source-actions > * { min-width: 0; }
 .choice-list { display: grid; gap: 8px; }
-.choice { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px 14px; padding: 13px; border: 1px solid var(--line); border-radius: 13px; background: white; }
+.choice { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px 14px; width: 100%; max-width: 100%; min-width: 0; padding: 13px; border: 1px solid var(--line); border-radius: 13px; background: white; }
 .choice:has(.modality-check input:checked) { border-color: var(--blue-600); background: var(--blue-050); box-shadow: 0 5px 16px rgb(0 77 182 / 7%); }
 .modality-check { display: grid; grid-template-columns: 20px minmax(0, 1fr); align-items: center; gap: 10px; min-width: 0; cursor: pointer; }
 .modality-check > input { width: 18px; min-height: 18px; margin: 0; padding: 0; accent-color: var(--blue-700); }
-.modality-check > span { display: grid; gap: 2px; }
+.modality-check > span { display: grid; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
 .choice strong { color: var(--navy); font-size: 12px; }
 .choice small { color: var(--muted); font-size: 9px; }
 .choice > b { display: grid; gap: 2px; color: var(--navy); font-size: 12px; text-align: right; }
 .choice > b small { font-weight: 550; }
-.quantity-row { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px 10px; min-width: 0; padding-top: 11px; border-top: 1px solid var(--line); }
+.quantity-row { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px 10px; width: 100%; max-width: 100%; min-width: 0; padding-top: 11px; border-top: 1px solid var(--line); }
 .quantity-row > span { color: var(--muted); font-size: 10px; font-weight: 700; }
 .quantity-row > strong { grid-column: 1 / -1; min-width: 0; max-width: 100%; color: var(--blue-700); overflow-wrap: anywhere; text-align: right; }
 .quantity-stepper { display: grid; grid-template-columns: 34px 48px 34px; overflow: hidden; border: 1px solid var(--line); border-radius: 10px; background: white; }
@@ -426,10 +443,6 @@ input:focus, select:focus, textarea:focus { border-color: var(--blue-600); box-s
 .group-card p { margin: 0; color: var(--blue-700); font-size: 10px; font-weight: 750; }
 .group-card small { display: block; margin-top: 4px; color: var(--muted); font-size: 9px; }
 .group-card b { color: var(--ink); font-size: 12px; }
-
-@media (min-width: 760px) {
-  .reconciliation-send-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
 
 .feedback-form { display: grid; gap: 14px; }
 .rating { display: grid; grid-template-columns: repeat(5, 1fr); gap: 7px; }
@@ -584,6 +597,8 @@ label, .drawer nav button { font-size: 14px; }
   body.web-plan .header-spacer { display: none; }
   body.web-plan #screen { width: 100%; min-height: calc(100vh - 76px); margin: 0; padding: 38px clamp(30px,4vw,64px) 72px; }
   body.web-plan .screen-stack { gap: 24px; }
+  body.web-plan .reconciliation-send-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  body.web-plan .reconciliation-export { display: inline-flex; }
   body.web-plan .screen-stack > header { display: grid; align-content: end; min-height: 92px; padding-bottom: 3px; }
   body.web-plan .page-title { color: var(--deep); font-size: clamp(34px,3.4vw,46px); letter-spacing: -1.5px; }
   body.web-plan .page-subtitle { max-width: 780px; font-size: 15px; }
