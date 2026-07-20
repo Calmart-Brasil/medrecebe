@@ -8,7 +8,7 @@
 
   async function parse(response) {
     const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload.error || 'Não foi possível concluir a operação.');
+    if (!response.ok) throw new Error(payload.error_description || payload.msg || payload.message || payload.error || 'Não foi possível concluir a operação.');
     return payload;
   }
 
@@ -75,6 +75,36 @@
     return result;
   }
 
+  async function requestPasswordReset(cpf) {
+    return invoke('request-password-reset', { cpf });
+  }
+
+  async function updatePassword(accessToken, password) {
+    if (!isEnabled() || !accessToken) throw new Error('O link de recuperação é inválido ou expirou. Solicite um novo link.');
+    const response = await fetch(`${config.supabaseUrl}/auth/v1/user`, {
+      method: 'PUT',
+      headers: {
+        apikey: config.supabasePublishableKey,
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ password }),
+    });
+    const result = await parse(response);
+    try {
+      const logoutResponse = await fetch(`${config.supabaseUrl}/auth/v1/logout?scope=global`, {
+        method: 'POST',
+        headers: { apikey: config.supabasePublishableKey, Authorization: `Bearer ${accessToken}` },
+      });
+      if (!logoutResponse.ok) console.warn('Não foi possível encerrar todas as sessões após a troca de senha.');
+    } catch {
+      console.warn('Não foi possível confirmar o encerramento de todas as sessões após a troca de senha.');
+    } finally {
+      localStorage.removeItem(SESSION_KEY);
+    }
+    return result;
+  }
+
   async function authenticatedInvoke(name, body = {}) {
     const session = await refreshSession();
     return invoke(name, body, session.accessToken);
@@ -117,6 +147,8 @@
     isEnabled,
     register,
     login,
+    requestPasswordReset,
+    updatePassword,
     restore,
     logout,
     createSubscription: (planCode) => authenticatedInvoke('create-subscription', { planCode }),

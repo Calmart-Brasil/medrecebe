@@ -6,6 +6,9 @@ verify_jwt = false
 [functions.login-cpf]
 verify_jwt = false
 
+[functions.request-password-reset]
+verify_jwt = false
+
 [functions.account-status]
 verify_jwt = true
 

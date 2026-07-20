@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 const root = fileURLToPath(new URL('.', import.meta.url));
 const read = (file) => readFile(join(root, file), 'utf8');
 
-const [manifestText, landing, landingCss, appHtml, app, appCss, reconciliationPdf, cloud, adminHtml, adminApp, worker, workflow, migration, launchMigration, upfrontMigration, manualAccessMigration, singlePlanMigration, simpleAdminMigration, documentMigration, documentFunction, syncStateFunction, invoiceFunction, adminCreateFunction, adminUpdateFunction, createSubscriptionFunction, cancelSubscriptionFunction, mercadoPagoShared, mobileConfig, mobileInvoice, mobileReconciliationPdf, mobileReconciliationScreen, terms, privacy, cancellation, securityMigration, loginFunction, registerFunction, sharedHttp, sharedSupabase, rateLimit, supabaseConfig, frameGuard] = await Promise.all([
+const [manifestText, landing, landingCss, appHtml, app, appCss, reconciliationPdf, cloud, adminHtml, adminApp, worker, workflow, migration, launchMigration, upfrontMigration, manualAccessMigration, singlePlanMigration, simpleAdminMigration, documentMigration, documentFunction, syncStateFunction, invoiceFunction, adminCreateFunction, adminUpdateFunction, createSubscriptionFunction, cancelSubscriptionFunction, mercadoPagoShared, mobileConfig, mobileInvoice, mobileReconciliationPdf, mobileReconciliationScreen, terms, privacy, cancellation, securityMigration, loginFunction, registerFunction, requestPasswordResetFunction, sharedHttp, sharedSupabase, rateLimit, supabaseConfig, frameGuard] = await Promise.all([
   read('manifest.webmanifest'),
   read('index.html'),
   read('landing.css'),
@@ -44,6 +44,7 @@ const [manifestText, landing, landingCss, appHtml, app, appCss, reconciliationPd
   read('supabase/migrations/202607200001_security_hardening.sql'),
   read('supabase/functions/login-cpf/index.ts'),
   read('supabase/functions/register/index.ts'),
+  read('supabase/functions/request-password-reset/index.ts'),
   read('supabase/functions/_shared/http.ts'),
   read('supabase/functions/_shared/supabase.ts'),
   read('supabase/functions/_shared/rate-limit.ts'),
@@ -105,7 +106,10 @@ assert.ok(
   'appState só pode ser carregado depois da mensagem padrão usada pelo estado vazio',
 );
 assert.ok(!appHtml.includes('Beta local:'), 'o aviso antigo de beta local não deve aparecer na entrada');
-assert.ok(appHtml.includes('styles.css?v=17') && appHtml.includes('cloud.js?v=7') && appHtml.includes('reconciliation-pdf.js?v=2') && appHtml.includes('app.js?v=24'), 'os arquivos corrigidos precisam de cache busting');
+assert.ok(appHtml.includes('styles.css?v=17') && appHtml.includes('cloud.js?v=8') && appHtml.includes('reconciliation-pdf.js?v=2') && appHtml.includes('app.js?v=25'), 'os arquivos corrigidos precisam de cache busting');
+for (const marker of ['Esqueci minha senha', 'auth-new-password', 'auth-confirm-password']) assert.ok(appHtml.includes(marker), `recuperação de senha sem: ${marker}`);
+for (const marker of ['consumeRecoveryLink', 'history.replaceState', "setAuthMode('forgot')", 'cloud.updatePassword']) assert.ok(app.includes(marker), `jornada de recuperação sem: ${marker}`);
+for (const marker of ['requestPasswordReset', 'updatePassword', '/auth/v1/logout?scope=global']) assert.ok(cloud.includes(marker), `cliente de recuperação sem: ${marker}`);
 for (const marker of ['aria-label="Home"', 'aria-label="Registro dos locais e modalidades"', 'aria-label="Registro de atendimentos"', 'aria-label="Conciliação"']) assert.ok(appHtml.includes(marker), `barra inferior sem: ${marker}`);
 const bottomNavigation = appHtml.match(/<nav class="bottom-nav"[\s\S]*?<\/nav>/)?.[0] || '';
 assert.equal((bottomNavigation.match(/<button data-nav=/g) || []).length, 4, 'a barra inferior deve manter exatamente quatro destinos');
@@ -191,7 +195,7 @@ for (const [name, document] of [['Landing', landing], ['Aplicativo', `${appHtml}
   }
 }
 
-for (const marker of ['install', 'activate', 'fetch', 'caches.open', 'medrecebe-app-v23', './app.html', 'reconciliation-pdf.js?v=2', 'institution-directory-rmsp.json']) {
+for (const marker of ['install', 'activate', 'fetch', 'caches.open', 'medrecebe-app-v24', './app.html', 'reconciliation-pdf.js?v=2', 'institution-directory-rmsp.json']) {
   assert.ok(worker.includes(marker), `sw.js sem: ${marker}`);
 }
 
@@ -205,6 +209,8 @@ for (const marker of ['security_rate_limits', 'consume_security_rate_limit', 'is
 assert.ok(securityMigration.includes('v_now timestamptz') && !securityMigration.includes('current_time timestamptz'), 'rate limit deve usar timestamp inequívoco no PostgreSQL');
 for (const marker of ['login_ip', 'login_account', 'Retry-After', 'invalidCredentials']) assert.ok(loginFunction.includes(marker), `login sem proteção: ${marker}`);
 for (const marker of ['register_ip', 'register_cpf', 'register_email', 'requiresLogin', 'Cache-Control']) assert.ok(registerFunction.includes(marker), `cadastro sem proteção: ${marker}`);
+for (const marker of ['password_reset_ip', 'password_reset_account', 'GENERIC_MESSAGE', 'resetPasswordForEmail', 'Retry-After']) assert.ok(requestPasswordResetFunction.includes(marker), `recuperação de senha sem proteção: ${marker}`);
+assert.ok(supabaseConfig.includes('[functions.request-password-reset]\nverify_jwt = false'), 'recuperação de senha precisa estar disponível antes da autenticação');
 assert.ok(sharedHttp.includes('Origin not allowed') && sharedHttp.includes("allowed.includes(normalized)") && !sharedHttp.includes("? origin : allowed[0]"), 'CORS precisa rejeitar origem fora da allowlist');
 assert.ok(sharedSupabase.includes('is_auth_session_active') && sharedSupabase.includes('AuthenticationError'), 'JWT revogado precisa ser rejeitado imediatamente');
 assert.ok(rateLimit.includes("HMAC") && rateLimit.includes("x-forwarded-for"), 'rate limit precisa proteger IP e identificador pseudonimizado');

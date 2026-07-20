@@ -43,11 +43,16 @@
           <label>Nome completo<input autocomplete="name" id="auth-name" placeholder="Dra. Maria Silva" /></label>
           <label>E-mail<input autocomplete="email" id="auth-email" inputmode="email" placeholder="voce@exemplo.com" /></label>
         </div>
-        <label>CPF<input autocomplete="username" id="auth-cpf" inputmode="numeric" maxlength="14" placeholder="000.000.000-00" required /></label>
-        <label>Senha<input autocomplete="current-password" id="auth-password" minlength="8" placeholder="Mínimo de 8 caracteres" type="password" required /></label>
+        <label id="auth-cpf-field">CPF<input autocomplete="username" id="auth-cpf" inputmode="numeric" maxlength="14" placeholder="000.000.000-00" required /></label>
+        <label id="auth-password-field">Senha<input autocomplete="current-password" id="auth-password" minlength="8" placeholder="Mínimo de 8 caracteres" type="password" required /></label>
+        <div class="reset-password-fields" id="reset-password-fields" hidden>
+          <label>Nova senha<input autocomplete="new-password" id="auth-new-password" minlength="8" placeholder="Mínimo de 8 caracteres" type="password" /></label>
+          <label>Confirmar nova senha<input autocomplete="new-password" id="auth-confirm-password" minlength="8" placeholder="Digite a senha novamente" type="password" /></label>
+        </div>
         <p class="form-error" id="auth-error" role="alert"></p>
         <button class="button primary" id="auth-submit" type="submit">Entrar</button>
         <button class="button text-button" id="auth-toggle" type="button">Primeiro uso? Criar meu acesso</button>
+        <button class="button text-button forgot-password-button" id="forgot-password" type="button">Esqueci minha senha</button>
       </form>
 
       <button class="demo-entry" id="demo-entry" type="button">
@@ -122,8 +127,8 @@
     <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
     <script src="runtime-config.js?v=1"></script>
-    <script src="cloud.js?v=7"></script>
+    <script src="cloud.js?v=8"></script>
     <script src="reconciliation-pdf.js?v=2"></script>
-    <script src="app.js?v=24" defer></script>
+    <script src="app.js?v=25" defer></script>
   </body>
 </html>

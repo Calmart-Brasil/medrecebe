@@ -13,6 +13,8 @@ const modalRoot = $('#modal-root');
 const cloud = window.MedRecebeCloud;
 
 let authMode = 'login';
+let recoveryAccessToken = '';
+let recoveryLinkError = '';
 let currentRoute = 'dashboard';
 let selectedWorkplaceId = '';
 let selectedReconciliationGroup = '';
@@ -1809,28 +1811,89 @@ async function exportReconciliationPdf(button) {
   }
 }
 
+function authSubmitLabel(mode = authMode) {
+  return {
+    register: 'Criar acesso',
+    forgot: 'Enviar instruções',
+    reset: 'Salvar nova senha',
+  }[mode] || 'Entrar';
+}
+
+function showAuthMessage(message = '', success = false) {
+  const status = $('#auth-error');
+  status.textContent = message;
+  status.classList.toggle('success', Boolean(message) && success);
+}
+
+function consumeRecoveryLink() {
+  const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+  const recoveryRequested = new URLSearchParams(window.location.search).get('reset-password') === '1';
+  if (hash.get('type') === 'recovery' && hash.get('access_token')) {
+    recoveryAccessToken = hash.get('access_token');
+  } else if (hash.get('error') || recoveryRequested) {
+    recoveryLinkError = 'O link de recuperação é inválido ou expirou. Solicite um novo link.';
+  }
+  if (window.location.hash) {
+    window.history.replaceState({}, '', `${window.location.pathname}${window.location.search}`);
+  }
+  return Boolean(recoveryAccessToken);
+}
+
+function clearRecoveryMarker() {
+  const url = new URL(window.location.href);
+  url.searchParams.delete('reset-password');
+  url.hash = '';
+  window.history.replaceState({}, '', `${url.pathname}${url.search}`);
+}
+
 function setAuthMode(mode) {
-  authMode = mode;
+  authMode = ['login', 'register', 'forgot', 'reset'].includes(mode) ? mode : 'login';
   const register = authMode === 'register';
+  const forgot = authMode === 'forgot';
+  const reset = authMode === 'reset';
+  const cpfField = $('#auth-cpf-field');
+  const passwordField = $('#auth-password-field');
+  const cpfInput = $('#auth-cpf');
+  const passwordInput = $('#auth-password');
+  const newPassword = $('#auth-new-password');
+  const confirmPassword = $('#auth-confirm-password');
+
   $('#register-fields').hidden = !register;
-  $('#auth-title').textContent = register ? 'Criar meu acesso' : 'Boas-vindas';
-  $('#auth-description').textContent = register
-    ? isCloudMode()
-      ? 'Crie sua conta para contratar o plano único com 7 dias de garantia.'
-      : 'Cadastre seus dados reais. A conta permanecerá salva neste aparelho.'
-    : isCloudMode()
-      ? 'Entre com o CPF e a senha da sua conta MedRecebe.'
-      : 'Entre com o CPF e a senha cadastrados neste aparelho.';
-  $('#auth-submit').textContent = register ? 'Criar acesso' : 'Entrar';
-  $('#auth-toggle').textContent = register ? 'Já tenho acesso' : 'Primeiro uso? Criar meu acesso';
-  $('#demo-entry').hidden = register || isCloudMode();
-  $('#auth-password').autocomplete = register ? 'new-password' : 'current-password';
-  $('#auth-error').textContent = '';
+  $('#reset-password-fields').hidden = !reset;
+  cpfField.hidden = reset;
+  passwordField.hidden = forgot || reset;
+  cpfInput.required = !reset;
+  passwordInput.required = !forgot && !reset;
+  newPassword.required = reset;
+  confirmPassword.required = reset;
+
+  const titles = {
+    login: 'Boas-vindas',
+    register: 'Criar meu acesso',
+    forgot: 'Recuperar senha',
+    reset: 'Criar nova senha',
+  };
+  const descriptions = {
+    login: isCloudMode() ? 'Entre com o CPF e a senha da sua conta MedRecebe.' : 'Entre com o CPF e a senha cadastrados neste aparelho.',
+    register: isCloudMode() ? 'Crie sua conta para contratar o plano único com 7 dias de garantia.' : 'Cadastre seus dados reais. A conta permanecerá salva neste aparelho.',
+    forgot: 'Informe seu CPF para receber as instruções no e-mail cadastrado.',
+    reset: 'Defina uma nova senha com pelo menos oito caracteres.',
+  };
+  $('#auth-title').textContent = titles[authMode];
+  $('#auth-description').textContent = descriptions[authMode];
+  $('#auth-submit').textContent = authSubmitLabel();
+  $('#auth-toggle').hidden = reset;
+  $('#auth-toggle').textContent = register ? 'Já tenho acesso' : forgot ? 'Voltar para entrar' : 'Primeiro uso? Criar meu acesso';
+  $('#forgot-password').hidden = authMode !== 'login';
+  $('#demo-entry').hidden = authMode !== 'login' || isCloudMode();
+  passwordInput.autocomplete = register ? 'new-password' : 'current-password';
+  showAuthMessage();
 }
 
 function bindEvents() {
   $('#auth-cpf').addEventListener('input', (event) => (event.target.value = formatCpf(event.target.value)));
   $('#auth-toggle').addEventListener('click', () => setAuthMode(authMode === 'login' ? 'register' : 'login'));
+  $('#forgot-password').addEventListener('click', () => setAuthMode('forgot'));
 
   $('#login-form').addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -1839,11 +1902,32 @@ function bindEvents() {
     const password = $('#auth-password').value;
     const error = $('#auth-error');
     const submit = $('#auth-submit');
-    error.textContent = '';
+    showAuthMessage();
     if (isCloudMode()) {
       submit.disabled = true;
       submit.textContent = 'Aguarde…';
       try {
+        if (authMode === 'forgot') {
+          if (!isValidCpf(cpf)) throw new Error('Informe um CPF válido.');
+          const result = await cloud.requestPasswordReset(cpf);
+          setAuthMode('login');
+          showAuthMessage(result.message || 'Se houver uma conta para este CPF, enviaremos as instruções ao e-mail cadastrado.', true);
+          return;
+        }
+        if (authMode === 'reset') {
+          const newPassword = $('#auth-new-password').value;
+          const confirmation = $('#auth-confirm-password').value;
+          if (newPassword.length < 8) throw new Error('A senha deve ter pelo menos oito caracteres.');
+          if (newPassword !== confirmation) throw new Error('As senhas informadas não coincidem.');
+          await cloud.updatePassword(recoveryAccessToken, newPassword);
+          recoveryAccessToken = '';
+          clearRecoveryMarker();
+          $('#auth-new-password').value = '';
+          $('#auth-confirm-password').value = '';
+          setAuthMode('login');
+          showAuthMessage('Senha alterada. Entre com seu CPF e a nova senha.', true);
+          return;
+        }
         if (authMode === 'register') {
           const name = $('#auth-name').value.trim();
           const email = $('#auth-email').value.trim().toLowerCase();
@@ -1853,12 +1937,10 @@ function bindEvents() {
           if (password.length < 8) throw new Error('A senha deve ter pelo menos oito caracteres.');
           const result = await cloud.register({ name, email, cpf, password, planCode: selectedPlanCode });
           if (result.requiresLogin) {
-            authMode = 'login';
-            $('#register-fields').hidden = true;
+            setAuthMode('login');
             $('#auth-title').textContent = 'Cadastro recebido';
             $('#auth-description').textContent = 'Confirme seu e-mail, se solicitado, e entre com CPF e senha.';
-            $('#auth-toggle').textContent = 'Primeiro uso? Criar meu acesso';
-            error.textContent = result.message || 'Cadastro recebido. Agora entre com CPF e senha.';
+            showAuthMessage(result.message || 'Cadastro recebido. Agora entre com CPF e senha.', true);
             return;
           }
           applyCloudAccount(result, cpf);
@@ -1866,12 +1948,15 @@ function bindEvents() {
           applyCloudAccount(await cloud.login(cpf, password), cpf);
         }
       } catch (caught) {
-        error.textContent = caught instanceof Error ? caught.message : 'Não foi possível concluir o acesso.';
+        showAuthMessage(caught instanceof Error ? caught.message : 'Não foi possível concluir o acesso.');
       } finally {
         submit.disabled = false;
-        submit.textContent = authMode === 'register' ? 'Criar acesso e entrar' : 'Entrar';
+        submit.textContent = authSubmitLabel();
       }
       return;
+    }
+    if (authMode === 'forgot' || authMode === 'reset') {
+      return showAuthMessage('A recuperação por e-mail requer conexão com o serviço MedRecebe. Tente novamente quando estiver online.');
     }
     if (authMode === 'register') {
       const name = $('#auth-name').value.trim();
@@ -2373,6 +2458,7 @@ async function logout() {
 }
 
 async function boot() {
+  const hasRecoveryToken = consumeRecoveryLink();
   bindEvents();
   if (new URLSearchParams(window.location.search).get('signup') === '1') setAuthMode('register');
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(() => {});
@@ -2384,6 +2470,18 @@ async function boot() {
   if (isCloudMode()) {
     $('#demo-entry').hidden = true;
     $('#auth-description').textContent = 'Entre com o CPF e a senha da sua conta MedRecebe.';
+    if (hasRecoveryToken) {
+      await cloud.logout().catch(() => {});
+      showLogin();
+      setAuthMode('reset');
+      return;
+    }
+    if (recoveryLinkError) {
+      showLogin();
+      setAuthMode('login');
+      showAuthMessage(recoveryLinkError);
+      return;
+    }
     try {
       const restored = await cloud.restore();
       if (restored && returnedFromCheckout()) await reconcileBillingReturn(restored);
