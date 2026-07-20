@@ -1,7 +1,7 @@
 import { cpfHash, isValidCpf, onlyDigits } from '../_shared/cpf.ts';
 import { json, options, publicError } from '../_shared/http.ts';
 import { cancelPreapproval, mercadoPago } from '../_shared/mercado-pago.ts';
-import { adminClient, requireAdmin } from '../_shared/supabase.ts';
+import { adminClient, requireAdmin, authenticationStatus } from '../_shared/supabase.ts';
 
 const durationUnits = new Set(['days', 'weeks', 'months', 'years', 'lifetime']);
 
@@ -192,6 +192,6 @@ Deno.serve(async (request) => {
     return json(request, { user: updated });
   } catch (error) {
     console.error('admin-update-user', error);
-    return publicError(request, error instanceof Error ? error.message : 'Não foi possível atualizar o usuário.', 403);
+    return publicError(request, 'Não foi possível atualizar o usuário.', authenticationStatus(error, 500));
   }
 });

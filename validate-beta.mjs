@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 const root = fileURLToPath(new URL('.', import.meta.url));
 const read = (file) => readFile(join(root, file), 'utf8');
 
-const [manifestText, landing, landingCss, appHtml, app, appCss, reconciliationPdf, cloud, adminHtml, adminApp, worker, workflow, migration, launchMigration, upfrontMigration, manualAccessMigration, singlePlanMigration, simpleAdminMigration, documentMigration, documentFunction, syncStateFunction, invoiceFunction, adminCreateFunction, adminUpdateFunction, createSubscriptionFunction, cancelSubscriptionFunction, mercadoPagoShared, mobileConfig, mobileInvoice, mobileReconciliationPdf, mobileReconciliationScreen, terms, privacy, cancellation] = await Promise.all([
+const [manifestText, landing, landingCss, appHtml, app, appCss, reconciliationPdf, cloud, adminHtml, adminApp, worker, workflow, migration, launchMigration, upfrontMigration, manualAccessMigration, singlePlanMigration, simpleAdminMigration, documentMigration, documentFunction, syncStateFunction, invoiceFunction, adminCreateFunction, adminUpdateFunction, createSubscriptionFunction, cancelSubscriptionFunction, mercadoPagoShared, mobileConfig, mobileInvoice, mobileReconciliationPdf, mobileReconciliationScreen, terms, privacy, cancellation, securityMigration, loginFunction, registerFunction, sharedHttp, sharedSupabase, rateLimit, supabaseConfig, frameGuard] = await Promise.all([
   read('manifest.webmanifest'),
   read('index.html'),
   read('landing.css'),
@@ -41,6 +41,14 @@ const [manifestText, landing, landingCss, appHtml, app, appCss, reconciliationPd
   read('termos.html'),
   read('privacidade.html'),
   read('cancelamento.html'),
+  read('supabase/migrations/202607200001_security_hardening.sql'),
+  read('supabase/functions/login-cpf/index.ts'),
+  read('supabase/functions/register/index.ts'),
+  read('supabase/functions/_shared/http.ts'),
+  read('supabase/functions/_shared/supabase.ts'),
+  read('supabase/functions/_shared/rate-limit.ts'),
+  read('supabase/config.toml'),
+  read('frame-guard.js'),
 ]);
 const manifest = JSON.parse(manifestText);
 const [institutionDirectoryText, institutionBuilder, mobileInstitutionDirectory] = await Promise.all([
@@ -57,7 +65,7 @@ assert.equal(manifest.orientation, 'portrait');
 assert.ok(manifest.icons.some((icon) => icon.sizes === '192x192'));
 assert.ok(manifest.icons.some((icon) => icon.sizes === '512x512'));
 
-for (const asset of ['landing.css', 'legal.css', 'styles.css', 'app.html', 'app.js', 'reconciliation-pdf.js', 'cloud.js', 'admin.html', 'admin.js', 'admin.css', 'manifest.webmanifest', 'termos.html', 'privacidade.html', 'cancelamento.html', 'data/institution-directory-rmsp.json', 'scripts/build-institution-directory.mjs', 'assets/apple-touch-icon.png', 'assets/icon-192.png', 'assets/icon-512.png', 'branding/medrecebe-liquid-glass-master.png']) {
+for (const asset of ['landing.css', 'legal.css', 'styles.css', 'app.html', 'app.js', 'reconciliation-pdf.js', 'cloud.js', 'frame-guard.js', 'admin.html', 'admin.js', 'admin.css', 'manifest.webmanifest', 'termos.html', 'privacidade.html', 'cancelamento.html', 'data/institution-directory-rmsp.json', 'scripts/build-institution-directory.mjs', 'assets/apple-touch-icon.png', 'assets/icon-192.png', 'assets/icon-512.png', 'branding/medrecebe-liquid-glass-master.png']) {
   const file = await stat(join(root, asset));
   assert.ok(file.size > 0, `${asset} precisa existir e não pode estar vazio`);
 }
@@ -97,7 +105,7 @@ assert.ok(
   'appState só pode ser carregado depois da mensagem padrão usada pelo estado vazio',
 );
 assert.ok(!appHtml.includes('Beta local:'), 'o aviso antigo de beta local não deve aparecer na entrada');
-assert.ok(appHtml.includes('styles.css?v=17') && appHtml.includes('cloud.js?v=6') && appHtml.includes('reconciliation-pdf.js?v=2') && appHtml.includes('app.js?v=23'), 'os arquivos corrigidos precisam de cache busting');
+assert.ok(appHtml.includes('styles.css?v=17') && appHtml.includes('cloud.js?v=7') && appHtml.includes('reconciliation-pdf.js?v=2') && appHtml.includes('app.js?v=24'), 'os arquivos corrigidos precisam de cache busting');
 for (const marker of ['aria-label="Home"', 'aria-label="Registro dos locais e modalidades"', 'aria-label="Registro de atendimentos"', 'aria-label="Conciliação"']) assert.ok(appHtml.includes(marker), `barra inferior sem: ${marker}`);
 const bottomNavigation = appHtml.match(/<nav class="bottom-nav"[\s\S]*?<\/nav>/)?.[0] || '';
 assert.equal((bottomNavigation.match(/<button data-nav=/g) || []).length, 4, 'a barra inferior deve manter exatamente quatro destinos');
@@ -183,7 +191,7 @@ for (const [name, document] of [['Landing', landing], ['Aplicativo', `${appHtml}
   }
 }
 
-for (const marker of ['install', 'activate', 'fetch', 'caches.open', 'medrecebe-app-v22', './app.html', 'reconciliation-pdf.js?v=2', 'institution-directory-rmsp.json']) {
+for (const marker of ['install', 'activate', 'fetch', 'caches.open', 'medrecebe-app-v23', './app.html', 'reconciliation-pdf.js?v=2', 'institution-directory-rmsp.json']) {
   assert.ok(worker.includes(marker), `sw.js sem: ${marker}`);
 }
 
@@ -191,5 +199,22 @@ for (const marker of ['actions/checkout@v6', 'actions/configure-pages@v5', 'acti
   assert.ok(workflow.includes(marker), `workflow do GitHub Pages sem: ${marker}`);
 }
 assert.ok(workflow.includes('reconciliation-pdf.js'), 'workflow do GitHub Pages sem o gerador do PDF consolidado');
+assert.ok(workflow.includes('frame-guard.js'), 'workflow do GitHub Pages sem a proteção contra clickjacking');
+
+for (const marker of ['security_rate_limits', 'consume_security_rate_limit', 'is_auth_session_active', "state - 'account' - 'cloudUserId' - 'profile'"]) assert.ok(securityMigration.includes(marker), `migration de segurança sem: ${marker}`);
+assert.ok(securityMigration.includes('v_now timestamptz') && !securityMigration.includes('current_time timestamptz'), 'rate limit deve usar timestamp inequívoco no PostgreSQL');
+for (const marker of ['login_ip', 'login_account', 'Retry-After', 'invalidCredentials']) assert.ok(loginFunction.includes(marker), `login sem proteção: ${marker}`);
+for (const marker of ['register_ip', 'register_cpf', 'register_email', 'requiresLogin', 'Cache-Control']) assert.ok(registerFunction.includes(marker), `cadastro sem proteção: ${marker}`);
+assert.ok(sharedHttp.includes('Origin not allowed') && sharedHttp.includes("allowed.includes(normalized)") && !sharedHttp.includes("? origin : allowed[0]"), 'CORS precisa rejeitar origem fora da allowlist');
+assert.ok(sharedSupabase.includes('is_auth_session_active') && sharedSupabase.includes('AuthenticationError'), 'JWT revogado precisa ser rejeitado imediatamente');
+assert.ok(rateLimit.includes("HMAC") && rateLimit.includes("x-forwarded-for"), 'rate limit precisa proteger IP e identificador pseudonimizado');
+for (const protectedFunction of ['account-status', 'create-subscription', 'admin-users', 'admin-update-user', 'admin-create-user', 'sync-state', 'cancel-subscription', 'documents', 'analyze-invoice']) {
+  assert.ok(supabaseConfig.includes(`[functions.${protectedFunction}]\nverify_jwt = true`), `${protectedFunction} precisa validar JWT no gateway`);
+}
+assert.ok(syncStateFunction.includes('delete source.profile'), 'estado sincronizado não pode conter CPF do perfil');
+assert.ok(app.includes('delete payload.profile') && !app.includes('cpf: cpf || appState.profile?.cpf'), 'frontend não pode persistir CPF completo');
+assert.ok(cloud.includes('/auth/v1/logout?scope=local') && cloud.includes('await fetch') && cloud.includes('keepalive: true'), 'logout precisa revogar a sessão antes da limpeza local');
+assert.ok(appHtml.includes('Content-Security-Policy') && adminHtml.includes('Content-Security-Policy'), 'áreas autenticadas precisam de CSP');
+assert.ok(appHtml.includes('frame-guard.js?v=1') && adminHtml.includes('frame-guard.js?v=1') && frameGuard.includes('window.top === window.self'), 'áreas autenticadas precisam de defesa contra frames');
 
 console.log('MedRecebe validado: branding Calmart, SaaS desktop, login administrativo simples, plano único, CRUD, Nota Fiscal, backup, cancelamento e sincronização presentes.');

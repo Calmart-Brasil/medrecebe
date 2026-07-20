@@ -1,5 +1,5 @@
 import { json, options, publicError } from '../_shared/http.ts';
-import { adminClient, authenticatedUser } from '../_shared/supabase.ts';
+import { adminClient, authenticatedUser, authenticationStatus } from '../_shared/supabase.ts';
 
 const BUCKET = 'medrecebe-documents';
 const MAX_BYTES = 10 * 1024 * 1024;
@@ -184,7 +184,7 @@ Deno.serve(async (request) => {
   } catch (error) {
     console.error('documents', error);
     const message = error instanceof Error ? error.message : 'Não foi possível processar o documento.';
-    const status = message === 'Acesso inativo.' ? 403 : 500;
-    return publicError(request, message, status);
+    const status = message === 'Acesso inativo.' ? 403 : authenticationStatus(error, 500);
+    return publicError(request, status === 403 ? 'Acesso inativo.' : 'Não foi possível processar o documento.', status);
   }
 });

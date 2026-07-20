@@ -1,6 +1,6 @@
 import { json, options, publicError } from '../_shared/http.ts';
 import { cancelPreapproval, mercadoPago, type MercadoPagoSubscription } from '../_shared/mercado-pago.ts';
-import { adminClient, authenticatedUser } from '../_shared/supabase.ts';
+import { adminClient, authenticatedUser, authenticationStatus } from '../_shared/supabase.ts';
 
 const PLAN = { code: 'standard', amount: 39.9, amountCents: 3990, reason: 'MedRecebe - Assinatura mensal' } as const;
 
@@ -45,6 +45,6 @@ Deno.serve(async (request) => {
     return json(request, { checkoutUrl: subscription.init_point, planCode: PLAN.code });
   } catch (error) {
     console.error('create-subscription', error);
-    return publicError(request, 'Não foi possível iniciar a assinatura. Tente novamente.', 500);
+    return publicError(request, 'Não foi possível iniciar a assinatura. Tente novamente.', authenticationStatus(error, 500));
   }
 });

@@ -86,19 +86,30 @@
       const result = await authenticatedInvoke('account-status');
       return { ...result, session: getSession() };
     } catch (error) {
-      logout();
+      await logout();
       throw error;
     }
   }
 
   async function logout() {
     const session = getSession();
-    localStorage.removeItem(SESSION_KEY);
-    if (session?.accessToken && isEnabled()) {
-      fetch(`${config.supabaseUrl}/auth/v1/logout`, {
-        method: 'POST',
-        headers: { apikey: config.supabasePublishableKey, Authorization: `Bearer ${session.accessToken}` },
-      }).catch(() => {});
+    try {
+      if (session?.accessToken && isEnabled()) {
+        const controller = new AbortController();
+        const timeout = window.setTimeout(() => controller.abort(), 5000);
+        try {
+          await fetch(`${config.supabaseUrl}/auth/v1/logout?scope=local`, {
+            method: 'POST',
+            headers: { apikey: config.supabasePublishableKey, Authorization: `Bearer ${session.accessToken}` },
+            keepalive: true,
+            signal: controller.signal,
+          });
+        } finally {
+          window.clearTimeout(timeout);
+        }
+      }
+    } finally {
+      localStorage.removeItem(SESSION_KEY);
     }
   }
 

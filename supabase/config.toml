@@ -7,28 +7,31 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.account-status]
-verify_jwt = false
+verify_jwt = true
 
 [functions.create-subscription]
-verify_jwt = false
+verify_jwt = true
 
 [functions.mercado-pago-webhook]
 verify_jwt = false
 
 [functions.admin-users]
-verify_jwt = false
+verify_jwt = true
 
 [functions.admin-update-user]
-verify_jwt = false
+verify_jwt = true
 
 [functions.admin-create-user]
-verify_jwt = false
+verify_jwt = true
 
 [functions.sync-state]
-verify_jwt = false
+verify_jwt = true
 
 [functions.cancel-subscription]
-verify_jwt = false
+verify_jwt = true
 
 [functions.documents]
-verify_jwt = false
+verify_jwt = true
+
+[functions.analyze-invoice]
+verify_jwt = true

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="pt-BR">
+<html class="frame-guard-pending" lang="pt-BR">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -9,6 +9,10 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="MedRecebe" />
     <meta name="format-detection" content="telephone=no" />
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https://omwtayyqprgrtxprsyzb.supabase.co; connect-src 'self' https://omwtayyqprgrtxprsyzb.supabase.co; worker-src 'self'; form-action 'self'; upgrade-insecure-requests" />
+    <style id="anti-clickjack">html.frame-guard-pending{display:none!important}</style>
+    <script src="frame-guard.js?v=1"></script>
     <title>Entrar | MedRecebe</title>
     <meta name="description" content="Acesse o MedRecebe para registrar atendimentos e conferir seus repasses." />
     <link rel="manifest" href="manifest.webmanifest" />
@@ -117,9 +121,9 @@
     <div id="modal-root"></div>
     <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
-    <script>document.write('<script src="runtime-config.js?v=' + Date.now() + '"><\/script>');</script>
-    <script src="cloud.js?v=6"></script>
+    <script src="runtime-config.js?v=1"></script>
+    <script src="cloud.js?v=7"></script>
     <script src="reconciliation-pdf.js?v=2"></script>
-    <script src="app.js?v=23" defer></script>
+    <script src="app.js?v=24" defer></script>
   </body>
 </html>

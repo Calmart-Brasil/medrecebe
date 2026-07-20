@@ -1,7 +1,7 @@
 import { extractText, getDocumentProxy } from 'npm:unpdf@1.6.2';
 
 import { json, options, publicError } from '../_shared/http.ts';
-import { adminClient, authenticatedUser } from '../_shared/supabase.ts';
+import { adminClient, authenticatedUser, authenticationStatus } from '../_shared/supabase.ts';
 
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
 
@@ -223,6 +223,6 @@ Deno.serve(async (request) => {
     });
   } catch (error) {
     console.error('analyze-invoice', error);
-    return publicError(request, 'Não foi possível ler esta Nota Fiscal. Tente novamente com o PDF ou XML original.', 500);
+    return publicError(request, 'Não foi possível ler esta Nota Fiscal. Tente novamente com o PDF ou XML original.', authenticationStatus(error, 500));
   }
 });

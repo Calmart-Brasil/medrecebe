@@ -1,6 +1,6 @@
 import { json, options, publicError } from '../_shared/http.ts';
 import { cancelPreapproval, mercadoPago } from '../_shared/mercado-pago.ts';
-import { adminClient, authenticatedUser } from '../_shared/supabase.ts';
+import { adminClient, authenticatedUser, authenticationStatus } from '../_shared/supabase.ts';
 
 interface Payment {
   id?: string | number;
@@ -90,6 +90,6 @@ Deno.serve(async (request) => {
     return json(request, { canceled: true, refunded, refundPending, withinCoolingOff });
   } catch (error) {
     console.error('cancel-subscription', error);
-    return publicError(request, 'Não foi possível concluir o cancelamento agora. Nenhuma nova tentativa será feita sem sua confirmação.', 500);
+    return publicError(request, 'Não foi possível concluir o cancelamento agora. Nenhuma nova tentativa será feita sem sua confirmação.', authenticationStatus(error, 500));
   }
 });

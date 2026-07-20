@@ -1,11 +1,12 @@
 import { json, options, publicError } from '../_shared/http.ts';
-import { adminClient, authenticatedUser } from '../_shared/supabase.ts';
+import { adminClient, authenticatedUser, authenticationStatus } from '../_shared/supabase.ts';
 
 function safeState(input: unknown): Record<string, unknown> {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Estado inválido.');
   const source = structuredClone(input as Record<string, unknown>);
   delete source.account;
   delete source.cloudUserId;
+  delete source.profile;
   delete source.demo;
   if (Array.isArray(source.attendances)) {
     source.attendances = source.attendances.slice(0, 10_000).map((item) => {
@@ -80,6 +81,6 @@ Deno.serve(async (request) => {
     return json(request, { saved: true, version: data.version, updatedAt: data.updated_at });
   } catch (error) {
     console.error('sync-state', error);
-    return publicError(request, error instanceof Error ? error.message : 'Não foi possível sincronizar os dados.', 500);
+    return publicError(request, 'Não foi possível sincronizar os dados.', authenticationStatus(error, 500));
   }
 });

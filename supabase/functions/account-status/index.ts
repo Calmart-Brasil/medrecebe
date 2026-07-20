@@ -1,7 +1,7 @@
 import { reconcileUserBilling } from '../_shared/billing.ts';
 import { json, options, publicError } from '../_shared/http.ts';
 import { mercadoPago } from '../_shared/mercado-pago.ts';
-import { adminClient, authenticatedUser } from '../_shared/supabase.ts';
+import { adminClient, authenticatedUser, authenticationStatus } from '../_shared/supabase.ts';
 
 Deno.serve(async (request) => {
   const preflight = options(request);
@@ -112,6 +112,6 @@ Deno.serve(async (request) => {
     });
   } catch (error) {
     console.error('account-status', error);
-    return publicError(request, error instanceof Error ? error.message : 'Sessão inválida.', 401);
+    return publicError(request, 'Não foi possível consultar a conta.', authenticationStatus(error, 500));
   }
 });

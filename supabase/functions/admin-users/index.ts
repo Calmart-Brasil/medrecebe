@@ -1,5 +1,5 @@
 import { json, options, publicError } from '../_shared/http.ts';
-import { adminClient, requireAdmin } from '../_shared/supabase.ts';
+import { adminClient, requireAdmin, authenticationStatus } from '../_shared/supabase.ts';
 
 Deno.serve(async (request) => {
   const preflight = options(request);
@@ -84,6 +84,6 @@ Deno.serve(async (request) => {
     });
   } catch (error) {
     console.error('admin-users', error);
-    return publicError(request, error instanceof Error ? error.message : 'Acesso não autorizado.', 403);
+    return publicError(request, 'Não foi possível consultar os usuários.', authenticationStatus(error, 500));
   }
 });

@@ -151,7 +151,13 @@ function loadState(storageKey = activeStateKey) {
   try {
     const parsed = JSON.parse(localStorage.getItem(storageKey));
     if (parsed && Array.isArray(parsed.workplaces) && Array.isArray(parsed.attendances)) {
-      return normalizeState(parsed);
+      const normalized = normalizeState(parsed);
+      if (normalized.profile?.cpf) {
+        const last4 = onlyDigits(normalized.profile.cpf).slice(-4);
+        normalized.profile = { ...normalized.profile, cpf: `•••.•••.•••-${last4.padStart(4, '•')}` };
+        localStorage.setItem(storageKey, JSON.stringify(normalized));
+      }
+      return normalized;
     }
   } catch {
     // Um armazenamento inválido é substituído por uma base limpa.
@@ -646,7 +652,9 @@ function cloudAccessAllowed() {
 }
 
 function cloudStatePayload() {
-  return { ...appState, account: null, cloudUserId: undefined, demo: false };
+  const payload = { ...appState, account: null, cloudUserId: undefined, demo: false };
+  delete payload.profile;
+  return payload;
 }
 
 function applyCloudDocuments(documents = []) {
@@ -901,7 +909,7 @@ function applyCloudAccount(result, cpf = '') {
   appState.profile = {
     name: result.profile.fullName,
     email: result.profile.email,
-    cpf: cpf || appState.profile?.cpf || `*******${result.profile.cpfLast4}`,
+    cpf: `•••.•••.•••-${String(result.profile.cpfLast4 || cpf.slice(-4)).padStart(4, '•')}`,
   };
   appState.cloudUserId = result.profile.id;
   localStorage.setItem(activeStateKey, JSON.stringify(appState));
@@ -1844,13 +1852,13 @@ function bindEvents() {
           if (!/^\S+@\S+\.\S+$/.test(email)) throw new Error('Informe um e-mail válido.');
           if (password.length < 8) throw new Error('A senha deve ter pelo menos oito caracteres.');
           const result = await cloud.register({ name, email, cpf, password, planCode: selectedPlanCode });
-          if (result.requiresEmailConfirmation) {
+          if (result.requiresLogin) {
             authMode = 'login';
             $('#register-fields').hidden = true;
-            $('#auth-title').textContent = 'Confirme seu e-mail';
-            $('#auth-description').textContent = 'Depois da confirmação, entre com seu CPF e senha.';
+            $('#auth-title').textContent = 'Cadastro recebido';
+            $('#auth-description').textContent = 'Confirme seu e-mail, se solicitado, e entre com CPF e senha.';
             $('#auth-toggle').textContent = 'Primeiro uso? Criar meu acesso';
-            error.textContent = 'Cadastro criado. Confirme o e-mail enviado e depois entre com CPF e senha.';
+            error.textContent = result.message || 'Cadastro recebido. Agora entre com CPF e senha.';
             return;
           }
           applyCloudAccount(result, cpf);
@@ -2354,8 +2362,8 @@ function saveWorkplace() {
   }
 }
 
-function logout() {
-  if (isCloudMode()) void cloud.logout();
+async function logout() {
+  if (isCloudMode()) await cloud.logout();
   cloudAccount = null;
   localStorage.removeItem(SESSION_KEY);
   activeStateKey = APP_KEY;

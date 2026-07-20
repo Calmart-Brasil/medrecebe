@@ -1,6 +1,6 @@
 import { cpfHash, isValidCpf, onlyDigits } from '../_shared/cpf.ts';
 import { json, options, publicError } from '../_shared/http.ts';
-import { adminClient, requireAdmin } from '../_shared/supabase.ts';
+import { adminClient, requireAdmin, authenticationStatus } from '../_shared/supabase.ts';
 
 const durationUnits = new Set(['days', 'weeks', 'months', 'years', 'lifetime']);
 
@@ -81,6 +81,6 @@ Deno.serve(async (request) => {
     return json(request, { created: true, userId: auth.user.id, manualAccessUntil, lifetime }, 201);
   } catch (error) {
     console.error('admin-create-user', error);
-    return publicError(request, error instanceof Error ? error.message : 'Não foi possível criar o usuário.', 403);
+    return publicError(request, 'Não foi possível criar o usuário.', authenticationStatus(error, 500));
   }
 });
