@@ -1,10 +1,10 @@
-const CACHE_NAME = 'medrecebe-app-v30';
+const CACHE_NAME = 'medrecebe-app-v31';
 const APP_SHELL = [
   './',
   './index.html',
   './app.html',
   './landing.css?v=5',
-  './styles.css?v=23',
+  './styles.css?v=24',
   './cloud.js?v=8',
   './frame-guard.js?v=1',
   './reconciliation-pdf.js?v=2',

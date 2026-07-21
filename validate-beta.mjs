@@ -78,10 +78,11 @@ for (const marker of [
   'manifest.webmanifest',
   'Registrar atendimento',
   'Dashboard',
-  'Locais e repasses',
+  'Locais e modalidades',
   'Conciliação',
   'Mais',
 ]) assert.ok(appHtml.includes(marker), `app.html sem: ${marker}`);
+assert.equal((appHtml.match(/<nav>[\s\S]*?<\/nav>/)?.[0].match(/<svg /g) || []).length, 5, 'menu web precisa usar os cinco ícones SVG da navegação');
 
 for (const marker of ['Cadastre-se grátis', 'Freemium', 'R$ 39,90', 'Nota Fiscal', 'Cancelamento e reembolso']) {
   assert.ok(landing.includes(marker), `landing page sem: ${marker}`);
@@ -108,7 +109,7 @@ assert.ok(
   'appState só pode ser carregado depois da mensagem padrão usada pelo estado vazio',
 );
 assert.ok(!appHtml.includes('Beta local:'), 'o aviso antigo de beta local não deve aparecer na entrada');
-assert.ok(appHtml.includes('styles.css?v=23') && appHtml.includes('cloud.js?v=8') && appHtml.includes('reconciliation-pdf.js?v=2') && appHtml.includes('app.js?v=26'), 'os arquivos corrigidos precisam de cache busting');
+assert.ok(appHtml.includes('styles.css?v=24') && appHtml.includes('cloud.js?v=8') && appHtml.includes('reconciliation-pdf.js?v=2') && appHtml.includes('app.js?v=26'), 'os arquivos corrigidos precisam de cache busting');
 for (const marker of ['auth-phone-country', 'auth-phone', 'Cadastre-se grátis']) assert.ok(appHtml.includes(marker), `cadastro gratuito sem: ${marker}`);
 for (const marker of ['formatMobilePhone', 'isFreemiumAccount', 'canCreateWorkplace', 'phoneCountryCode', 'phoneNumber']) assert.ok(app.includes(marker), `plano Freemium ou celular sem: ${marker}`);
 for (const marker of ['Esqueci minha senha', 'auth-new-password', 'auth-confirm-password']) assert.ok(appHtml.includes(marker), `recuperação de senha sem: ${marker}`);
@@ -202,7 +203,7 @@ for (const [name, document] of [['Landing', landing], ['Aplicativo', `${appHtml}
   }
 }
 
-for (const marker of ['install', 'activate', 'fetch', 'caches.open', 'medrecebe-app-v30', './app.html', 'reconciliation-pdf.js?v=2', 'institution-directory-rmsp.json']) {
+for (const marker of ['install', 'activate', 'fetch', 'caches.open', 'medrecebe-app-v31', './app.html', 'reconciliation-pdf.js?v=2', 'institution-directory-rmsp.json']) {
   assert.ok(worker.includes(marker), `sw.js sem: ${marker}`);
 }
 
