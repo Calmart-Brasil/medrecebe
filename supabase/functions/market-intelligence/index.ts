@@ -4,11 +4,24 @@ import { adminClient, authenticatedUser, authenticationStatus } from '../_shared
 
 type PncpRecord = Record<string, any>;
 
-const GENERAL_MEDICAL_TERMS = [
-  'medic', 'plantao', 'consulta', 'cirurgia', 'procedimento', 'assistencia a saude',
-  'servicos de saude', 'profissionais de saude', 'equipe de saude', 'atendimento hospitalar',
-  'urgencia', 'emergencia', 'ambulator', 'diagnostico', 'terapia',
+const MEDICAL_SERVICE_TERMS = [
+  'credenciamento medico', 'credenciamento de medicos', 'credenciamento de profissionais medicos',
+  'prestacao de servicos medicos', 'prestadores de servicos medicos', 'servicos medicos',
+  'servicos de profissionais medicos',
+  'profissional medico', 'profissionais medicos', 'plantao medico', 'plantoes medicos',
+  'equipe medica', 'consulta medica', 'consultas medicas', 'atendimento medico',
+  'assistencia medica', 'especialidade medica', 'especialidades medicas', 'corpo clinico',
+  'procedimento medico', 'procedimentos medicos',
 ];
+
+const SUPPLY_ONLY_TERMS = [
+  'aquisicao de medicamentos', 'fornecimento de medicamentos', 'material medico hospitalar',
+  'materiais medico hospitalares', 'equipamento medico', 'equipamentos medicos',
+  'insumos hospitalares', 'reagentes', 'material de consumo', 'locacao de equipamento',
+  'manutencao de equipamento',
+];
+
+const EXCLUDED_SERVICE_TERMS = ['veterinario', 'veterinaria', 'medicina veterinaria', 'caes e gatos', 'odontologico', 'odontologica'];
 
 const SPECIALTY_ALIASES: Record<string, string[]> = {
   'clinica-medica': ['clinica medica', 'medico clinico', 'generalista'],
@@ -74,10 +87,26 @@ async function fetchPage(uf: string, dataFinal: string, page: number): Promise<{
   url.searchParams.set('uf', uf);
   url.searchParams.set('pagina', String(page));
   url.searchParams.set('tamanhoPagina', '50');
-  const response = await fetch(url, { headers: { Accept: 'application/json', 'User-Agent': 'MedRecebe/1.0 (inteligencia de mercado)' }, signal: AbortSignal.timeout(12_000) });
-  if (!response.ok) throw new Error(`PNCP ${response.status}`);
-  const body = await response.json();
-  return { data: Array.isArray(body.data) ? body.data : [], totalPages: Number(body.totalPaginas) || 1, totalRecords: Number(body.totalRegistros) || 0 };
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      const response = await fetch(url, { headers: { Accept: 'application/json', 'User-Agent': 'MedRecebe/1.0 (inteligencia de mercado)' }, signal: AbortSignal.timeout(12_000) });
+      if (!response.ok) throw new Error(`PNCP ${response.status}`);
+      const body = await response.json();
+      return { data: Array.isArray(body.data) ? body.data : [], totalPages: Number(body.totalPaginas) || 1, totalRecords: Number(body.totalRegistros) || 0 };
+    } catch (error) {
+      lastError = error;
+      if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, attempt * 350));
+    }
+  }
+  throw lastError;
+}
+
+function sampledPages(totalPages: number, maximum = 14): number[] {
+  const total = Math.max(1, totalPages);
+  const size = Math.min(total, maximum);
+  if (size === 1) return [1];
+  return [...new Set(Array.from({ length: size }, (_, index) => Math.round(1 + index * (total - 1) / (size - 1))))];
 }
 
 Deno.serve(async (request) => {
@@ -134,13 +163,19 @@ Deno.serve(async (request) => {
     limitDate.setUTCDate(limitDate.getUTCDate() + 120);
     const dataFinal = formatPncpDate(limitDate);
     const first = await fetchPage(uf, dataFinal, 1);
-    const pageLimit = Math.min(first.totalPages, 10);
-    const remaining = await Promise.all(Array.from({ length: Math.max(0, pageLimit - 1) }, (_, index) => fetchPage(uf, dataFinal, index + 2)));
+    const inspectedPages = sampledPages(first.totalPages);
+    const remainingPages = inspectedPages.filter((page) => page !== 1);
+    const settlements = await Promise.allSettled(remainingPages.map((page) => fetchPage(uf, dataFinal, page)));
+    const successfulPages = [1, ...remainingPages.filter((_, index) => settlements[index].status === 'fulfilled')];
+    const failedPages = remainingPages.filter((_, index) => settlements[index].status === 'rejected');
+    const remaining = settlements.flatMap((result) => result.status === 'fulfilled' ? [result.value] : []);
     const records = [first, ...remaining].flatMap((page) => page.data);
 
     const ranked = records.map((item) => {
       const text = normalized(`${item.objetoCompra || ''} ${item.informacaoComplementar || ''} ${item.modalidadeNome || ''}`);
-      const generalMatches = GENERAL_MEDICAL_TERMS.filter((term) => text.includes(term));
+      const generalMatches = MEDICAL_SERVICE_TERMS.filter((term) => text.includes(term));
+      const supplyMatches = SUPPLY_ONLY_TERMS.filter((term) => text.includes(term));
+      const excludedMatches = EXCLUDED_SERVICE_TERMS.filter((term) => text.includes(term));
       const specialtyMatches = termsBySpecialty.filter((specialty) => specialty.terms.some((term) => text.includes(term)));
       const itemCity = normalized(item.unidadeOrgao?.municipioNome || '');
       let score = Math.min(5, generalMatches.length);
@@ -152,10 +187,11 @@ Deno.serve(async (request) => {
         ...(city && itemCity === city ? [`Mesmo município: ${item.unidadeOrgao?.municipioNome}`] : []),
         ...(!specialtyMatches.length && generalMatches.length ? ['Compatível com CRM sem especialidade exigida'] : []),
       ];
-      return { item, text, generalMatches, specialtyMatches, score, matches };
+      const excluded = excludedMatches.length > 0 || (supplyMatches.length > 0 && generalMatches.length === 0);
+      return { item, text, generalMatches, specialtyMatches, excluded, score, matches };
     });
 
-    const health = ranked.filter((entry) => entry.generalMatches.length || entry.specialtyMatches.length);
+    const health = ranked.filter((entry) => (entry.generalMatches.length > 0 || entry.specialtyMatches.length > 0) && !entry.excluded);
     const radar = health
       .sort((a, b) => Date.parse(a.item.dataEncerramentoProposta || '') - Date.parse(b.item.dataEncerramentoProposta || '') || b.score - a.score)
       .slice(0, 30)
@@ -186,8 +222,10 @@ Deno.serve(async (request) => {
         fetchedAt: new Date().toISOString(),
         recordsInspected: records.length,
         totalRecordsReported: first.totalRecords,
-        pagesInspected: pageLimit,
-        truncated: first.totalPages > pageLimit,
+        pagesInspected: successfulPages.length,
+        sampledPages: successfulPages,
+        failedPages,
+        truncated: first.totalPages > successfulPages.length,
         scope: `${uf} · propostas abertas com encerramento em até 120 dias`,
         regionalScope: territorialFilterActive
           ? `${profileResult.data?.opportunity_city || cityCode} · raio territorial de ${radiusKm} km`

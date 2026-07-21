@@ -8,7 +8,8 @@ const INSTITUTION_DIRECTORY_VERSION = '20260718';
 const MEDICAL_SPECIALTIES_URL = './data/medical-specialties.json?v=20260721';
 const MUNICIPALITY_DIRECTORY_BASE_URL = './data/municipalities';
 const MEDICAL_DENSITY_BASE_URL = './data/medical-density';
-const MARKET_MAP_VERSION = '202606-pop2025-v2';
+const MEDICAL_SHAPES_BASE_URL = './data/medical-map-shapes';
+const MARKET_MAP_VERSION = '202606-pop2025-v3';
 const CNPJ_CARD_URL = 'https://solucoes.receita.fazenda.gov.br/Servicos/cnpjreva/cnpj.aspx';
 
 const $ = (selector, root = document) => root.querySelector(selector);
@@ -60,14 +61,19 @@ let professionalDraft = null;
 let marketIntelligenceCache = null;
 let marketIntelligenceLoading = false;
 let marketIntelligenceError = '';
+let privateProspectsError = '';
 const municipalityDirectoryCache = new Map();
 const municipalityDirectoryPromises = new Map();
 const medicalDensityCache = new Map();
 const medicalDensityPromises = new Map();
+const medicalShapesCache = new Map();
+const medicalShapesPromises = new Map();
 let medicalDensityError = '';
-let selectedMedicalMapUf = '';
+let selectedMedicalMapUf = 'BR';
 let selectedMedicalMapSpecialty = 'all';
 let selectedMedicalMapMetric = 'per_100k';
+let selectedMedicalMapLayer = 'concentration';
+let selectedSpecialtyRankingOrder = 'asc';
 
 const TITLES = {
   home: 'Início',
@@ -1359,7 +1365,8 @@ async function loadMunicipalityDirectory(uf) {
 }
 
 async function loadMedicalDensity(uf) {
-  const state = BRAZIL_UFS.includes(String(uf || '').toUpperCase()) ? String(uf).toUpperCase() : 'SP';
+  const requested = String(uf || '').toUpperCase();
+  const state = requested === 'BR' || BRAZIL_UFS.includes(requested) ? requested : 'BR';
   if (medicalDensityCache.has(state)) return medicalDensityCache.get(state);
   if (medicalDensityPromises.has(state)) return medicalDensityPromises.get(state);
   const promise = fetch(`${MEDICAL_DENSITY_BASE_URL}/${state}.json?v=${MARKET_MAP_VERSION}`)
@@ -1379,6 +1386,31 @@ async function loadMedicalDensity(uf) {
       throw error;
     });
   medicalDensityPromises.set(state, promise);
+  return promise;
+}
+
+async function loadMedicalShapes(uf) {
+  const requested = String(uf || '').toUpperCase();
+  const state = requested === 'BR' || BRAZIL_UFS.includes(requested) ? requested : 'BR';
+  if (medicalShapesCache.has(state)) return medicalShapesCache.get(state);
+  if (medicalShapesPromises.has(state)) return medicalShapesPromises.get(state);
+  const promise = fetch(`${MEDICAL_SHAPES_BASE_URL}/${state}.json?v=${MARKET_MAP_VERSION}`)
+    .then((response) => {
+      if (!response.ok) throw new Error('Fronteiras do mapa indisponíveis.');
+      return response.json();
+    })
+    .then((payload) => {
+      medicalShapesCache.set(state, payload);
+      medicalShapesPromises.delete(state);
+      medicalDensityError = '';
+      return payload;
+    })
+    .catch((error) => {
+      medicalShapesPromises.delete(state);
+      medicalDensityError = error instanceof Error ? error.message : 'Fronteiras do mapa indisponíveis.';
+      throw error;
+    });
+  medicalShapesPromises.set(state, promise);
   return promise;
 }
 
@@ -1436,58 +1468,75 @@ function addOpportunityDistances(payload, territory) {
 }
 
 function medicalMapMarkup(uf) {
-  const directory = municipalityDirectoryCache.get(uf);
   const density = medicalDensityCache.get(uf);
+  const nationalDensity = medicalDensityCache.get('BR');
+  const shapes = medicalShapesCache.get(uf);
   if (medicalDensityError) return `<div class="notice warning">${escapeHtml(medicalDensityError)}</div>`;
-  if (!directory || !density) return '<div class="card intelligence-loading"><span class="sync-spinner" aria-hidden="true"></span><strong>Preparando mapa territorial</strong><p>Carregando municípios do IBGE e dados agregados do CNES.</p></div>';
+  if (!density || !nationalDensity || !shapes) return '<div class="card intelligence-loading"><span class="sync-spinner" aria-hidden="true"></span><strong>Preparando mapa territorial</strong><p>Carregando fronteiras do IBGE e dados agregados do CNES.</p></div>';
   const specialtyIndex = selectedMedicalMapSpecialty === 'all' ? -1 : Number(selectedMedicalMapSpecialty);
   if (specialtyIndex >= (density.specialtyNames || []).length || specialtyIndex < -1) selectedMedicalMapSpecialty = 'all';
   const effectiveSpecialtyIndex = selectedMedicalMapSpecialty === 'all' ? -1 : Number(selectedMedicalMapSpecialty);
   const title = effectiveSpecialtyIndex >= 0 ? density.specialtyNames[effectiveSpecialtyIndex] : 'Todos os médicos';
-  const densityByCode = new Map(density.municipalities.map((item) => [item.ibgeCode, item]));
-  const locations = directory.municipalities.map((item) => {
-    const source = densityByCode.get(item.ibgeCode) || {};
+  const isBrazil = uf === 'BR';
+  const sourceAreas = isBrazil ? density.states || [] : density.municipalities || [];
+  const shapeByCode = new Map((shapes.shapes || []).map((item) => [String(item.ibgeCode || item.uf || ''), item.path]));
+  const nationalPopulation = Number(nationalDensity.meta?.statePopulation || 0);
+  const nationalCount = effectiveSpecialtyIndex >= 0
+    ? Number(nationalDensity.stateSpecialties?.[effectiveSpecialtyIndex] || 0)
+    : Number(nationalDensity.meta?.uniquePhysicians || 0);
+  const benchmarkRate = nationalPopulation > 0 ? nationalCount * 100000 / nationalPopulation : 0;
+  const areas = sourceAreas.map((source) => {
+    const code = String(source.ibgeCode || source.uf || '');
     const count = effectiveSpecialtyIndex >= 0 ? Number(source.specialties?.[effectiveSpecialtyIndex] || 0) : Number(source.physicians || 0);
     const population = Number(source.population || 0);
     const rate = population > 0 ? count * 100000 / population : 0;
-    return { ...item, count, population, rate, value: selectedMedicalMapMetric === 'per_100k' ? rate : count };
+    const concentrationValue = selectedMedicalMapMetric === 'per_100k' ? rate : count;
+    const gapRate = Math.max(0, benchmarkRate - rate);
+    const estimatedGap = population > 0 ? Math.ceil(gapRate * population / 100000) : 0;
+    const scarcity = benchmarkRate > 0 ? Math.min(1, gapRate / benchmarkRate) : 0;
+    return { code, name: source.name || source.uf || code, count, population, rate, concentrationValue, estimatedGap, scarcity, path: shapeByCode.get(code) || '' };
   });
-  const positive = locations.filter((item) => item.value > 0);
-  const sortedValues = positive.map((item) => item.value).sort((left, right) => left - right);
+  const positive = areas.filter((item) => item.concentrationValue > 0);
+  const sortedValues = positive.map((item) => item.concentrationValue).sort((left, right) => left - right);
   const scaleMax = sortedValues[Math.min(sortedValues.length - 1, Math.floor(sortedValues.length * 0.95))] || 1;
-  const longitudes = locations.map((item) => item.longitude);
-  const latitudes = locations.map((item) => item.latitude);
-  const bounds = { minX: Math.min(...longitudes), maxX: Math.max(...longitudes), minY: Math.min(...latitudes), maxY: Math.max(...latitudes) };
-  const project = (item) => ({
-    x: 24 + ((item.longitude - bounds.minX) / Math.max(0.001, bounds.maxX - bounds.minX)) * 592,
-    y: 376 - ((item.latitude - bounds.minY) / Math.max(0.001, bounds.maxY - bounds.minY)) * 352,
-  });
-  const circles = locations.map((item) => {
-    const point = project(item);
-    const intensity = item.value ? Math.max(0.16, Math.min(1, Math.log1p(item.value) / Math.log1p(scaleMax))) : 0.055;
-    const radius = item.value ? 2.2 + intensity * 7 : 1.1;
-    const color = item.value ? `rgba(0,77,182,${Math.min(0.9, 0.22 + intensity * 0.72).toFixed(2)})` : 'rgba(90,100,114,.16)';
-    const measure = selectedMedicalMapMetric === 'per_100k' ? `${item.rate.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} por 100 mil hab.` : `${item.count.toLocaleString('pt-BR')} profissionais`;
-    return `<circle cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="${radius.toFixed(1)}" fill="${color}"><title>${escapeHtml(item.name)}: ${measure} · ${item.count.toLocaleString('pt-BR')} profissionais · população ${item.population.toLocaleString('pt-BR')}</title></circle>`;
+  const paths = areas.map((item) => {
+    const intensity = selectedMedicalMapLayer === 'scarcity'
+      ? item.scarcity
+      : item.concentrationValue > 0 ? Math.max(0.08, Math.min(1, Math.log1p(item.concentrationValue) / Math.log1p(scaleMax))) : 0;
+    const fill = selectedMedicalMapLayer === 'scarcity'
+      ? `rgba(205,38,52,${(0.08 + intensity * 0.84).toFixed(2)})`
+      : item.concentrationValue > 0 ? `rgba(0,77,182,${(0.10 + intensity * 0.82).toFixed(2)})` : 'rgba(90,100,114,.08)';
+    const measure = `${item.rate.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} por 100 mil hab.`;
+    return `<path d="${item.path}" fill="${fill}" fill-rule="evenodd"><title>${escapeHtml(item.name)}: ${measure} · ${item.count.toLocaleString('pt-BR')} profissionais · população ${item.population.toLocaleString('pt-BR')}${item.estimatedGap ? ` · déficit indicativo ${item.estimatedGap.toLocaleString('pt-BR')}` : ''}</title></path>`;
   }).join('');
-  const top = positive.sort((left, right) => right.value - left.value).slice(0, 8);
+  const compareValue = (item) => selectedMedicalMapMetric === 'per_100k' ? item.rate : item.count;
+  const top = [...areas].filter((item) => item.count > 0).sort((left, right) => compareValue(right) - compareValue(left) || right.population - left.population).slice(0, 8);
+  const bottom = [...areas].filter((item) => item.population > 0).sort((left, right) => compareValue(left) - compareValue(right) || right.population - left.population).slice(0, 8);
+  const gaps = [...areas].filter((item) => item.estimatedGap > 0).sort((left, right) => right.estimatedGap - left.estimatedGap || left.rate - right.rate).slice(0, 8);
   const specialtyOptions = (density.specialtyNames || []).map((name, index) => ({ name, index })).sort((left, right) => left.name.localeCompare(right.name, 'pt-BR'));
   const options = `<option value="all">Todos os médicos</option>${specialtyOptions.map((item) => `<option value="${item.index}" ${String(item.index) === selectedMedicalMapSpecialty ? 'selected' : ''}>${escapeHtml(item.name)}</option>`).join('')}`;
-  const statePopulation = Number(density.meta?.statePopulation || locations.reduce((sum, item) => sum + item.population, 0));
+  const statePopulation = Number(density.meta?.statePopulation || 0);
   const stateCount = effectiveSpecialtyIndex >= 0 ? Number(density.stateSpecialties?.[effectiveSpecialtyIndex] || 0) : Number(density.meta?.uniquePhysicians || 0);
   const stateRate = statePopulation > 0 ? stateCount * 100000 / statePopulation : 0;
   const formatValue = (item) => selectedMedicalMapMetric === 'per_100k'
     ? item.rate.toLocaleString('pt-BR', { maximumFractionDigits: 1 })
     : item.count.toLocaleString('pt-BR');
   const rankingUnit = selectedMedicalMapMetric === 'per_100k' ? 'por 100 mil' : 'profissionais';
-  return `<div class="medical-map-filters"><label>Estado<select id="medical-map-uf">${ufOptions(uf)}</select></label><label>Especialidade<select id="medical-map-specialty">${options}</select></label><label>Indicador<select id="medical-map-metric"><option value="per_100k" ${selectedMedicalMapMetric === 'per_100k' ? 'selected' : ''}>Profissionais por 100 mil habitantes</option><option value="absolute" ${selectedMedicalMapMetric === 'absolute' ? 'selected' : ''}>Quantidade de profissionais</option></select></label></div><div class="medical-map-state-summary"><span><small>PROFISSIONAIS NA UF</small><strong>${stateCount.toLocaleString('pt-BR')}</strong></span><span><small>POPULAÇÃO ESTIMADA</small><strong>${statePopulation.toLocaleString('pt-BR')}</strong></span><span><small>PROFISSIONAIS / 100 MIL HAB.</small><strong>${stateRate.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}</strong></span></div><div class="medical-map-layout"><div class="card medical-map-card"><svg class="medical-heatmap" viewBox="0 0 640 400" role="img" aria-label="Mapa da concentração de ${escapeHtml(title)} em ${escapeHtml(uf)}">${circles}</svg><div class="map-legend"><span>Menor ${selectedMedicalMapMetric === 'per_100k' ? 'taxa' : 'quantidade'}</span><i></i><span>Maior ${selectedMedicalMapMetric === 'per_100k' ? 'taxa' : 'quantidade'}</span></div></div><div class="card medical-map-ranking"><h3>Maiores concentrações municipais</h3>${top.map((item, index) => `<div><span><b>${index + 1}</b><span><strong>${escapeHtml(item.name)}</strong><small>${item.count.toLocaleString('pt-BR')} profissionais · ${item.population.toLocaleString('pt-BR')} habitantes</small></span></span><em>${formatValue(item)}<small>${rankingUnit}</small></em></div>`).join('') || '<p class="muted">Sem registros para esta ocupação.</p>'}</div></div><p class="data-footnote">Fontes: CNES/DATASUS, ${escapeHtml(density.meta?.period || '')}, e estimativa populacional IBGE ${escapeHtml(density.meta?.populationPeriod || '2025')}. Os indicadores municipais dividem profissionais-indivíduos pela população estimada e multiplicam por 100 mil. A especialidade representa a ocupação CBO e não equivale a RQE ativo no CFM.</p>`;
+  const territoryLabel = isBrazil ? 'estados' : 'municípios';
+  const rankingRows = (items, mode = 'value') => items.map((item, index) => `<div><span><b>${index + 1}</b><span><strong>${escapeHtml(item.name)}</strong><small>${item.count.toLocaleString('pt-BR')} profissionais · ${item.population.toLocaleString('pt-BR')} habitantes</small></span></span><em>${mode === 'gap' ? item.estimatedGap.toLocaleString('pt-BR') : formatValue(item)}<small>${mode === 'gap' ? 'déficit indicativo' : rankingUnit}</small></em></div>`).join('') || '<p class="muted">Sem dados suficientes.</p>';
+  const specialtyRanking = (density.specialtyNames || []).map((name, index) => {
+    const count = Number(density.stateSpecialties?.[index] || 0);
+    return { name, count, rate: statePopulation > 0 ? count * 100000 / statePopulation : 0 };
+  }).sort((left, right) => selectedSpecialtyRankingOrder === 'asc' ? left.rate - right.rate || right.count - left.count : right.rate - left.rate || right.count - left.count).slice(0, 15);
+  const stateOptions = `<option value="BR" ${uf === 'BR' ? 'selected' : ''}>Brasil</option>${BRAZIL_UFS.map((state) => `<option value="${state}" ${state === uf ? 'selected' : ''}>${state}</option>`).join('')}`;
+  return `<div class="medical-map-filters"><label>Território<select id="medical-map-uf">${stateOptions}</select></label><label>Especialidade<select id="medical-map-specialty">${options}</select></label><label>Indicador<select id="medical-map-metric"><option value="per_100k" ${selectedMedicalMapMetric === 'per_100k' ? 'selected' : ''}>Profissionais por 100 mil habitantes</option><option value="absolute" ${selectedMedicalMapMetric === 'absolute' ? 'selected' : ''}>Quantidade de profissionais</option></select></label><label>Camada<select id="medical-map-layer"><option value="concentration" ${selectedMedicalMapLayer === 'concentration' ? 'selected' : ''}>Concentração — azul</option><option value="scarcity" ${selectedMedicalMapLayer === 'scarcity' ? 'selected' : ''}>Ausência / déficit — vermelho</option></select></label></div><div class="medical-map-state-summary"><span><small>PROFISSIONAIS ${isBrazil ? 'NO BRASIL' : 'NA UF'}</small><strong>${stateCount.toLocaleString('pt-BR')}</strong></span><span><small>POPULAÇÃO ESTIMADA</small><strong>${statePopulation.toLocaleString('pt-BR')}</strong></span><span><small>PROFISSIONAIS / 100 MIL HAB.</small><strong>${stateRate.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}</strong></span></div><div class="card medical-map-card"><svg class="medical-heatmap" viewBox="${escapeHtml(shapes.meta?.viewBox || '0 0 640 440')}" role="img" aria-label="Mapa da ${selectedMedicalMapLayer === 'scarcity' ? 'ausência' : 'concentração'} de ${escapeHtml(title)} em ${escapeHtml(uf)}">${paths}</svg><div class="map-legend ${selectedMedicalMapLayer === 'scarcity' ? 'scarcity' : ''}"><span>${selectedMedicalMapLayer === 'scarcity' ? 'Menor déficit' : 'Menor concentração'}</span><i></i><span>${selectedMedicalMapLayer === 'scarcity' ? 'Maior déficit' : 'Maior concentração'}</span></div></div><div class="medical-map-rankings"><div class="card medical-map-ranking"><h3>Maiores concentrações — ${territoryLabel}</h3>${rankingRows(top)}</div><div class="card medical-map-ranking"><h3>Menores concentrações — ${territoryLabel}</h3>${rankingRows(bottom)}</div><div class="card medical-map-ranking scarcity-ranking"><h3>Maiores bolsões de ausência</h3>${rankingRows(gaps, 'gap')}</div></div><div class="card specialty-rate-ranking"><div class="section-heading"><div><p class="eyebrow">OFERTA RELATIVA</p><h3>Ranking de especialidades por 100 mil habitantes</h3></div><label>Ordenar<select id="medical-specialty-ranking-order"><option value="asc" ${selectedSpecialtyRankingOrder === 'asc' ? 'selected' : ''}>Menor oferta primeiro</option><option value="desc" ${selectedSpecialtyRankingOrder === 'desc' ? 'selected' : ''}>Maior oferta primeiro</option></select></label></div><div class="specialty-rate-list">${specialtyRanking.map((item, index) => `<div><b>${index + 1}</b><span><strong>${escapeHtml(item.name)}</strong><small>${item.count.toLocaleString('pt-BR')} profissionais</small></span><em>${item.rate.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}<small>por 100 mil</small></em></div>`).join('')}</div></div><p class="data-footnote">Fontes: CNES/DATASUS, ${escapeHtml(density.meta?.period || '')}, e estimativa populacional IBGE ${escapeHtml(density.meta?.populationPeriod || '2025')}. O déficit é uma estimativa indicativa: quantidade adicional necessária para alcançar a taxa média nacional da ocupação selecionada. Não representa vaga aberta. Especialidades são ocupações CBO e não equivalem a RQE ativo no CFM.</p>`;
 }
 
 async function ensureMarketMapData() {
-  const uf = selectedMedicalMapUf || professionalProfile?.opportunityUf || professionalProfile?.registrations?.find((item) => item.primary)?.crmUf || 'SP';
-  if (!uf || medicalDensityError || (municipalityDirectoryCache.has(uf) && medicalDensityCache.has(uf))) return;
+  const uf = selectedMedicalMapUf || 'BR';
+  if (!uf || medicalDensityError || (medicalDensityCache.has(uf) && medicalDensityCache.has('BR') && medicalShapesCache.has(uf))) return;
   try {
-    await Promise.all([loadMunicipalityDirectory(uf), loadMedicalDensity(uf)]);
+    await Promise.all([loadMedicalDensity(uf), loadMedicalDensity('BR'), loadMedicalShapes(uf)]);
   } catch {
     // O erro é renderizado na própria seção do mapa.
   }
@@ -1506,6 +1555,195 @@ function opportunityList(items, emptyTitle, emptyDescription) {
   return `<div class="opportunity-list">${items.slice(0, 12).map(opportunityCard).join('')}</div>`;
 }
 
+function marketIntelligenceFreshnessMarkup() {
+  const meta = marketIntelligenceCache?.meta;
+  if (!meta?.fetchedAt) return '';
+  const fetchedAt = new Date(meta.fetchedAt);
+  const updated = Number.isNaN(fetchedAt.getTime()) ? '' : fetchedAt.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+  const inspected = Number(meta.recordsInspected || 0).toLocaleString('pt-BR');
+  const total = Number(meta.totalRecordsReported || 0).toLocaleString('pt-BR');
+  return `<p class="radar-freshness"><span>Atualizado em ${escapeHtml(updated)}</span><span>${Number(meta.pagesInspected || 0)} amostras distribuídas · ${inspected} de ${total} registros abertos analisados</span></p>`;
+}
+
+function isPrivateHealthInstitution(institution) {
+  const publicTerms = ['municipio', 'prefeitura', 'secretaria', 'governo', 'estado de', 'fundo municipal', 'ministerio', 'ebserh', 'universidade federal'];
+  const identity = normalizeDirectoryText(`${institution.legalName || ''} ${institution.name || ''}`);
+  return Boolean(institution.payerCnpj) && !publicTerms.some((term) => identity.includes(term));
+}
+
+function privateProspectsMarkup() {
+  const uf = professionalProfile?.opportunityUf || professionalProfile?.registrations?.find((item) => item.primary)?.crmUf || 'SP';
+  const cached = institutionDirectoryCache.get(uf);
+  const directory = municipalityDirectoryCache.get(uf);
+  if (privateProspectsError) return `<section class="intelligence-section"><div class="section-heading"><div><p class="eyebrow">REDE PRIVADA</p><h2>Potenciais contratantes</h2></div></div><div class="notice warning">${escapeHtml(privateProspectsError)}</div></section>`;
+  if (!cached || !directory) return '<section class="intelligence-section"><div class="section-heading"><div><p class="eyebrow">REDE PRIVADA</p><h2>Potenciais contratantes</h2></div></div><div class="card intelligence-loading"><span class="sync-spinner" aria-hidden="true"></span><strong>Mapeando instituições privadas</strong><p>Consultando hospitais, cooperativas e empresas do CNES na sua região.</p></div></section>';
+  const origin = selectedOpportunityMunicipality(directory);
+  const radiusKm = Number(professionalProfile?.opportunityRadiusKm) || 100;
+  const municipalityByCode = new Map(directory.municipalities.map((item) => [item.ibgeCode, item]));
+  const categoryPriority = { medical_staffing: 4, health_management: 3, hospital: 2, ambulance: 1 };
+  const prospects = cached.institutions.filter(isPrivateHealthInstitution).map((institution) => {
+    const destination = municipalityByCode.get(String(institution.ibgeCode || ''));
+    const distanceKm = origin && destination ? Math.round(haversineKm(origin, destination)) : null;
+    return { ...institution, distanceKm, priority: categoryPriority[institution.category] || 0 };
+  }).filter((institution) => radiusKm >= 1000 || !origin || (Number.isFinite(institution.distanceKm) && institution.distanceKm <= radiusKm))
+    .sort((left, right) => right.priority - left.priority || Number(left.distanceKm || 0) - Number(right.distanceKm || 0) || left.tradeName.localeCompare(right.tradeName, 'pt-BR'))
+    .slice(0, 8);
+  const cards = prospects.map((institution) => `<article class="card private-prospect-card"><div><span class="source-pill verified">CNES ${escapeHtml(institution.cnes)}</span><small>${escapeHtml(institution.categoryLabel || institution.typeName)}</small></div><h3>${escapeHtml(institution.tradeName || institution.name)}</h3><p>${escapeHtml(institution.legalName)} · ${escapeHtml(institution.city)}/${escapeHtml(institution.state)}${Number.isFinite(institution.distanceKm) ? ` · ${institution.distanceKm.toLocaleString('pt-BR')} km` : ''}</p><div class="private-prospect-footer"><span><small>CNPJ</small><strong>${formatCnpj(institution.payerCnpj)}</strong></span><button class="button secondary small" data-action="create-workplace-from-prospect" data-id="${escapeHtml(institution.id)}" type="button">Cadastrar local</button></div></article>`).join('');
+  return `<section class="intelligence-section"><div class="section-heading"><div><p class="eyebrow">CNES · REDE PRIVADA</p><h2>Potenciais contratantes na sua região</h2><p class="section-subtitle">Hospitais, cooperativas e empresas de saúde para prospecção direta. São instituições ativas no cadastro oficial, não vagas anunciadas.</p></div></div>${cards ? `<div class="private-prospect-list">${cards}</div>` : emptyCard('Nenhuma instituição privada no raio', 'Amplie o raio ou escolha outro município-base no perfil profissional.')}</section>`;
+}
+
+async function ensurePrivateProspects() {
+  const uf = professionalProfile?.opportunityUf || professionalProfile?.registrations?.find((item) => item.primary)?.crmUf || 'SP';
+  if (institutionDirectoryCache.has(uf) && municipalityDirectoryCache.has(uf)) return;
+  try {
+    await Promise.all([loadInstitutionDirectory(uf), loadMunicipalityDirectory(uf)]);
+    privateProspectsError = '';
+  } catch (error) {
+    privateProspectsError = error instanceof Error ? error.message : 'Instituições privadas indisponíveis.';
+  }
+  if (currentRoute === 'intelligence') renderIntelligence();
+}
+
+function newWorkplaceFromProspect(institutionId) {
+  const cached = [...institutionDirectoryCache.values()].find((entry) => entry.institutions.some((item) => item.id === institutionId));
+  const institution = cached?.institutions.find((item) => item.id === institutionId);
+  if (!institution || !canCreateWorkplace()) return;
+  pendingInvoiceWorkplaceId = '';
+  draftWorkplace = { id: id('work'), name: '', address: '', payerCnpj: '', payerLegalName: '', reconciliationEmail: '', reconciliationCc: '', active: true, modalities: [] };
+  editingModalityIndex = null;
+  institutionDirectoryState = institution.state;
+  institutionDirectory = cached.institutions;
+  institutionDirectoryMeta = cached.meta;
+  renderWorkplaceModal();
+  selectDirectoryInstitution(institutionId);
+}
+
+const PNCP_SERVICE_TERMS = [
+  'credenciamento medico', 'credenciamento de medicos', 'credenciamento de profissionais medicos',
+  'prestacao de servicos medicos', 'prestadores de servicos medicos', 'servicos medicos',
+  'servicos de profissionais medicos', 'profissional medico',
+  'profissionais medicos', 'plantao medico', 'plantoes medicos', 'equipe medica', 'consulta medica',
+  'consultas medicas', 'atendimento medico', 'assistencia medica', 'especialidade medica',
+  'especialidades medicas', 'corpo clinico', 'procedimento medico', 'procedimentos medicos',
+];
+
+const PNCP_SUPPLY_TERMS = [
+  'aquisicao de medicamentos', 'fornecimento de medicamentos', 'material medico hospitalar',
+  'materiais medico hospitalares', 'equipamento medico', 'equipamentos medicos',
+  'insumos hospitalares', 'reagentes', 'material de consumo', 'locacao de equipamento',
+  'manutencao de equipamento',
+];
+
+const PNCP_EXCLUDED_SERVICE_TERMS = ['veterinario', 'veterinaria', 'medicina veterinaria', 'caes e gatos', 'odontologico', 'odontologica'];
+
+function pncpSampledPages(totalPages, maximum = 12) {
+  const total = Math.max(1, Number(totalPages) || 1);
+  const size = Math.min(total, maximum);
+  if (size === 1) return [1];
+  return [...new Set(Array.from({ length: size }, (_, index) => Math.round(1 + index * (total - 1) / (size - 1))))];
+}
+
+async function fetchPncpPublicPage(uf, dataFinal, page) {
+  const url = new URL('https://pncp.gov.br/api/consulta/v1/contratacoes/proposta');
+  url.searchParams.set('dataFinal', dataFinal);
+  url.searchParams.set('uf', uf);
+  url.searchParams.set('pagina', String(page));
+  url.searchParams.set('tamanhoPagina', '50');
+  let lastError;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      const response = await fetch(url, { headers: { Accept: 'application/json' } });
+      if (!response.ok) throw new Error(`PNCP ${response.status}`);
+      const body = await response.json();
+      return { data: Array.isArray(body.data) ? body.data : [], totalPages: Number(body.totalPaginas) || 1, totalRecords: Number(body.totalRegistros) || 0 };
+    } catch (error) {
+      lastError = error;
+      if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, attempt * 350));
+    }
+  }
+  throw lastError || new Error('O PNCP não respondeu à atualização distribuída.');
+}
+
+function compactPncpPublicRecord(item, score, matches) {
+  const cnpj = String(item.orgaoEntidade?.cnpj || '').replace(/\D/g, '');
+  const year = Number(item.anoCompra || 0);
+  const sequence = Number(item.sequencialCompra || 0);
+  return {
+    id: String(item.numeroControlePNCP || `${year}-${sequence}`),
+    title: String(item.objetoCompra || 'Contratação pública na área da saúde').slice(0, 1200),
+    organization: String(item.orgaoEntidade?.razaoSocial || item.unidadeOrgao?.nomeUnidade || ''),
+    cnpj,
+    city: String(item.unidadeOrgao?.municipioNome || ''),
+    uf: String(item.unidadeOrgao?.ufSigla || ''),
+    ibgeCode: String(item.unidadeOrgao?.codigoIbge || ''),
+    modality: String(item.modalidadeNome || ''),
+    estimatedValue: Number(item.valorTotalEstimado) || null,
+    publishedAt: item.dataPublicacaoPncp || null,
+    closesAt: item.dataEncerramentoProposta || null,
+    pncpNumber: String(item.numeroControlePNCP || ''),
+    url: cnpj && year && sequence ? `https://pncp.gov.br/app/editais/${cnpj}/${year}/${sequence}` : 'https://pncp.gov.br/app/editais',
+    score,
+    matches,
+    source: 'PNCP',
+  };
+}
+
+async function loadPncpPublicCompatibility(territory, authenticatedResponse) {
+  const limitDate = new Date();
+  limitDate.setUTCDate(limitDate.getUTCDate() + 120);
+  const dataFinal = limitDate.toISOString().slice(0, 10).replace(/-/g, '');
+  const first = await fetchPncpPublicPage(territory.uf, dataFinal, 1);
+  const pages = pncpSampledPages(first.totalPages);
+  const remainingPages = pages.filter((page) => page !== 1);
+  const settlements = await Promise.allSettled(remainingPages.map((page) => fetchPncpPublicPage(territory.uf, dataFinal, page)));
+  const successfulPages = [1, ...remainingPages.filter((_, index) => settlements[index].status === 'fulfilled')];
+  const failedPages = remainingPages.filter((_, index) => settlements[index].status === 'rejected');
+  const remaining = settlements.flatMap((result) => result.status === 'fulfilled' ? [result.value] : []);
+  const records = [first, ...remaining].flatMap((page) => page.data);
+  const specialtyTerms = (professionalProfile?.specialties || []).map((specialty) => {
+    const normalizedName = normalizeDirectoryText(specialty.name);
+    const tokens = normalizedName.split(' ').filter((token) => token.length >= 5 && !['medicina', 'medica', 'medico', 'cirurgia', 'clinica', 'geral'].includes(token));
+    return { name: specialty.name, terms: [...new Set([normalizedName, ...tokens])] };
+  });
+  const ranked = records.map((item) => {
+    const text = normalizeDirectoryText(`${item.objetoCompra || ''} ${item.informacaoComplementar || ''} ${item.modalidadeNome || ''}`);
+    const serviceMatches = PNCP_SERVICE_TERMS.filter((term) => text.includes(term));
+    const supplyMatches = PNCP_SUPPLY_TERMS.filter((term) => text.includes(term));
+    const excludedMatches = PNCP_EXCLUDED_SERVICE_TERMS.filter((term) => text.includes(term));
+    const specialtyMatches = specialtyTerms.filter((specialty) => specialty.terms.some((term) => text.includes(term)));
+    const sameCity = normalizeDirectoryText(item.unidadeOrgao?.municipioNome || '') === normalizeDirectoryText(professionalProfile?.opportunityCity || '');
+    const score = Math.min(5, serviceMatches.length) + (specialtyMatches.length ? 7 + Math.min(4, specialtyMatches.length - 1) : 0) + (sameCity ? 4 : 0);
+    const matches = [...specialtyMatches.map((specialty) => specialty.name), ...(sameCity ? [`Mesmo município: ${item.unidadeOrgao?.municipioNome}`] : []), ...(!specialtyMatches.length && serviceMatches.length ? ['Compatível com CRM sem especialidade exigida'] : [])];
+    const excluded = excludedMatches.length > 0 || (supplyMatches.length > 0 && serviceMatches.length === 0);
+    return { item, serviceMatches, specialtyMatches, excluded, score, matches };
+  });
+  const health = ranked.filter((entry) => (entry.serviceMatches.length || entry.specialtyMatches.length) && !entry.excluded);
+  const allowedMunicipalities = new Set(territory.municipalityCodes || []);
+  const byDeadline = (left, right) => Date.parse(left.item.dataEncerramentoProposta || '') - Date.parse(right.item.dataEncerramentoProposta || '') || right.score - left.score;
+  const radar = [...health].sort(byDeadline).slice(0, 30).map((entry) => compactPncpPublicRecord(entry.item, entry.score, entry.matches));
+  const regional = [...health]
+    .filter((entry) => (!specialtyTerms.length || entry.specialtyMatches.length) && (territory.radiusKm >= 1000 || allowedMunicipalities.has(String(entry.item.unidadeOrgao?.codigoIbge || ''))))
+    .sort((left, right) => right.score - left.score || byDeadline(left, right))
+    .slice(0, 20)
+    .map((entry) => compactPncpPublicRecord(entry.item, entry.score, entry.matches));
+  return {
+    ...authenticatedResponse,
+    radar,
+    regional,
+    meta: {
+      ...(authenticatedResponse.meta || {}),
+      fetchedAt: new Date().toISOString(),
+      recordsInspected: records.length,
+      totalRecordsReported: first.totalRecords,
+      pagesInspected: successfulPages.length,
+      sampledPages: successfulPages,
+      failedPages,
+      truncated: first.totalPages > successfulPages.length,
+      compatibilityMode: true,
+    },
+  };
+}
+
 async function loadMarketIntelligence(force = false) {
   if (!isCloudMode() || !professionalProfile?.registrations?.length || marketIntelligenceLoading) return;
   if (marketIntelligenceCache && !force) return;
@@ -1514,13 +1752,24 @@ async function loadMarketIntelligence(force = false) {
   if (currentRoute === 'intelligence') renderIntelligence();
   try {
     const territory = await opportunityTerritory();
-    const response = await cloud.marketIntelligence({
+    let response = await cloud.marketIntelligence({
       originCityCode: territory.origin?.ibgeCode || '',
       municipalityCodes: territory.municipalityCodes,
     });
+    if (!Array.isArray(response?.meta?.sampledPages)) {
+      try {
+        response = await loadPncpPublicCompatibility(territory, response);
+      } catch {
+        // Preserva a resposta autenticada existente se a API pública estiver temporariamente indisponível.
+      }
+    }
     marketIntelligenceCache = addOpportunityDistances(response, territory);
   } catch (error) {
-    marketIntelligenceError = error instanceof Error ? error.message : 'Não foi possível consultar o radar.';
+    const message = error instanceof Error ? error.message : 'Não foi possível consultar o radar.';
+    if (marketIntelligenceCache) {
+      marketIntelligenceError = '';
+      showToast(`${message} Exibindo a última atualização disponível.`);
+    } else marketIntelligenceError = message;
   } finally {
     marketIntelligenceLoading = false;
     if (currentRoute === 'intelligence') renderIntelligence();
@@ -1552,6 +1801,13 @@ function renderIntelligence() {
   const uf = selectedMedicalMapUf || professionalProfile?.opportunityUf || primary?.crmUf || 'SP';
   if (!selectedMedicalMapUf) selectedMedicalMapUf = uf;
   screen.innerHTML = `<div class="screen-stack intelligence-page">${pageHeading('Dados para decidir melhor', 'Inteligência de mercado', 'Transforme seus registros e fontes públicas em sinais de concentração e novas oportunidades.')}${profileMarkup}<section class="intelligence-section"><div class="section-heading"><div><p class="eyebrow">SEUS DADOS</p><h2>Mapa da concentração de renda</h2></div><span class="concentration-status ${concentrationClass}">${concentrationLabel}</span></div><div class="intelligence-kpis"><div class="card"><small>HONORÁRIOS REGISTRADOS</small><strong>${currency(concentration.total)}</strong></div><div class="card"><small>MAIOR PAGADOR</small><strong>${Math.round(concentration.topShare * 100)}%</strong></div><div class="card"><small>FONTES DE RECEITA</small><strong>${concentration.byWorkplace.length}</strong></div></div><div class="intelligence-grid"><div class="card"><h3>Por pagador</h3>${concentrationBars(concentration.byWorkplace, 'Registre atendimentos para formar o mapa.')}</div><div class="card"><h3>Por município</h3>${concentrationBars(concentration.byRegion, 'O município aparecerá quando estiver informado no local de trabalho.')}</div></div><p class="data-footnote">Cálculo feito apenas com os honorários registrados na sua conta. Valores recebidos e a receber são mantidos separados no Dashboard.</p></section><section class="intelligence-section"><div class="section-heading"><div><p class="eyebrow">CNES + IBGE</p><h2>Concentração de médicos e especialidades</h2></div><span class="source-pill">${escapeHtml(uf)}</span></div>${medicalMapMarkup(uf)}</section><section class="intelligence-section"><div class="section-heading"><div><p class="eyebrow">FONTE PÚBLICA</p><h2>Radar de contratações públicas</h2></div><button class="link-button" data-action="refresh-market-intelligence" type="button">Atualizar</button></div>${radarMarkup}</section><section class="intelligence-section"><div class="section-heading"><div><p class="eyebrow">RAIO DE INTERESSE</p><h2>Oportunidades regionais</h2><p class="section-subtitle">${escapeHtml(regionDescription)}</p></div></div>${regionalMarkup}</section><section class="intelligence-section"><div class="section-heading"><div><p class="eyebrow">EMPRESAS PRIVADAS</p><h2>Vagas oficiais no SINE</h2></div></div><div class="card private-opportunities-card"><div><span class="source-pill verified">SERVIÇO OFICIAL</span><h3>Emprega Brasil e Carteira de Trabalho Digital</h3><p>Empresas privadas registram vagas no SINE. A consulta e a candidatura exigem acesso gov.br e permanecem no ambiente oficial.</p></div><a class="button secondary" href="https://www.gov.br/pt-br/servicos/buscar-emprego-no-sistema-nacional-de-emprego-sine" target="_blank" rel="noopener">Consultar vagas privadas</a></div></section><details class="card intelligence-method"><summary>Como os resultados são classificados</summary><p>O município é escolhido na lista oficial do IBGE. O raio usa a distância territorial entre os centroides municipais e limita de fato a lista regional; o GPS do aparelho não é consultado.</p><p>Contratações públicas vêm do PNCP. As vagas privadas são consultadas no SINE com acesso gov.br; a antiga API SINE Aberto foi descontinuada, então o MedRecebe direciona ao serviço oficial em vez de prometer um feed nacional inexistente.</p></details></div>`;
+  const obsoletePrivateSection = screen.querySelector('a[href*="buscar-emprego-no-sistema-nacional-de-emprego-sine"]')?.closest('.intelligence-section');
+  if (obsoletePrivateSection) obsoletePrivateSection.outerHTML = privateProspectsMarkup();
+  const radarHeading = screen.querySelector('[data-action="refresh-market-intelligence"]')?.closest('.section-heading');
+  const radarFreshness = marketIntelligenceFreshnessMarkup();
+  if (radarHeading && radarFreshness) radarHeading.insertAdjacentHTML('afterend', radarFreshness);
+  const method = screen.querySelector('.intelligence-method');
+  if (method) method.innerHTML = '<summary>Como os resultados são classificados</summary><p>O município é escolhido na lista oficial do IBGE. O raio usa a distância territorial entre os centroides municipais e limita de fato a lista regional; o GPS do aparelho não é consultado.</p><p>As contratações abertas vêm do PNCP e passam por filtros de prestação de serviços médicos. A rede privada mostra potenciais contratantes ativos no CNES para prospecção direta; não é apresentada como vaga anunciada.</p>';
   if (!professionalProfile && isCloudMode() && !professionalProfileLoading) {
     professionalProfileLoading = true;
     cloud.professionalProfile({ action: 'get' }).then((result) => {
@@ -1563,7 +1819,8 @@ function renderIntelligence() {
       if (currentRoute === 'intelligence') renderIntelligence();
     });
   } else if (primary && !marketIntelligenceCache && !marketIntelligenceLoading && !marketIntelligenceError) void loadMarketIntelligence();
-  if (primary) void ensureMarketMapData();
+  void ensureMarketMapData();
+  if (primary) void ensurePrivateProspects();
 }
 
 function groupDueDates(receivables) {
@@ -2682,6 +2939,7 @@ async function handleClick(event) {
     showBilling();
   }
   if (action === 'new-workplace') newWorkplace();
+  if (action === 'create-workplace-from-prospect') newWorkplaceFromProspect(targetId);
   if (action === 'edit-workplace') editWorkplace(targetId);
   if (action === 'create-workplace-from-invoice') newWorkplaceFromInvoice(targetId);
   if (action === 'delete-invoice') {
@@ -2848,11 +3106,21 @@ function handleChange(event) {
     renderIntelligence();
     return;
   }
+  if (event.target.id === 'medical-map-layer') {
+    selectedMedicalMapLayer = event.target.value === 'scarcity' ? 'scarcity' : 'concentration';
+    renderIntelligence();
+    return;
+  }
+  if (event.target.id === 'medical-specialty-ranking-order') {
+    selectedSpecialtyRankingOrder = event.target.value === 'desc' ? 'desc' : 'asc';
+    renderIntelligence();
+    return;
+  }
   if (event.target.id === 'medical-map-uf') {
-    selectedMedicalMapUf = event.target.value || 'SP';
+    selectedMedicalMapUf = event.target.value || 'BR';
     medicalDensityError = '';
     renderIntelligence();
-    void Promise.all([loadMunicipalityDirectory(selectedMedicalMapUf), loadMedicalDensity(selectedMedicalMapUf)])
+    void Promise.all([loadMedicalDensity(selectedMedicalMapUf), loadMedicalDensity('BR'), loadMedicalShapes(selectedMedicalMapUf)])
       .catch(() => {})
       .finally(() => {
         if (currentRoute === 'intelligence') renderIntelligence();

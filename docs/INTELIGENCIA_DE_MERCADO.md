@@ -3,10 +3,10 @@
 ## Operacional no MVP
 
 - **Mapa da concentração de renda:** usa somente atendimentos registrados pelo médico e mostra participação por pagador e município.
-- **Radar de contratações públicas:** consulta propostas abertas na API oficial do PNCP, filtra objetos médicos e preserva o link do edital.
+- **Radar de contratações públicas:** consulta propostas abertas na API oficial do PNCP, amostra páginas distribuídas por todo o resultado, filtra prestação de serviços médicos e preserva o link do edital.
 - **Oportunidades regionais:** o município-base vem da lista oficial do IBGE e o raio limita de fato os resultados do PNCP pela distância entre centroides municipais. O GPS do aparelho não é usado.
-- **Mapa de concentração médica:** apresenta profissionais-indivíduos do CNES por município e permite selecionar qualquer UF, o total médico ou uma das 63 ocupações CBO. Alterna entre quantidade absoluta e profissionais por 100 mil habitantes usando a estimativa populacional IBGE 2025. A camada CNES atual usa a competência junho/2026.
-- **Vagas privadas oficiais:** direciona ao SINE/Emprega Brasil. O projeto/API SINE Aberto foi descontinuado; portanto, não é apresentado como feed público automático.
+- **Mapa de concentração médica:** abre em Brasil e permite descer para qualquer UF. Usa as malhas oficiais do IBGE para desenhar estados e municípios, apresenta profissionais-indivíduos do CNES, total médico ou uma das 63 ocupações CBO. Alterna entre quantidade absoluta e profissionais por 100 mil habitantes, mostra maiores e menores concentrações, bolsões de ausência e ranking de especialidades. A população é a estimativa IBGE 2025 e a camada CNES usa junho/2026.
+- **Potenciais contratantes privados:** lista hospitais, cooperativas, empresas de gestão de saúde e de remoção ativos no CNES dentro do raio escolhido. É uma base para prospecção direta, não um feed de vagas anunciadas.
 - **Diretório nacional:** 22.782 estabelecimentos e empresas elegíveis, particionados por UF, derivados de 627.864 registros do CNES de 18/07/2026. Os municípios são nomeados pela API do IBGE.
 
 ## Perfil profissional e CFM
@@ -26,7 +26,7 @@ As tabelas `market_data_snapshots` e `market_indicators` registram fonte, versã
 5. ANS: cobertura e desempenho da saúde suplementar por região e operadora.
 6. CMED: pressão de custo para terapias e medicamentos recorrentes.
 7. PNCP: credenciamentos e contratações abertas.
-8. SINE: vagas privadas por consulta autenticada no Emprega Brasil ou na Carteira de Trabalho Digital; reavaliar integração apenas se surgir uma nova API pública oficial.
+8. CNES: identifica potenciais contratantes privados ativos para prospecção regional, sem tratá-los como vagas anunciadas.
 9. CFM: CRM e especialidades, somente pelo canal oficial contratado.
 
 O total do mapa considera profissionais-indivíduos selecionados nas ocupações médicas do CNES. A visualização por especialidade usa CBO e não deve ser interpretada como quantidade de RQEs ativos no CFM. Um mesmo médico pode aparecer em mais de um município; por isso o total estadual de indivíduos é exibido separadamente da presença municipal.

@@ -963,7 +963,7 @@ label, .drawer nav button { font-size: 14px; }
 .intelligence-method > summary { color: var(--deep); font-size: 11px; font-weight: 850; cursor: pointer; }
 .intelligence-method p { color: var(--muted); font-size: 9px; line-height: 1.55; }
 .section-subtitle { margin: 5px 0 0; color: var(--muted); font-size: 10px; line-height: 1.45; }
-.medical-map-filters { display: grid; grid-template-columns: minmax(110px,.45fr) minmax(180px,1fr) minmax(200px,1fr); gap: 10px; }
+.medical-map-filters { display: grid; grid-template-columns: minmax(110px,.42fr) minmax(180px,1fr) minmax(190px,.9fr) minmax(165px,.72fr); gap: 10px; }
 .medical-map-filters label { min-width: 0; color: var(--deep); font-size: 10px; font-weight: 800; }
 .medical-map-filters select { width: 100%; margin-top: 5px; }
 .medical-map-state-summary { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 10px; }
@@ -978,10 +978,12 @@ label, .drawer nav button { font-size: 14px; }
 .medical-map-toolbar > span strong { color: var(--deep); font-size: 18px; line-height: 1; }
 .medical-map-toolbar > span small { margin-top: 4px; color: var(--muted); font-size: 8px; }
 .medical-heatmap { display: block; width: 100%; min-height: 230px; border: 1px solid #C9D9ED; border-radius: 15px; background: radial-gradient(circle at 52% 46%,#fff 0,#F1F7FE 58%,#E3EEF9 100%); }
-.medical-heatmap circle { transition: r .18s ease, opacity .18s ease; }
-.medical-heatmap circle:hover { stroke: #0A1F44; stroke-width: 1.5px; }
+.medical-heatmap path { stroke: rgba(10,31,68,.38); stroke-width: .55px; vector-effect: non-scaling-stroke; transition: fill .18s ease, opacity .18s ease; }
+.medical-heatmap path:hover { stroke: #0A1F44; stroke-width: 1.6px; }
 .map-legend { display: flex; align-items: center; justify-content: center; gap: 8px; color: var(--muted); font-size: 8px; }
 .map-legend i { width: min(180px,45%); height: 7px; border-radius: 999px; background: linear-gradient(90deg,rgba(90,100,114,.16),rgba(86,160,232,.56),#004DB6); }
+.map-legend.scarcity i { background: linear-gradient(90deg,rgba(205,38,52,.08),rgba(225,95,103,.58),#CD2634); }
+.medical-map-rankings { display: grid; gap: 11px; }
 .medical-map-ranking { display: grid; align-content: start; gap: 4px; }
 .medical-map-ranking h3 { margin: 0 0 8px; color: var(--deep); font-size: 12px; }
 .medical-map-ranking > div { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); }
@@ -993,11 +995,36 @@ label, .drawer nav button { font-size: 14px; }
 .medical-map-ranking > div > span > span small { color: var(--muted); font-size: 8px; line-height: 1.25; }
 .medical-map-ranking em { display: grid; justify-items: end; color: var(--deep); font-size: 11px; font-style: normal; font-weight: 850; white-space: nowrap; }
 .medical-map-ranking em small { color: var(--muted); font-size: 7px; font-weight: 750; }
+.scarcity-ranking { border-color: rgba(205,38,52,.25); background: linear-gradient(180deg,#fff 0,#FFF8F8 100%); }
+.scarcity-ranking h3 { color: #9F1E2A; }
+.specialty-rate-ranking { display: grid; gap: 14px; }
+.specialty-rate-ranking .section-heading { align-items: end; }
+.specialty-rate-ranking .section-heading label { min-width: 190px; color: var(--deep); font-size: 9px; font-weight: 800; }
+.specialty-rate-ranking select { width: 100%; margin-top: 4px; }
+.specialty-rate-list { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 0 20px; }
+.specialty-rate-list > div { display: grid; grid-template-columns: 24px minmax(0,1fr) auto; align-items: center; gap: 8px; min-width: 0; padding: 9px 0; border-bottom: 1px solid var(--line); }
+.specialty-rate-list b { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 7px; background: var(--ice); color: var(--blue-700); font-size: 8px; }
+.specialty-rate-list span, .specialty-rate-list em { display: grid; min-width: 0; }
+.specialty-rate-list strong { overflow: hidden; color: var(--deep); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.specialty-rate-list small { color: var(--muted); font-size: 8px; }
+.specialty-rate-list em { justify-items: end; color: var(--deep); font-size: 12px; font-style: normal; font-weight: 850; white-space: nowrap; }
 .private-opportunities-card { display: flex; align-items: center; justify-content: space-between; gap: 18px; }
 .private-opportunities-card > div { min-width: 0; }
 .private-opportunities-card h3 { margin: 9px 0 4px; color: var(--deep); font-size: 12px; }
 .private-opportunities-card p { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.55; }
 .private-opportunities-card > a { flex: 0 0 auto; }
+.radar-freshness { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 5px 14px; margin: -4px 0 0; color: var(--muted); font-size: 8px; line-height: 1.45; }
+.radar-freshness span:first-child { color: var(--deep); font-weight: 800; }
+.private-prospect-list { display: grid; gap: 10px; }
+.private-prospect-card { display: grid; align-content: start; gap: 9px; }
+.private-prospect-card > div:first-child, .private-prospect-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.private-prospect-card > div:first-child > small { color: var(--muted); font-size: 8px; font-weight: 750; text-align: right; }
+.private-prospect-card h3 { margin: 0; color: var(--deep); font-size: 11px; line-height: 1.4; }
+.private-prospect-card > p { margin: 0; color: var(--muted); font-size: 9px; line-height: 1.45; }
+.private-prospect-footer { padding-top: 8px; border-top: 1px solid var(--line); }
+.private-prospect-footer > span { display: grid; gap: 2px; }
+.private-prospect-footer small { color: var(--muted); font-size: 7px; font-weight: 850; }
+.private-prospect-footer strong { color: var(--deep); font-size: 10px; }
 
 @media (min-width: 900px) {
   body.web-plan .intelligence-page { gap: 24px; }
@@ -1010,6 +1037,7 @@ label, .drawer nav button { font-size: 14px; }
   body.web-plan .intelligence-kpis strong { font-size: 24px; }
   body.web-plan .intelligence-grid { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px; }
   body.web-plan .medical-map-layout { grid-template-columns: minmax(0,1.55fr) minmax(270px,.7fr); gap: 16px; }
+  body.web-plan .medical-map-rankings { grid-template-columns: repeat(3,minmax(0,1fr)); gap: 16px; }
   body.web-plan .medical-map-card, body.web-plan .medical-map-ranking { padding: 20px; }
   body.web-plan .medical-map-filters { gap: 16px; }
   body.web-plan .medical-map-state-summary { gap: 16px; }
@@ -1017,6 +1045,7 @@ label, .drawer nav button { font-size: 14px; }
   body.web-plan .medical-map-state-summary strong { font-size: 24px; }
   body.web-plan .medical-heatmap { min-height: 410px; }
   body.web-plan .opportunity-list { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px; }
+  body.web-plan .private-prospect-list { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px; }
   body.web-plan .opportunity-card { padding: 20px; }
   body.web-plan .opportunity-card h3 { font-size: 13px; }
   body.web-plan .opportunity-card > p { font-size: 11px; }
@@ -1029,6 +1058,9 @@ label, .drawer nav button { font-size: 14px; }
   .medical-map-filters { grid-template-columns: 1fr; }
   .medical-map-state-summary { grid-template-columns: repeat(2,minmax(0,1fr)); }
   .medical-map-state-summary > span:last-child { grid-column: 1 / -1; }
+  .medical-map-rankings, .specialty-rate-list { grid-template-columns: 1fr; }
+  .specialty-rate-ranking .section-heading { align-items: stretch; flex-direction: column; }
+  .specialty-rate-ranking .section-heading label { min-width: 0; width: 100%; }
   .private-opportunities-card > a { width: 100%; }
 }
 

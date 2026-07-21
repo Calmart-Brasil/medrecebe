@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 const UFS = ['AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO'];
 const LOCALITIES_URL = 'https://servicodados.ibge.gov.br/api/v1/localidades/municipios?view=nivelado';
 const POPULATION_URL = 'https://apisidra.ibge.gov.br/values/t/6579/n6/all/v/9324/p/2025?formato=json';
+const BRAZIL_MESH_URL = 'https://servicodados.ibge.gov.br/api/v3/malhas/paises/BR?formato=application%2Fvnd.geo%2Bjson&qualidade=minima&intrarregiao=UF';
 const TABNET_FORM_URL = 'http://tabnet.datasus.gov.br/cgi/deftohtm.exe?cnes/cnv/prid02br.def';
 const TABNET_QUERY_URL = 'http://tabnet.datasus.gov.br/cgi/tabcgi.exe?cnes/cnv/prid02br.def';
 
@@ -13,6 +14,7 @@ const args = new Map(process.argv.slice(2).map((argument) => {
 }));
 const municipalityOutput = resolve(args.get('municipality-output') || 'data/municipalities');
 const densityOutput = resolve(args.get('density-output') || 'data/medical-density');
+const shapesOutput = resolve(args.get('shapes-output') || 'data/medical-map-shapes');
 
 function decodeEntities(value = '') {
   const named = {
@@ -128,12 +130,68 @@ function geometryCentroid(geometry) {
   return candidates[0] || { longitude: 0, latitude: 0 };
 }
 
+function geometryPolygons(geometry) {
+  if (geometry?.type === 'Polygon') return [geometry.coordinates];
+  if (geometry?.type === 'MultiPolygon') return geometry.coordinates;
+  return [];
+}
+
+function featureBounds(features) {
+  const bounds = { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity };
+  for (const feature of features || []) {
+    for (const polygon of geometryPolygons(feature.geometry)) {
+      for (const ring of polygon) {
+        for (const [longitude, latitude] of ring) {
+          bounds.minX = Math.min(bounds.minX, longitude);
+          bounds.maxX = Math.max(bounds.maxX, longitude);
+          bounds.minY = Math.min(bounds.minY, latitude);
+          bounds.maxY = Math.max(bounds.maxY, latitude);
+        }
+      }
+    }
+  }
+  return bounds;
+}
+
+function geometrySvgPath(geometry, bounds, width = 640, height = 440, padding = 12) {
+  const longitudeRange = Math.max(0.001, bounds.maxX - bounds.minX);
+  const latitudeRange = Math.max(0.001, bounds.maxY - bounds.minY);
+  const scale = Math.min((width - padding * 2) / longitudeRange, (height - padding * 2) / latitudeRange);
+  const projectedWidth = longitudeRange * scale;
+  const projectedHeight = latitudeRange * scale;
+  const offsetX = (width - projectedWidth) / 2;
+  const offsetY = (height - projectedHeight) / 2;
+  const project = ([longitude, latitude]) => [
+    offsetX + (longitude - bounds.minX) * scale,
+    height - offsetY - (latitude - bounds.minY) * scale,
+  ];
+  const simplify = (points, tolerance = 0.32) => {
+    if (points.length <= 4) return points;
+    const output = [points[0]];
+    for (let index = 1; index < points.length - 1; index += 1) {
+      const previous = output[output.length - 1];
+      const point = points[index];
+      if (Math.hypot(point[0] - previous[0], point[1] - previous[1]) >= tolerance) output.push(point);
+    }
+    output.push(points[points.length - 1]);
+    return output;
+  };
+  return geometryPolygons(geometry).flatMap((polygon) => polygon.map((ring) => {
+    const points = simplify(ring.map(project));
+    if (points.length < 3) return '';
+    return `M${points.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join('L')}Z`;
+  })).join('');
+}
+
 async function municipalityDirectory(localities) {
   const byUf = new Map(UFS.map((uf) => [uf, []]));
+  const shapesByUf = new Map();
   const localitiesByCode = new Map(localities.map((row) => [String(row['municipio-id']), row]));
   for (const uf of UFS) {
     const url = `https://servicodados.ibge.gov.br/api/v3/malhas/estados/${uf}?formato=application%2Fvnd.geo%2Bjson&qualidade=minima&intrarregiao=municipio`;
     const mesh = await fetchJsonWithRetry(url, { headers: { Accept: 'application/vnd.geo+json' }, timeout: 120_000 });
+    const bounds = featureBounds(mesh.features || []);
+    const shapes = [];
     for (const feature of mesh.features || []) {
       const ibgeCode = String(feature.properties?.codarea || '');
       const locality = localitiesByCode.get(ibgeCode);
@@ -145,11 +203,13 @@ async function municipalityDirectory(localities) {
         latitude: Number(center.latitude.toFixed(5)),
         longitude: Number(center.longitude.toFixed(5)),
       });
+      shapes.push({ ibgeCode, path: geometrySvgPath(feature.geometry, bounds) });
     }
     byUf.get(uf).sort((left, right) => left.name.localeCompare(right.name, 'pt-BR'));
+    shapesByUf.set(uf, { meta: { uf, viewBox: '0 0 640 440', source: 'IBGE — Malha Municipal Digital' }, shapes });
     console.log(`${uf}: ${byUf.get(uf).length} municípios georreferenciados`);
   }
-  return byUf;
+  return { byUf, shapesByUf };
 }
 
 const formResponse = await fetchWithRetry(TABNET_FORM_URL, { timeout: 120_000 });
@@ -182,12 +242,18 @@ const stateSpecialtyRows = await tabnetQuery([
 
 const localities = await fetchJsonWithRetry(LOCALITIES_URL, { headers: { Accept: 'application/json' }, timeout: 120_000 });
 const populationRows = await fetchJsonWithRetry(POPULATION_URL, { headers: { Accept: 'application/json' }, timeout: 120_000 });
-const municipalitiesByUf = await municipalityDirectory(localities);
+const nationalMesh = await fetchJsonWithRetry(BRAZIL_MESH_URL, { headers: { Accept: 'application/vnd.geo+json' }, timeout: 120_000 });
+const municipalityMap = await municipalityDirectory(localities);
+const municipalitiesByUf = municipalityMap.byUf;
+const shapesByUf = municipalityMap.shapesByUf;
 const localityBySixDigits = new Map(localities.map((row) => [String(row['municipio-id']).slice(0, 6), row]));
+const ufByStateCode = new Map(localities.map((row) => [String(row['UF-id']), row['UF-sigla']]));
 const uniqueByCode = new Map(uniqueRows.slice(1).map((row) => [String(row[0]).match(/^\d{6}/)?.[0] || '', Number(row[1]) || 0]).filter(([code]) => code));
 const uniqueByStateCode = new Map(stateRows.slice(1).map((row) => [String(row[0]).match(/^\d{2}/)?.[0] || '', Number(row[1]) || 0]).filter(([code]) => code));
 const nationalUniquePhysicians = Number(stateRows.find((row) => row[0] === 'Total')?.[1]) || 0;
 const specialtyHeaders = specialtyRows[0].slice(1, -1);
+const nationalSpecialties = (stateSpecialtyRows.find((row) => row[0] === 'Total')?.slice(1, -1) || specialtyHeaders.map(() => 0))
+  .map((value) => value === '-' ? 0 : Number(value) || 0);
 const specialtyByCode = new Map(specialtyRows.slice(1).map((row) => {
   const code = String(row[0]).match(/^\d{6}/)?.[0] || '';
   return [code, row.slice(1, -1).map((value) => value === '-' ? 0 : Number(value) || 0)];
@@ -201,7 +267,8 @@ const populationByCode = new Map(populationRows.slice(1).map((row) => [
   Number(String(row.V || '').replace(/\D/g, '')) || 0,
 ]).filter(([code]) => /^\d{7}$/.test(code)));
 
-await Promise.all([mkdir(municipalityOutput, { recursive: true }), mkdir(densityOutput, { recursive: true })]);
+await Promise.all([mkdir(municipalityOutput, { recursive: true }), mkdir(densityOutput, { recursive: true }), mkdir(shapesOutput, { recursive: true })]);
+const stateSummaries = [];
 for (const uf of UFS) {
   const municipalities = municipalitiesByUf.get(uf) || [];
   const municipalityPayload = {
@@ -256,8 +323,47 @@ for (const uf of UFS) {
     stateSpecialties: stateSpecialtyByCode.get(String(stateCode || '')) || specialtyHeaders.map(() => 0),
     municipalities: densityMunicipalities,
   };
+  stateSummaries.push({
+    uf,
+    population: statePopulation,
+    physicians: uniquePhysicians,
+    specialties: stateSpecialtyByCode.get(String(stateCode || '')) || specialtyHeaders.map(() => 0),
+  });
   await writeFile(resolve(densityOutput, `${uf}.json`), `${JSON.stringify(densityPayload)}\n`, 'utf8');
+  await writeFile(resolve(shapesOutput, `${uf}.json`), `${JSON.stringify(shapesByUf.get(uf))}\n`, 'utf8');
 }
+
+const nationalBounds = featureBounds(nationalMesh.features || []);
+const nationalShapes = (nationalMesh.features || []).map((feature) => ({
+  uf: ufByStateCode.get(String(feature.properties?.codarea || '')) || '',
+  path: geometrySvgPath(feature.geometry, nationalBounds),
+})).filter((item) => item.uf);
+const nationalPopulation = stateSummaries.reduce((sum, state) => sum + state.population, 0);
+await writeFile(resolve(shapesOutput, 'BR.json'), `${JSON.stringify({
+  meta: { uf: 'BR', viewBox: '0 0 640 440', source: 'IBGE — Malha das Unidades da Federação' },
+  shapes: nationalShapes,
+})}\n`, 'utf8');
+await writeFile(resolve(densityOutput, 'BR.json'), `${JSON.stringify({
+  meta: {
+    source: 'CNES / DATASUS — Recursos Humanos — Profissionais (indivíduos) segundo CBO 2002',
+    sourceUrl: 'https://tabnet.datasus.gov.br/cgi/deftohtm.exe?cnes/cnv/prid02br.def',
+    technicalNotesUrl: 'https://tabnet.datasus.gov.br/cgi/cnes/NT_RecursosHumanos.htm',
+    period: periodLabel,
+    periodFile,
+    generatedAt: new Date().toISOString(),
+    uf: 'BR',
+    uniquePhysicians: nationalUniquePhysicians,
+    statePopulation: nationalPopulation,
+    populationPeriod: '2025',
+    populationReferenceDate: '1º de julho de 2025',
+    populationSource: 'IBGE/SIDRA — Estimativas da População, tabela 6579, variável 9324',
+    populationSourceUrl: POPULATION_URL,
+    methodology: 'A visão Brasil agrega as 27 Unidades da Federação. Especialidades usam ocupações CBO e não equivalem ao RQE do CFM.',
+  },
+  specialtyNames: specialtyHeaders,
+  stateSpecialties: nationalSpecialties,
+  states: stateSummaries,
+})}\n`, 'utf8');
 
 await writeFile(resolve(municipalityOutput, 'index.json'), `${JSON.stringify({
   meta: { source: 'IBGE', generatedAt: new Date().toISOString(), total: localities.length, states: UFS.length },
@@ -266,7 +372,7 @@ await writeFile(resolve(municipalityOutput, 'index.json'), `${JSON.stringify({
 await writeFile(resolve(densityOutput, 'index.json'), `${JSON.stringify({
   meta: { source: 'CNES / DATASUS', period: periodLabel, periodFile, generatedAt: new Date().toISOString(), uniquePhysicians: nationalUniquePhysicians, states: UFS.length },
   specialtyNames: specialtyHeaders,
-  states: UFS.map((uf) => ({ uf, file: `${uf}.json` })),
+  states: stateSummaries.map((state) => ({ ...state, file: `${state.uf}.json` })),
 })}\n`, 'utf8');
 
 console.log(`Mapa concluído: ${localities.length} municípios, ${nationalUniquePhysicians} médicos únicos no CNES, competência ${periodLabel}.`);
