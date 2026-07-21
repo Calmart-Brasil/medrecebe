@@ -1750,8 +1750,9 @@ async function loadMarketIntelligence(force = false) {
   marketIntelligenceLoading = true;
   marketIntelligenceError = '';
   if (currentRoute === 'intelligence') renderIntelligence();
+  let territory = null;
   try {
-    const territory = await opportunityTerritory();
+    territory = await opportunityTerritory();
     let response = await cloud.marketIntelligence({
       originCityCode: territory.origin?.ibgeCode || '',
       municipalityCodes: territory.municipalityCodes,
@@ -1766,10 +1767,22 @@ async function loadMarketIntelligence(force = false) {
     marketIntelligenceCache = addOpportunityDistances(response, territory);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Não foi possível consultar o radar.';
-    if (marketIntelligenceCache) {
+    const activeAccount = cloudAccount?.profile?.role === 'admin' || cloudAccount?.profile?.accessStatus === 'active';
+    let recovered = false;
+    if (territory && activeAccount) {
+      try {
+        const response = await loadPncpPublicCompatibility(territory, { radar: [], regional: [], meta: { source: 'Portal Nacional de Contratações Públicas (PNCP)' } });
+        marketIntelligenceCache = addOpportunityDistances(response, territory);
+        marketIntelligenceError = '';
+        recovered = true;
+      } catch {
+        // A indisponibilidade simultânea da função e do PNCP é tratada abaixo.
+      }
+    }
+    if (!recovered && marketIntelligenceCache) {
       marketIntelligenceError = '';
       showToast(`${message} Exibindo a última atualização disponível.`);
-    } else marketIntelligenceError = message;
+    } else if (!recovered) marketIntelligenceError = message;
   } finally {
     marketIntelligenceLoading = false;
     if (currentRoute === 'intelligence') renderIntelligence();
