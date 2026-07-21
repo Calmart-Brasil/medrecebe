@@ -41,7 +41,6 @@ Deno.serve(async (request) => {
     await admin.from('subscriptions').update({ is_current: false }).eq('user_id', user.id).eq('is_current', true);
     const { error: insertError } = await admin.from('subscriptions').insert({ user_id: user.id, provider_subscription_id: subscription.id, status: subscription.status, checkout_url: subscription.init_point, plan_code: PLAN.code, amount_cents: PLAN.amountCents });
     if (insertError) throw insertError;
-    await admin.from('profiles').update({ selected_plan: PLAN.code }).eq('id', user.id);
     return json(request, { checkoutUrl: subscription.init_point, planCode: PLAN.code });
   } catch (error) {
     console.error('create-subscription', error);

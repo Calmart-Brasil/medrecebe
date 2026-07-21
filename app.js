@@ -541,6 +541,30 @@ function isPastOrToday(value) {
   return parseDate(value).getTime() <= parseDate(dateOnly()).getTime();
 }
 
+function phoneDigits(value = '', maxLength = 15) {
+  return String(value).replace(/\D/g, '').slice(0, maxLength);
+}
+
+function formatPhoneCountryCode(value = '') {
+  const digits = phoneDigits(value, 3);
+  return digits ? `+${digits}` : '';
+}
+
+function formatMobilePhone(value = '', countryCode = '+55') {
+  const digits = phoneDigits(value, countryCode === '+55' ? 11 : 15);
+  if (countryCode !== '+55') return digits;
+  if (digits.length <= 2) return digits ? `(${digits}` : '';
+  if (digits.length <= 7) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
+  return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+}
+
+function isValidPhone(countryCode, phoneNumber) {
+  const country = formatPhoneCountryCode(countryCode);
+  const number = phoneDigits(phoneNumber);
+  if (!/^\+[1-9]\d{0,2}$/.test(country)) return false;
+  return country === '+55' ? number.length === 11 : number.length >= 8 && number.length <= 15;
+}
+
 function isPast(value) {
   return parseDate(value).getTime() < parseDate(dateOnly()).getTime();
 }
@@ -657,6 +681,11 @@ function cloudStatePayload() {
   const payload = { ...appState, account: null, cloudUserId: undefined, demo: false };
   delete payload.profile;
   return payload;
+}
+
+function isFreemiumAccount() {
+  if (!isCloudMode() || cloudAccount?.profile?.role === 'admin') return false;
+  return cloudAccount?.subscription?.status !== 'authorized' && cloudAccount?.profile?.planCode === 'freemium';
 }
 
 function applyCloudDocuments(documents = []) {
@@ -912,6 +941,8 @@ function applyCloudAccount(result, cpf = '') {
     name: result.profile.fullName,
     email: result.profile.email,
     cpf: `•••.•••.•••-${String(result.profile.cpfLast4 || cpf.slice(-4)).padStart(4, '•')}`,
+    phoneCountryCode: result.profile.phoneCountryCode || '',
+    phoneNumber: result.profile.phoneNumber || '',
   };
   appState.cloudUserId = result.profile.id;
   localStorage.setItem(activeStateKey, JSON.stringify(appState));
@@ -930,18 +961,23 @@ function showBilling() {
   $('#billing-view').hidden = false;
   closeDrawer();
   const status = cloudAccount?.profile?.accessStatus || 'pending_payment';
+  const upgrading = isFreemiumAccount();
   const messages = {
     pending_payment: ['Ative seu acesso para registrar atendimentos e acompanhar seus repasses.', 'Conclua a contratação mensal do plano único.'],
     past_due: ['Não conseguimos confirmar a última mensalidade.', 'Atualize o pagamento para restabelecer o acesso.'],
     canceled: ['Sua assinatura não está ativa.', 'Faça uma nova assinatura para voltar a usar o MedRecebe.'],
     suspended: ['Este acesso foi suspenso pelo administrador.', 'Entre em contato com o suporte antes de tentar um novo pagamento.'],
   };
-  const [lead, detail] = messages[status] || messages.pending_payment;
+  const [lead, detail] = upgrading
+    ? ['Desbloqueie locais ilimitados e mantenha toda a gestão em uma única conta.', 'Seu plano gratuito continua ativo enquanto você conclui a assinatura.']
+    : messages[status] || messages.pending_payment;
+  $('#billing-title').textContent = upgrading ? 'Evolua para o plano completo' : 'Ative seu acesso';
   $('#billing-lead').textContent = lead;
   $('#billing-status').textContent = detail;
   $('#billing-price-value').textContent = 'R$ 39,90';
-  $('#billing-plan-name').textContent = 'PLANO ÚNICO';
-  $('#billing-subscribe').textContent = 'Continuar';
+  $('#billing-plan-name').textContent = 'PLANO COMPLETO';
+  $('#billing-subscribe').textContent = upgrading ? 'Assinar plano completo' : 'Continuar';
+  $('#billing-back').hidden = !upgrading;
   $('#billing-subscribe').hidden = status === 'suspended';
   $('#billing-refresh').hidden = status === 'suspended';
 }
@@ -1141,7 +1177,14 @@ function renderWorkplaces() {
       return `<article class="card workplace-summary"><div class="card-head"><span class="round-icon">⌂</span><div><h3>${escapeHtml(workplace.name)}</h3><p>${escapeHtml(workplace.payerLegalName || 'Razão Social não informada')}<br/>${workplace.payerCnpj ? `CNPJ ${formatCnpj(workplace.payerCnpj)}` : 'CNPJ não informado'}<br/>${escapeHtml(workplace.address || 'Endereço não informado')}</p></div><span class="badge ${workplace.active ? '' : 'inactive'}">${workplace.active ? 'Ativo' : 'Inativo'}</span></div><div class="modality-lines">${modes || '<p class="muted">Nenhuma modalidade cadastrada.</p>'}${remaining ? `<p class="field-hint">+ ${remaining} ${remaining === 1 ? 'modalidade cadastrada' : 'modalidades cadastradas'}</p>` : ''}</div><div class="row-actions"><button class="danger-link" data-action="toggle-workplace" data-id="${workplace.id}" type="button">${workplace.active ? 'Desativar' : 'Reativar'}</button><button class="button secondary small" data-action="edit-workplace" data-id="${workplace.id}" type="button">Editar cadastro</button></div></article>`;
     })
     .join('');
-  screen.innerHTML = `<div class="screen-stack">${pageHeading('', 'Locais e repasses', '')}<button class="button primary" data-action="new-workplace" type="button">Adicionar local</button><div class="list">${cards || emptyCard('Comece pelo primeiro local', 'Cadastre o pagador e suas modalidades.')}</div></div>`;
+  const freemiumLimitReached = isFreemiumAccount() && appState.workplaces.length >= 1;
+  const planNotice = isFreemiumAccount()
+    ? `<div class="notice"><strong>Plano Freemium: ${Math.min(appState.workplaces.length, 1)} de 1 local utilizado</strong><br/>Você pode editar este local livremente ou migrar para o plano completo para cadastrar locais ilimitados.</div>`
+    : '';
+  const primaryAction = freemiumLimitReached
+    ? '<button class="button primary" data-action="upgrade-plan" type="button">Cadastrar mais locais</button>'
+    : '<button class="button primary" data-action="new-workplace" type="button">Adicionar local</button>';
+  screen.innerHTML = `<div class="screen-stack">${pageHeading('', 'Locais e repasses', '')}${planNotice}${primaryAction}<div class="list">${cards || emptyCard('Comece pelo primeiro local', 'Cadastre o pagador e suas modalidades.')}</div></div>`;
 }
 
 function renderAttendance() {
@@ -1401,11 +1444,15 @@ function renderAccount() {
     canceled: 'Assinatura cancelada',
   };
   const accessStatus = cloudAccount?.profile?.accessStatus;
+  const freemium = isFreemiumAccount();
   const cloudSection = isCloudMode()
-    ? `<h2 class="section-title">Plano e acesso</h2><div class="card workplace-summary"><div class="card-head"><span class="round-icon">✓</span><div><h3>Plano único</h3><p>R$ 39,90 por mês</p></div><span class="badge ${accessStatus === 'active' ? '' : 'inactive'}">${escapeHtml(subscriptionLabels[accessStatus] || 'Em configuração')}</span></div><p class="field-hint">Cadastros, regras e atendimentos são sincronizados entre o celular e o computador.</p></div>`
+    ? freemium
+      ? `<h2 class="section-title">Plano e acesso</h2><div class="card workplace-summary"><div class="card-head"><span class="round-icon">1</span><div><h3>Plano Freemium</h3><p>1 local de trabalho gratuito</p></div><span class="badge">Ativo</span></div><p class="field-hint">Seus dados continuam sincronizados. Migre para o plano completo quando precisar cadastrar outros locais.</p><button class="button primary small" data-action="upgrade-plan" type="button">Conhecer o plano completo</button></div>`
+      : `<h2 class="section-title">Plano e acesso</h2><div class="card workplace-summary"><div class="card-head"><span class="round-icon">✓</span><div><h3>Plano completo</h3><p>R$ 39,90 por mês</p></div><span class="badge ${accessStatus === 'active' ? '' : 'inactive'}">${escapeHtml(subscriptionLabels[accessStatus] || 'Em configuração')}</span></div><p class="field-hint">Locais ilimitados e dados sincronizados entre o celular e o computador.</p></div>`
     : '';
   const deleteLabel = isCloudMode() ? 'Excluir dados salvos neste aparelho' : 'Excluir conta e dados locais';
-  screen.innerHTML = `<div class="screen-stack">${pageHeading('', 'Mais', '')}<div class="card card-head"><span class="avatar">${escapeHtml((appState.profile?.name || 'M').charAt(0))}</span><div><h3>${escapeHtml(appState.profile?.name || 'Médico')}</h3><p>${formatCpf(appState.profile?.cpf || '')}<br/>${escapeHtml(appState.profile?.email || '')}</p></div></div>${cloudSection}<div class="notice success"><strong>Dados e documentos sincronizados</strong><br/>Comprovantes e Notas Fiscais ficam disponíveis nos seus dispositivos autenticados.</div><h2 class="section-title">Aplicativo</h2><div class="card install-card"><span class="install-icon">${isStandalone() ? '✓' : '⇧'}</span><div><strong>${isStandalone() ? 'MedRecebe instalado' : 'Adicionar à Tela de Início'}</strong><p>${isStandalone() ? 'Você está usando o modo aplicativo.' : 'Instale pelo Safari para abrir como aplicativo.'}</p></div>${isStandalone() ? '' : '<button class="link-button" data-action="install" type="button">Ver passos</button>'}</div><h2 class="section-title">Ajuda e preferências</h2><div class="card account-links"><button class="account-link" data-nav="feedback" type="button">Enviar feedback <span>›</span></button><a class="account-link" href="./privacidade.html" target="_blank" rel="noopener">Política de Privacidade <span>›</span></a><a class="account-link" href="./termos.html" target="_blank" rel="noopener">Termos de Uso <span>›</span></a><a class="account-link" href="./cancelamento.html" target="_blank" rel="noopener">Política de cancelamento e reembolso <span>›</span></a><a class="account-link" href="./suporte.html" target="_blank" rel="noopener">Ajuda e suporte <span>›</span></a></div><button class="button secondary" data-action="logout" type="button">Sair</button><button class="button danger" data-action="delete-beta-data" type="button">${deleteLabel}</button><p class="muted" style="text-align:center">MedRecebe • versão web 2.3</p></div>`;
+  const phone = appState.profile?.phoneNumber ? `<br/>${escapeHtml(appState.profile.phoneCountryCode || '+55')} ${escapeHtml(formatMobilePhone(appState.profile.phoneNumber, appState.profile.phoneCountryCode || '+55'))}` : '';
+  screen.innerHTML = `<div class="screen-stack">${pageHeading('', 'Mais', '')}<div class="card card-head"><span class="avatar">${escapeHtml((appState.profile?.name || 'M').charAt(0))}</span><div><h3>${escapeHtml(appState.profile?.name || 'Médico')}</h3><p>${formatCpf(appState.profile?.cpf || '')}<br/>${escapeHtml(appState.profile?.email || '')}${phone}</p></div></div>${cloudSection}<div class="notice success"><strong>Dados e documentos sincronizados</strong><br/>Comprovantes e Notas Fiscais ficam disponíveis nos seus dispositivos autenticados.</div><h2 class="section-title">Aplicativo</h2><div class="card install-card"><span class="install-icon">${isStandalone() ? '✓' : '⇧'}</span><div><strong>${isStandalone() ? 'MedRecebe instalado' : 'Adicionar à Tela de Início'}</strong><p>${isStandalone() ? 'Você está usando o modo aplicativo.' : 'Instale pelo Safari para abrir como aplicativo.'}</p></div>${isStandalone() ? '' : '<button class="link-button" data-action="install" type="button">Ver passos</button>'}</div><h2 class="section-title">Ajuda e preferências</h2><div class="card account-links"><button class="account-link" data-nav="feedback" type="button">Enviar feedback <span>›</span></button><a class="account-link" href="./privacidade.html" target="_blank" rel="noopener">Política de Privacidade <span>›</span></a><a class="account-link" href="./termos.html" target="_blank" rel="noopener">Termos de Uso <span>›</span></a><a class="account-link" href="./cancelamento.html" target="_blank" rel="noopener">Política de cancelamento e reembolso <span>›</span></a><a class="account-link" href="./suporte.html" target="_blank" rel="noopener">Ajuda e suporte <span>›</span></a></div><button class="button secondary" data-action="logout" type="button">Sair</button><button class="button danger" data-action="delete-beta-data" type="button">${deleteLabel}</button><p class="muted" style="text-align:center">MedRecebe • versão web 2.4</p></div>`;
 }
 
 function cancellationBackup() {
@@ -1473,7 +1520,18 @@ function openInstallModal() {
   modalRoot.innerHTML = `<div class="modal-wrap"><section class="modal-sheet" role="dialog" aria-modal="true" aria-labelledby="install-title"><header class="modal-header"><button data-action="close-modal" type="button">Fechar</button><h2 id="install-title">Instalar no iPhone</h2><span></span></header><div class="modal-body"><div class="notice">Use o Safari. Outros navegadores no iPhone podem não mostrar a opção correta.</div><div class="install-steps"><div class="install-step"><div><strong>Abra o menu Compartilhar</strong><p>Toque no ícone de compartilhar do Safari.</p></div></div><div class="install-step"><div><strong>Adicionar à Tela de Início</strong><p>Role a lista de ações e escolha esta opção.</p></div></div><div class="install-step"><div><strong>Ative “Abrir como App da Web”</strong><p>Toque em Adicionar. O ícone MedRecebe aparecerá na Home Screen.</p></div></div></div><div class="notice success">Depois da primeira abertura online, o aplicativo também funciona sem internet.</div></div></section></div>`;
 }
 
+function showFreemiumLimit() {
+  modalRoot.innerHTML = `<div class="modal-wrap"><section class="modal-sheet" role="dialog" aria-modal="true" aria-labelledby="freemium-limit-title"><header class="modal-header simple"><span></span><h2 id="freemium-limit-title">Limite do plano gratuito</h2><button data-action="close-modal" aria-label="Fechar" type="button">×</button></header><div class="modal-body"><div class="notice"><strong>Seu local gratuito já está cadastrado.</strong><br/>Você pode continuar registrando atendimentos e editando este local. Para adicionar outros pagadores, migre para o plano completo.</div><button class="button primary" data-action="upgrade-plan" type="button">Cadastrar locais ilimitados</button><button class="button secondary" data-action="close-modal" type="button">Agora não</button></div></section></div>`;
+}
+
+function canCreateWorkplace() {
+  if (!isFreemiumAccount() || appState.workplaces.length < 1) return true;
+  showFreemiumLimit();
+  return false;
+}
+
 function newWorkplace() {
+  if (!canCreateWorkplace()) return;
   pendingInvoiceWorkplaceId = '';
   draftWorkplace = { id: id('work'), name: '', address: '', payerCnpj: '', payerLegalName: '', reconciliationEmail: '', reconciliationCc: '', active: true, modalities: [] };
   editingModalityIndex = null;
@@ -1496,6 +1554,7 @@ function invoicePayerSuggestion(invoice) {
 }
 
 function newWorkplaceFromInvoice(invoiceId) {
+  if (!canCreateWorkplace()) return;
   const invoice = (appState.invoices || []).find((item) => item.id === invoiceId);
   if (!invoice) return showToast('A Nota Fiscal não está mais disponível.');
   const suggestion = invoicePayerSuggestion(invoice);
@@ -1813,7 +1872,7 @@ async function exportReconciliationPdf(button) {
 
 function authSubmitLabel(mode = authMode) {
   return {
-    register: 'Criar acesso',
+    register: 'Criar conta grátis',
     forgot: 'Enviar instruções',
     reset: 'Salvar nova senha',
   }[mode] || 'Entrar';
@@ -1857,6 +1916,8 @@ function setAuthMode(mode) {
   const passwordInput = $('#auth-password');
   const newPassword = $('#auth-new-password');
   const confirmPassword = $('#auth-confirm-password');
+  const phoneCountryInput = $('#auth-phone-country');
+  const phoneInput = $('#auth-phone');
 
   $('#register-fields').hidden = !register;
   $('#reset-password-fields').hidden = !reset;
@@ -1866,6 +1927,8 @@ function setAuthMode(mode) {
   passwordInput.required = !forgot && !reset;
   newPassword.required = reset;
   confirmPassword.required = reset;
+  phoneCountryInput.required = register;
+  phoneInput.required = register;
 
   const titles = {
     login: 'Boas-vindas',
@@ -1875,7 +1938,7 @@ function setAuthMode(mode) {
   };
   const descriptions = {
     login: isCloudMode() ? 'Entre com o CPF e a senha da sua conta MedRecebe.' : 'Entre com o CPF e a senha cadastrados neste aparelho.',
-    register: isCloudMode() ? 'Crie sua conta para contratar o plano único com 7 dias de garantia.' : 'Cadastre seus dados reais. A conta permanecerá salva neste aparelho.',
+    register: isCloudMode() ? 'Cadastre-se gratuitamente e organize os atendimentos de um local de trabalho.' : 'Cadastre seus dados reais. A conta permanecerá salva neste aparelho.',
     forgot: 'Informe seu CPF para receber as instruções no e-mail cadastrado.',
     reset: 'Defina uma nova senha com pelo menos oito caracteres.',
   };
@@ -1883,7 +1946,7 @@ function setAuthMode(mode) {
   $('#auth-description').textContent = descriptions[authMode];
   $('#auth-submit').textContent = authSubmitLabel();
   $('#auth-toggle').hidden = reset;
-  $('#auth-toggle').textContent = register ? 'Já tenho acesso' : forgot ? 'Voltar para entrar' : 'Primeiro uso? Criar meu acesso';
+  $('#auth-toggle').textContent = register ? 'Já tenho acesso' : forgot ? 'Voltar para entrar' : 'Cadastre-se grátis';
   $('#forgot-password').hidden = authMode !== 'login';
   $('#demo-entry').hidden = authMode !== 'login' || isCloudMode();
   passwordInput.autocomplete = register ? 'new-password' : 'current-password';
@@ -1892,6 +1955,11 @@ function setAuthMode(mode) {
 
 function bindEvents() {
   $('#auth-cpf').addEventListener('input', (event) => (event.target.value = formatCpf(event.target.value)));
+  $('#auth-phone-country').addEventListener('input', (event) => {
+    event.target.value = formatPhoneCountryCode(event.target.value);
+    $('#auth-phone').value = formatMobilePhone($('#auth-phone').value, event.target.value);
+  });
+  $('#auth-phone').addEventListener('input', (event) => (event.target.value = formatMobilePhone(event.target.value, $('#auth-phone-country').value)));
   $('#auth-toggle').addEventListener('click', () => setAuthMode(authMode === 'login' ? 'register' : 'login'));
   $('#forgot-password').addEventListener('click', () => setAuthMode('forgot'));
 
@@ -1931,11 +1999,14 @@ function bindEvents() {
         if (authMode === 'register') {
           const name = $('#auth-name').value.trim();
           const email = $('#auth-email').value.trim().toLowerCase();
+          const phoneCountryCode = formatPhoneCountryCode($('#auth-phone-country').value);
+          const phoneNumber = phoneDigits($('#auth-phone').value);
           if (name.length < 3) throw new Error('Informe seu nome completo.');
           if (!isValidCpf(cpf)) throw new Error('Informe um CPF válido.');
           if (!/^\S+@\S+\.\S+$/.test(email)) throw new Error('Informe um e-mail válido.');
+          if (!isValidPhone(phoneCountryCode, phoneNumber)) throw new Error('Informe um celular válido com DDD.');
           if (password.length < 8) throw new Error('A senha deve ter pelo menos oito caracteres.');
-          const result = await cloud.register({ name, email, cpf, password, planCode: selectedPlanCode });
+          const result = await cloud.register({ name, email, cpf, password, phoneCountryCode, phoneNumber });
           if (result.requiresLogin) {
             setAuthMode('login');
             $('#auth-title').textContent = 'Cadastro recebido';
@@ -1961,12 +2032,15 @@ function bindEvents() {
     if (authMode === 'register') {
       const name = $('#auth-name').value.trim();
       const email = $('#auth-email').value.trim().toLowerCase();
+      const phoneCountryCode = formatPhoneCountryCode($('#auth-phone-country').value);
+      const phoneNumber = phoneDigits($('#auth-phone').value);
       if (name.length < 3) return (error.textContent = 'Informe seu nome completo.');
       if (!isValidCpf(cpf)) return (error.textContent = 'Informe um CPF válido.');
       if (!/^\S+@\S+\.\S+$/.test(email)) return (error.textContent = 'Informe um e-mail válido.');
+      if (!isValidPhone(phoneCountryCode, phoneNumber)) return (error.textContent = 'Informe um celular válido com DDD.');
       if (password.length < 8) return (error.textContent = 'A senha deve ter pelo menos oito caracteres.');
       const salt = id('salt');
-      appState = { ...emptyState(), account: { cpf, salt, passwordHash: await hashPassword(password, salt) }, profile: { name, cpf, email } };
+      appState = { ...emptyState(), account: { cpf, salt, passwordHash: await hashPassword(password, salt) }, profile: { name, cpf, email, phoneCountryCode, phoneNumber } };
       if (!saveState()) return (error.textContent = 'Não foi possível salvar seu acesso neste aparelho. Verifique o espaço disponível e tente novamente.');
     } else {
       if (!appState.account) return (error.textContent = 'Acesso não encontrado. Crie seu acesso ou use a demonstração.');
@@ -2035,6 +2109,8 @@ function bindEvents() {
   window.addEventListener('resize', () => {
     if (!$('#app-view').hidden) document.body.classList.toggle('web-plan', isDesktopComputer());
   });
+
+  $('#billing-back').addEventListener('click', () => showApp());
   window.addEventListener('online', () => void syncPendingEvidence());
 }
 
@@ -2050,6 +2126,10 @@ async function handleClick(event) {
   if (action === 'close-modal') {
     modalRoot.innerHTML = '';
     pendingInvoiceWorkplaceId = '';
+  }
+  if (action === 'upgrade-plan') {
+    modalRoot.innerHTML = '';
+    showBilling();
   }
   if (action === 'new-workplace') newWorkplace();
   if (action === 'edit-workplace') editWorkplace(targetId);
@@ -2428,6 +2508,7 @@ function saveWorkplace() {
   if (!isValidCnpj(draftWorkplace.payerCnpj)) return showToast('Informe um CNPJ válido do pagador.');
   if (!draftWorkplace.modalities.length) return showToast('Cadastre pelo menos uma modalidade.');
   const exists = appState.workplaces.some((item) => item.id === draftWorkplace.id);
+  if (!exists && isFreemiumAccount() && appState.workplaces.length >= 1) return showFreemiumLimit();
   const savedWorkplace = structuredClone(draftWorkplace);
   if (exists) appState.workplaces = appState.workplaces.map((item) => (item.id === draftWorkplace.id ? savedWorkplace : item));
   else appState.workplaces.push(savedWorkplace);
@@ -2448,13 +2529,26 @@ function saveWorkplace() {
 }
 
 async function logout() {
-  if (isCloudMode()) await cloud.logout();
-  cloudAccount = null;
-  localStorage.removeItem(SESSION_KEY);
-  activeStateKey = APP_KEY;
-  appState = loadState(APP_KEY);
-  currentRoute = 'dashboard';
-  showLogin();
+  try {
+    if (isCloudMode()) await cloud.logout();
+  } catch {
+    // A limpeza local precisa ocorrer mesmo se a revogação remota estiver indisponível.
+  } finally {
+    if (cloudSyncTimer) window.clearTimeout(cloudSyncTimer);
+    cloudSyncTimer = 0;
+    cloudHydrationSequence += 1;
+    cloudStateDirty = false;
+    cloudAccount = null;
+    localStorage.removeItem(SESSION_KEY);
+    activeStateKey = APP_KEY;
+    appState = loadState(APP_KEY);
+    currentRoute = 'dashboard';
+    document.body.classList.remove('web-plan');
+    $('#drawer-name').textContent = 'Médico';
+    $('#drawer-email').textContent = 'Conta MedRecebe';
+    setAuthMode('login');
+    showLogin();
+  }
 }
 
 async function boot() {

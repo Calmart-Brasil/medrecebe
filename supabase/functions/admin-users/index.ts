@@ -18,7 +18,7 @@ Deno.serve(async (request) => {
 
     let query = admin
       .from('profiles')
-      .select('id, full_name, email, cpf_last4, role, access_status, selected_plan, manual_access_until, manual_access_lifetime, suspension_scheduled_at, suspension_reason, forced_suspension_at, created_at, updated_at', { count: 'exact' })
+      .select('id, full_name, email, cpf_last4, phone_country_code, phone_number, role, access_status, selected_plan, manual_access_until, manual_access_lifetime, suspension_scheduled_at, suspension_reason, forced_suspension_at, created_at, updated_at', { count: 'exact' })
       .order('created_at', { ascending: false })
       .range(from, from + perPage - 1);
     if (safeSearch) {
@@ -41,7 +41,7 @@ Deno.serve(async (request) => {
     const byUser = new Map((subscriptions || []).map((subscription) => [subscription.user_id, subscription]));
 
     const [{ data: allProfiles }, { data: allCurrentSubscriptions }] = await Promise.all([
-      admin.from('profiles').select('id, access_status, role, manual_access_until, manual_access_lifetime, suspension_scheduled_at'),
+      admin.from('profiles').select('id, access_status, role, selected_plan, manual_access_until, manual_access_lifetime, suspension_scheduled_at'),
       admin.from('subscriptions').select('user_id, status').eq('is_current', true),
     ]);
     const paidUsers = new Set((allCurrentSubscriptions || []).filter((item) => item.status === 'authorized').map((item) => item.user_id));
@@ -51,7 +51,7 @@ Deno.serve(async (request) => {
         if (profile.role === 'user' && profile.access_status === 'active') result.active += 1;
         if (profile.role === 'user' && profile.access_status === 'past_due') result.pastDue += 1;
         if (profile.role === 'user' && profile.access_status === 'suspended') result.suspended += 1;
-        const freemium = profile.manual_access_lifetime || Date.parse(profile.manual_access_until || '') > Date.now();
+        const freemium = profile.selected_plan === 'freemium' || profile.manual_access_lifetime || Date.parse(profile.manual_access_until || '') > Date.now();
         if (profile.role === 'user' && freemium && !paidUsers.has(profile.id)) result.freemium += 1;
         if (profile.role === 'user' && Date.parse(profile.suspension_scheduled_at || '') > Date.now()) result.scheduledSuspensions += 1;
         return result;
@@ -65,6 +65,8 @@ Deno.serve(async (request) => {
         fullName: profile.full_name,
         email: profile.email,
         cpfLast4: profile.cpf_last4,
+        phoneCountryCode: profile.phone_country_code,
+        phoneNumber: profile.phone_number,
         role: profile.role,
         accessStatus: profile.access_status,
         planCode: profile.selected_plan,

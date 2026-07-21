@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 const root = fileURLToPath(new URL('.', import.meta.url));
 const read = (file) => readFile(join(root, file), 'utf8');
 
-const [manifestText, landing, landingCss, appHtml, app, appCss, reconciliationPdf, cloud, adminHtml, adminApp, worker, workflow, migration, launchMigration, upfrontMigration, manualAccessMigration, singlePlanMigration, simpleAdminMigration, documentMigration, documentFunction, syncStateFunction, invoiceFunction, adminCreateFunction, adminUpdateFunction, createSubscriptionFunction, cancelSubscriptionFunction, mercadoPagoShared, mobileConfig, mobileInvoice, mobileReconciliationPdf, mobileReconciliationScreen, terms, privacy, cancellation, securityMigration, loginFunction, registerFunction, requestPasswordResetFunction, sharedHttp, sharedSupabase, rateLimit, supabaseConfig, frameGuard] = await Promise.all([
+const [manifestText, landing, landingCss, appHtml, app, appCss, reconciliationPdf, cloud, adminHtml, adminApp, worker, workflow, migration, launchMigration, upfrontMigration, manualAccessMigration, singlePlanMigration, simpleAdminMigration, documentMigration, documentFunction, syncStateFunction, invoiceFunction, adminCreateFunction, adminUpdateFunction, createSubscriptionFunction, cancelSubscriptionFunction, mercadoPagoShared, mobileConfig, mobileInvoice, mobileReconciliationPdf, mobileReconciliationScreen, terms, privacy, cancellation, securityMigration, loginFunction, registerFunction, requestPasswordResetFunction, sharedHttp, sharedSupabase, rateLimit, supabaseConfig, frameGuard, selfServiceMigration, phoneShared] = await Promise.all([
   read('manifest.webmanifest'),
   read('index.html'),
   read('landing.css'),
@@ -50,6 +50,8 @@ const [manifestText, landing, landingCss, appHtml, app, appCss, reconciliationPd
   read('supabase/functions/_shared/rate-limit.ts'),
   read('supabase/config.toml'),
   read('frame-guard.js'),
+  read('supabase/migrations/202607200002_self_service_freemium.sql'),
+  read('supabase/functions/_shared/phone.ts'),
 ]);
 const manifest = JSON.parse(manifestText);
 const [institutionDirectoryText, institutionBuilder, mobileInstitutionDirectory] = await Promise.all([
@@ -81,7 +83,7 @@ for (const marker of [
   'Mais',
 ]) assert.ok(appHtml.includes(marker), `app.html sem: ${marker}`);
 
-for (const marker of ['7 dias de garantia', 'R$ 39,90', 'Benefícios', 'Nota Fiscal', 'Cancelamento e reembolso']) {
+for (const marker of ['Cadastre-se grátis', 'Freemium', 'R$ 39,90', 'Nota Fiscal', 'Cancelamento e reembolso']) {
   assert.ok(landing.includes(marker), `landing page sem: ${marker}`);
 }
 for (const marker of ['#004DB6', '#0A1F44', '#56A0E8', '#2BB673', '#D9E7F8', '#EFF4FB', '#111A2B', '#5A6472']) assert.ok(landingCss.includes(marker), `branding sem a cor: ${marker}`);
@@ -106,7 +108,9 @@ assert.ok(
   'appState só pode ser carregado depois da mensagem padrão usada pelo estado vazio',
 );
 assert.ok(!appHtml.includes('Beta local:'), 'o aviso antigo de beta local não deve aparecer na entrada');
-assert.ok(appHtml.includes('styles.css?v=17') && appHtml.includes('cloud.js?v=8') && appHtml.includes('reconciliation-pdf.js?v=2') && appHtml.includes('app.js?v=25'), 'os arquivos corrigidos precisam de cache busting');
+assert.ok(appHtml.includes('styles.css?v=18') && appHtml.includes('cloud.js?v=8') && appHtml.includes('reconciliation-pdf.js?v=2') && appHtml.includes('app.js?v=26'), 'os arquivos corrigidos precisam de cache busting');
+for (const marker of ['auth-phone-country', 'auth-phone', 'Cadastre-se grátis']) assert.ok(appHtml.includes(marker), `cadastro gratuito sem: ${marker}`);
+for (const marker of ['formatMobilePhone', 'isFreemiumAccount', 'canCreateWorkplace', 'phoneCountryCode', 'phoneNumber']) assert.ok(app.includes(marker), `plano Freemium ou celular sem: ${marker}`);
 for (const marker of ['Esqueci minha senha', 'auth-new-password', 'auth-confirm-password']) assert.ok(appHtml.includes(marker), `recuperação de senha sem: ${marker}`);
 for (const marker of ['consumeRecoveryLink', 'history.replaceState', "setAuthMode('forgot')", 'cloud.updatePassword']) assert.ok(app.includes(marker), `jornada de recuperação sem: ${marker}`);
 for (const marker of ['requestPasswordReset', 'updatePassword', '/auth/v1/logout?scope=global']) assert.ok(cloud.includes(marker), `cliente de recuperação sem: ${marker}`);
@@ -136,7 +140,7 @@ assert.ok(institutionDirectory.institutions.filter((item) => item.tradeName).len
 assert.ok(institutionDirectory.institutions.every((item) => item.tradeName !== undefined), 'todo registro precisa declarar o campo tradeName, ainda que vazio');
 for (const marker of ['RMSP_MUNICIPALITIES', 'isValidCnpj', 'medical_staffing', 'sourceUpdatedAt', 'tradeName']) assert.ok(institutionBuilder.includes(marker), `gerador do diretório sem: ${marker}`);
 for (const marker of ['loadInstitutionDirectory', 'searchInstitutionDirectory', 'CNPJ_CARD_URL']) assert.ok(mobileInstitutionDirectory.includes(marker), `diretório nativo sem: ${marker}`);
-for (const marker of ['billing-view', 'R$ 39,90', 'PLANO ÚNICO', 'runtime-config.js', 'cloud.js']) {
+for (const marker of ['billing-view', 'R$ 39,90', 'PLANO COMPLETO', 'runtime-config.js', 'cloud.js']) {
   assert.ok(appHtml.includes(marker), `fluxo de assinatura sem: ${marker}`);
 }
 for (const marker of ['register', 'login-cpf', 'create-subscription', 'cancel-subscription', 'sync-state', 'account-status', 'analyze-invoice', 'adminUsers', 'adminCreateUser']) {
@@ -150,7 +154,7 @@ for (const marker of ['showCloudLoading', 'syncPendingEvidence', 'mergeUnsyncedL
 for (const marker of ['MedRecebe Admin', 'admin-users']) {
   assert.ok(adminHtml.includes(marker) || adminApp.includes(marker), `painel administrativo sem: ${marker}`);
 }
-for (const marker of ['admin.css?v=4', 'admin.js?v=6', 'users-toolbar', 'Base de clientes', 'Entrar no painel']) {
+for (const marker of ['admin.css?v=4', 'admin.js?v=7', 'cloud.js?v=8', 'users-toolbar', 'Base de clientes', 'Entrar no painel']) {
   assert.ok(adminHtml.includes(marker), `layout administrativo desktop sem: ${marker}`);
 }
 for (const forbidden of ['SEGUNDA ETAPA', 'segundo fator', 'Authenticator', 'admin-mfa', 'adminMfaSatisfied', 'prompt(']) assert.ok(!`${adminHtml}\n${adminApp}\n${cloud}`.includes(forbidden), `painel administrativo ainda contém: ${forbidden}`);
@@ -171,6 +175,9 @@ for (const marker of ['3990', 'manual_access_lifetime', 'suspension_scheduled_at
 for (const marker of ['drop table if exists public.admin_mfa_sessions', 'drop table if exists public.admin_mfa_email_challenges']) assert.ok(simpleAdminMigration.includes(marker), `remoção do 2FA sem: ${marker}`);
 for (const marker of ['freemium_user_created', 'durationUnit', 'lifetime']) assert.ok(adminCreateFunction.includes(marker), `criação Freemium sem: ${marker}`);
 for (const marker of ['update_profile', 'schedule_suspension', 'force_suspension', 'delete_user']) assert.ok(adminUpdateFunction.includes(marker), `CRUD administrativo sem: ${marker}`);
+for (const marker of ['phone_country_code', 'phone_number', "set default 'freemium'", "selected_plan in ('freemium', 'standard')"]) assert.ok(selfServiceMigration.includes(marker), `migration Freemium sem: ${marker}`);
+for (const marker of ['normalizePhoneCountryCode', 'normalizePhoneNumber', 'isValidPhone']) assert.ok(phoneShared.includes(marker), `validação de celular sem: ${marker}`);
+assert.ok(syncStateFunction.includes("selected_plan === 'freemium'") && syncStateFunction.includes('workplaces.length > 1'), 'limite Freemium precisa ser validado no servidor');
 for (const marker of ['cancelPreapproval', "['cancelled', 'canceled']", 'MercadoPagoError', 'status === 404']) assert.ok(mercadoPagoShared.includes(marker), `cancelamento recorrente sem: ${marker}`);
 assert.ok(adminUpdateFunction.includes('cancelPreapproval'), 'exclusão administrativa não cancela a assinatura de forma compatível');
 assert.ok(createSubscriptionFunction.includes('cancelPreapproval'), 'substituição de assinatura pendente não cancela a anterior de forma compatível');
@@ -184,7 +191,7 @@ for (const marker of ['PDFDocument', 'manipulateAsync', 'createReconciliationPdf
 for (const marker of ['Sharing.shareAsync', 'shareReconciliation', 'Enviar conciliação', 'Sim, marcar como enviada']) assert.ok(mobileReconciliationScreen.includes(marker), `compartilhamento nativo sem: ${marker}`);
 assert.ok(!mobileReconciliationScreen.includes('MailComposer') && !mobileReconciliationScreen.includes('Compartilhar PDF no WhatsApp'), 'o mobile ainda expõe canais específicos');
 for (const [name, document, markers] of [
-  ['Termos', terms, ['garantia de 7 dias', 'R$ 39,90', 'plano único']],
+  ['Termos', terms, ['plano Freemium', 'R$ 39,90', 'plano completo']],
   ['Privacidade', privacy, ['Controlador', 'Direitos do titular', 'Notas Fiscais']],
   ['Cancelamento', cancellation, ['7 dias', 'reembolso integral', 'Continuar para o cancelamento']],
 ]) for (const marker of markers) assert.ok(document.includes(marker), `${name} sem: ${marker}`);
@@ -195,7 +202,7 @@ for (const [name, document] of [['Landing', landing], ['Aplicativo', `${appHtml}
   }
 }
 
-for (const marker of ['install', 'activate', 'fetch', 'caches.open', 'medrecebe-app-v24', './app.html', 'reconciliation-pdf.js?v=2', 'institution-directory-rmsp.json']) {
+for (const marker of ['install', 'activate', 'fetch', 'caches.open', 'medrecebe-app-v25', './app.html', 'reconciliation-pdf.js?v=2', 'institution-directory-rmsp.json']) {
   assert.ok(worker.includes(marker), `sw.js sem: ${marker}`);
 }
 
@@ -223,4 +230,4 @@ assert.ok(cloud.includes('/auth/v1/logout?scope=local') && cloud.includes('await
 assert.ok(appHtml.includes('Content-Security-Policy') && adminHtml.includes('Content-Security-Policy'), 'áreas autenticadas precisam de CSP');
 assert.ok(appHtml.includes('frame-guard.js?v=1') && adminHtml.includes('frame-guard.js?v=1') && frameGuard.includes('window.top === window.self'), 'áreas autenticadas precisam de defesa contra frames');
 
-console.log('MedRecebe validado: branding Calmart, SaaS desktop, login administrativo simples, plano único, CRUD, Nota Fiscal, backup, cancelamento e sincronização presentes.');
+console.log('MedRecebe validado: cadastro com celular, Freemium de um local, plano completo, logout, CRUD, Nota Fiscal, backup, cancelamento e sincronização presentes.');

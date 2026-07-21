@@ -1,5 +1,6 @@
 import { cpfHash, isValidCpf, onlyDigits } from '../_shared/cpf.ts';
 import { json, options, publicError } from '../_shared/http.ts';
+import { isValidPhone, normalizePhoneCountryCode, normalizePhoneNumber } from '../_shared/phone.ts';
 import { adminClient, requireAdmin, authenticationStatus } from '../_shared/supabase.ts';
 
 const durationUnits = new Set(['days', 'weeks', 'months', 'years', 'lifetime']);
@@ -26,12 +27,15 @@ Deno.serve(async (request) => {
     const email = String(body.email || '').trim().toLowerCase();
     const cpf = onlyDigits(String(body.cpf || ''));
     const password = String(body.password || '');
+    const phoneCountryCode = normalizePhoneCountryCode(String(body.phoneCountryCode || '+55'));
+    const phoneNumber = normalizePhoneNumber(String(body.phoneNumber || ''));
     const durationUnit = String(body.durationUnit || 'days');
     const durationValue = Math.max(1, Math.min(3650, Number(body.durationValue) || 0));
 
     if (fullName.length < 3) return publicError(request, 'Informe o nome completo.', 400);
     if (!/^\S+@\S+\.\S+$/.test(email)) return publicError(request, 'Informe um e-mail válido.', 400);
     if (!isValidCpf(cpf)) return publicError(request, 'Informe um CPF válido.', 400);
+    if (!isValidPhone(phoneCountryCode, phoneNumber)) return publicError(request, 'Informe um celular válido com DDD.', 400);
     if (password.length < 8) return publicError(request, 'A senha provisória deve ter pelo menos oito caracteres.', 400);
     if (!durationUnits.has(durationUnit)) return publicError(request, 'Validade Freemium inválida.', 400);
     if (durationUnit !== 'lifetime' && !Number.isFinite(durationValue)) return publicError(request, 'Informe a duração do acesso.', 400);
@@ -48,7 +52,7 @@ Deno.serve(async (request) => {
       email,
       password,
       email_confirm: true,
-      user_metadata: { full_name: fullName },
+      user_metadata: { full_name: fullName, phone_country_code: phoneCountryCode, phone_number: phoneNumber },
     });
     if (authError || !auth.user) return publicError(request, authError?.message || 'Não foi possível criar o acesso.', 400);
 
@@ -60,7 +64,9 @@ Deno.serve(async (request) => {
       email,
       cpf_hash: digest,
       cpf_last4: cpf.slice(-4),
-      selected_plan: 'standard',
+      phone_country_code: phoneCountryCode,
+      phone_number: phoneNumber,
+      selected_plan: 'freemium',
       access_status: 'active',
       manual_access_until: manualAccessUntil,
       manual_access_lifetime: lifetime,
@@ -75,7 +81,7 @@ Deno.serve(async (request) => {
       admin_user_id: adminUser.id,
       target_user_id: auth.user.id,
       action: 'freemium_user_created',
-      next_value: { fullName, email, durationUnit, durationValue: lifetime ? null : durationValue, manualAccessUntil, lifetime },
+      next_value: { fullName, email, phoneCountryCode, phoneNumber, durationUnit, durationValue: lifetime ? null : durationValue, manualAccessUntil, lifetime },
     });
 
     return json(request, { created: true, userId: auth.user.id, manualAccessUntil, lifetime }, 201);

@@ -86,6 +86,8 @@ button, a { touch-action: manipulation; }
 .muted { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
 .register-fields { display: grid; gap: 14px; }
 .reset-password-fields { display: grid; gap: 14px; }
+.phone-fields { display: grid; grid-template-columns: 88px minmax(0, 1fr); gap: 10px; }
+.country-code-field input { text-align: center; }
 
 label { display: grid; gap: 7px; color: var(--navy); font-size: 13px; font-weight: 750; }
 input, select, textarea {

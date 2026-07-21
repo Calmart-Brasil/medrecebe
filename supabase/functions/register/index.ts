@@ -1,6 +1,7 @@
 import { cpfHash, isValidCpf, onlyDigits } from '../_shared/cpf.ts';
 import { json, options, publicError } from '../_shared/http.ts';
 import { clientAddress, consumeRateLimit } from '../_shared/rate-limit.ts';
+import { isValidPhone, normalizePhoneCountryCode, normalizePhoneNumber } from '../_shared/phone.ts';
 import { adminClient, publicClient } from '../_shared/supabase.ts';
 
 async function accepted(request: Request, startedAt: number): Promise<Response> {
@@ -26,11 +27,14 @@ Deno.serve(async (request) => {
     const email = String(body.email || '').trim().toLowerCase();
     const cpf = onlyDigits(String(body.cpf || ''));
     const password = String(body.password || '');
-    const planCode = 'standard';
+    const phoneCountryCode = normalizePhoneCountryCode(String(body.phoneCountryCode || '+55'));
+    const phoneNumber = normalizePhoneNumber(String(body.phoneNumber || ''));
+    const planCode = 'freemium';
 
     if (fullName.length < 3) return publicError(request, 'Informe seu nome completo.');
     if (!isValidCpf(cpf)) return publicError(request, 'Informe um CPF válido.');
     if (!/^\S+@\S+\.\S+$/.test(email)) return publicError(request, 'Informe um e-mail válido.');
+    if (!isValidPhone(phoneCountryCode, phoneNumber)) return publicError(request, 'Informe um celular válido com DDD.');
     if (password.length < 8) return publicError(request, 'A senha deve ter pelo menos oito caracteres.');
 
     const [ipLimit, cpfLimit, emailLimit] = await Promise.all([
@@ -56,7 +60,7 @@ Deno.serve(async (request) => {
     const { data: auth, error: authError } = await publicClient().auth.signUp({
       email,
       password,
-      options: { data: { full_name: fullName } },
+      options: { data: { full_name: fullName, phone_country_code: phoneCountryCode, phone_number: phoneNumber } },
     });
     if (authError || !auth.user) {
       console.error('register auth', { code: authError?.code, status: authError?.status });
@@ -72,9 +76,11 @@ Deno.serve(async (request) => {
       email,
       cpf_hash: digest,
       cpf_last4: cpf.slice(-4),
+      phone_country_code: phoneCountryCode,
+      phone_number: phoneNumber,
       selected_plan: planCode,
       trial_ends_at: null,
-      access_status: 'pending_payment',
+      access_status: 'active',
     });
     if (profileError) {
       await admin.auth.admin.deleteUser(auth.user.id);

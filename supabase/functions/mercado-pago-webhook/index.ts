@@ -36,7 +36,7 @@ async function syncAuthorizedPayment(paymentId: string): Promise<void> {
   if (updateError) throw updateError;
   const { error: profileError } = await admin
     .from('profiles')
-    .update({ access_status: approved ? 'active' : 'past_due' })
+    .update({ access_status: approved ? 'active' : 'past_due', ...(approved ? { selected_plan: 'standard' } : {}) })
     .eq('id', subscription.user_id);
   if (profileError) throw profileError;
 }

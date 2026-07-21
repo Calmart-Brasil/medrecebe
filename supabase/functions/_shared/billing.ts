@@ -70,9 +70,12 @@ export async function syncPreapproval(preapprovalId: string, expectedUserId = ''
     assertNoError(error);
   }
 
+  const accessStatus = await protectedAccessStatus(userId, accessFromSubscription(subscription.status));
+  const profileChanges: Record<string, string> = { access_status: accessStatus };
+  if (subscription.status === 'authorized') profileChanges.selected_plan = 'standard';
   const { error: profileError } = await admin
     .from('profiles')
-    .update({ access_status: await protectedAccessStatus(userId, accessFromSubscription(subscription.status)) })
+    .update(profileChanges)
     .eq('id', userId);
   assertNoError(profileError);
   return subscription;
@@ -112,9 +115,11 @@ export async function syncPayment(paymentId: string, expectedUserId = ''): Promi
   assertNoError(subscriptionError);
 
   const billingAccess = approved ? 'active' : 'past_due';
+  const profileChanges: Record<string, string> = { access_status: await protectedAccessStatus(userId, billingAccess) };
+  if (approved) profileChanges.selected_plan = 'standard';
   const { error: profileError } = await admin
     .from('profiles')
-    .update({ access_status: await protectedAccessStatus(userId, billingAccess) })
+    .update(profileChanges)
     .eq('id', userId);
   assertNoError(profileError);
   return payment;

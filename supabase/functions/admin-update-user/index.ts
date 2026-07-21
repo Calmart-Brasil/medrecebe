@@ -1,6 +1,7 @@
 import { cpfHash, isValidCpf, onlyDigits } from '../_shared/cpf.ts';
 import { json, options, publicError } from '../_shared/http.ts';
 import { cancelPreapproval, mercadoPago } from '../_shared/mercado-pago.ts';
+import { isValidPhone, normalizePhoneCountryCode, normalizePhoneNumber } from '../_shared/phone.ts';
 import { adminClient, requireAdmin, authenticationStatus } from '../_shared/supabase.ts';
 
 const durationUnits = new Set(['days', 'weeks', 'months', 'years', 'lifetime']);
@@ -48,7 +49,7 @@ Deno.serve(async (request) => {
     const admin = adminClient();
     const { data: previous, error: lookupError } = await admin
       .from('profiles')
-      .select('id, role, full_name, email, cpf_last4, access_status, manual_access_until, manual_access_lifetime, suspension_scheduled_at, suspension_reason, forced_suspension_at')
+      .select('id, role, full_name, email, cpf_last4, phone_country_code, phone_number, selected_plan, access_status, manual_access_until, manual_access_lifetime, suspension_scheduled_at, suspension_reason, forced_suspension_at')
       .eq('id', targetUserId)
       .single();
     if (lookupError || !previous) return publicError(request, 'Usuário não encontrado.', 404);
@@ -84,11 +85,14 @@ Deno.serve(async (request) => {
       const fullName = String(body.fullName || '').trim();
       const email = String(body.email || '').trim().toLowerCase();
       const cpf = onlyDigits(String(body.cpf || ''));
+      const phoneCountryCode = normalizePhoneCountryCode(String(body.phoneCountryCode || previous.phone_country_code || '+55'));
+      const phoneNumber = normalizePhoneNumber(String(body.phoneNumber || previous.phone_number || ''));
       if (fullName.length < 3) return publicError(request, 'Informe o nome completo.', 400);
       if (!/^\S+@\S+\.\S+$/.test(email)) return publicError(request, 'Informe um e-mail válido.', 400);
+      if (!isValidPhone(phoneCountryCode, phoneNumber)) return publicError(request, 'Informe um celular valido com DDD.', 400);
       const { data: duplicateEmail } = await admin.from('profiles').select('id').eq('email', email).neq('id', targetUserId).maybeSingle();
       if (duplicateEmail) return publicError(request, 'Este e-mail já está em uso.', 409);
-      changes = { full_name: fullName, email };
+      changes = { full_name: fullName, email, phone_country_code: phoneCountryCode, phone_number: phoneNumber };
       if (cpf) {
         if (!isValidCpf(cpf)) return publicError(request, 'Informe um CPF válido.', 400);
         const digest = await cpfHash(cpf);
@@ -100,10 +104,10 @@ Deno.serve(async (request) => {
       const { error: authError } = await admin.auth.admin.updateUserById(targetUserId, {
         email,
         email_confirm: true,
-        user_metadata: { full_name: fullName },
+        user_metadata: { full_name: fullName, phone_country_code: phoneCountryCode, phone_number: phoneNumber },
       });
       if (authError) throw authError;
-      auditNext = { fullName, email, cpfChanged: Boolean(cpf) };
+      auditNext = { fullName, email, phoneCountryCode, phoneNumber, cpfChanged: Boolean(cpf) };
     } else if (action === 'grant_freemium') {
       const durationUnit = String(body.durationUnit || 'days');
       const durationValue = Math.max(1, Math.min(3650, Number(body.durationValue) || 0));
@@ -111,6 +115,7 @@ Deno.serve(async (request) => {
       const lifetime = durationUnit === 'lifetime';
       const manualAccessUntil = grantEnd(durationValue, durationUnit);
       changes = {
+        selected_plan: subscription?.status === 'authorized' ? 'standard' : 'freemium',
         access_status: 'active',
         manual_access_until: manualAccessUntil,
         manual_access_lifetime: lifetime,
@@ -121,7 +126,7 @@ Deno.serve(async (request) => {
       auditNext = { durationUnit, durationValue: lifetime ? null : durationValue, manualAccessUntil, lifetime };
     } else if (action === 'revoke_freemium') {
       const paidAccess = subscription?.status === 'authorized';
-      changes = { manual_access_until: null, manual_access_lifetime: false, access_status: paidAccess ? 'active' : 'pending_payment' };
+      changes = { selected_plan: 'standard', manual_access_until: null, manual_access_lifetime: false, access_status: paidAccess ? 'active' : 'pending_payment' };
       auditNext = { accessStatus: changes.access_status };
     } else if (action === 'schedule_suspension') {
       const suspensionAt = paidPeriodEnd(subscription);
@@ -161,7 +166,7 @@ Deno.serve(async (request) => {
         subscription.status = 'authorized';
       }
       const paidAccess = subscription?.status === 'authorized';
-      const freemiumAccess = previous.manual_access_lifetime || Date.parse(previous.manual_access_until || '') > Date.now();
+      const freemiumAccess = previous.selected_plan === 'freemium' || previous.manual_access_lifetime || Date.parse(previous.manual_access_until || '') > Date.now();
       changes = {
         access_status: paidAccess || freemiumAccess ? 'active' : 'pending_payment',
         suspension_scheduled_at: null,
@@ -177,7 +182,7 @@ Deno.serve(async (request) => {
       .from('profiles')
       .update(changes)
       .eq('id', targetUserId)
-      .select('id, full_name, email, cpf_last4, access_status, manual_access_until, manual_access_lifetime, suspension_scheduled_at, suspension_reason, forced_suspension_at, updated_at')
+      .select('id, full_name, email, cpf_last4, phone_country_code, phone_number, selected_plan, access_status, manual_access_until, manual_access_lifetime, suspension_scheduled_at, suspension_reason, forced_suspension_at, updated_at')
       .single();
     if (updateError) throw updateError;
 

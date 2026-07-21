@@ -40,7 +40,7 @@ Deno.serve(async (request) => {
     const digest = await cpfHash(cpf);
     const { data: profile } = await admin
       .from('profiles')
-      .select('id, full_name, email, cpf_last4, role, access_status, selected_plan, manual_access_until, manual_access_lifetime, suspension_scheduled_at, suspension_reason, forced_suspension_at')
+      .select('id, full_name, email, cpf_last4, phone_country_code, phone_number, role, access_status, selected_plan, manual_access_until, manual_access_lifetime, suspension_scheduled_at, suspension_reason, forced_suspension_at')
       .eq('cpf_hash', digest)
       .maybeSingle();
 
@@ -67,10 +67,11 @@ Deno.serve(async (request) => {
       .maybeSingle();
 
     const manualAccessActive = profile.role !== 'admin' && (profile.manual_access_lifetime || Date.parse(profile.manual_access_until || '') > Date.now());
+    const freemiumAccess = profile.role !== 'admin' && profile.selected_plan === 'freemium';
     const scheduledPeriodActive = profile.role !== 'admin' && Number.isFinite(scheduledTime) && scheduledTime > Date.now();
     const shouldEvaluateAccess = profile.role !== 'admin' && !['suspended', 'canceled', 'past_due'].includes(profile.access_status);
     const effectiveAccess = shouldEvaluateAccess
-      ? subscription?.status === 'authorized' || manualAccessActive || scheduledPeriodActive ? 'active' : 'pending_payment'
+      ? subscription?.status === 'authorized' || freemiumAccess || manualAccessActive || scheduledPeriodActive ? 'active' : 'pending_payment'
       : profile.access_status;
     if (effectiveAccess !== profile.access_status) {
       await admin.from('profiles').update({ access_status: effectiveAccess }).eq('id', profile.id);
@@ -87,6 +88,8 @@ Deno.serve(async (request) => {
         fullName: profile.full_name,
         email: profile.email,
         cpfLast4: profile.cpf_last4,
+        phoneCountryCode: profile.phone_country_code,
+        phoneNumber: profile.phone_number,
         role: profile.role,
         accessStatus: effectiveAccess,
         planCode: profile.selected_plan,

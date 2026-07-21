@@ -15,6 +15,22 @@ function digits(value = '') { return String(value).replace(/\D/g, '').slice(0, 1
 function formatCpf(value = '') {
   return digits(value).slice(0, 11).replace(/^(\d{3})(\d)/, '$1.$2').replace(/^(\d{3})\.(\d{3})(\d)/, '$1.$2.$3').replace(/\.(\d{3})(\d)/, '.$1-$2');
 }
+function phoneDigits(value = '') { return String(value).replace(/\D/g, ''); }
+function formatPhoneCountryCode(value = '') {
+  return `+${phoneDigits(value).slice(0, 3) || '55'}`;
+}
+function formatPhone(value = '', countryCode = '+55') {
+  const valueDigits = phoneDigits(value).slice(0, countryCode === '+55' ? 11 : 15);
+  if (countryCode !== '+55') return valueDigits;
+  if (valueDigits.length <= 2) return valueDigits ? `(${valueDigits}` : '';
+  if (valueDigits.length <= 7) return `(${valueDigits.slice(0, 2)}) ${valueDigits.slice(2)}`;
+  if (valueDigits.length <= 10) return `(${valueDigits.slice(0, 2)}) ${valueDigits.slice(2, 6)}-${valueDigits.slice(6)}`;
+  return `(${valueDigits.slice(0, 2)}) ${valueDigits.slice(2, 7)}-${valueDigits.slice(7)}`;
+}
+function displayPhone(user) {
+  if (!user.phoneNumber) return 'Celular não informado';
+  return `${formatPhoneCountryCode(user.phoneCountryCode || '+55')} ${formatPhone(user.phoneNumber, user.phoneCountryCode || '+55')}`;
+}
 function escapeHtml(value = '') {
   return String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#039;');
 }
@@ -24,7 +40,7 @@ function subscriptionLabel(status = '') {
   return ({ authorized: 'Autorizada', pending: 'Pendente', paused: 'Pausada', canceled: 'Cancelada', cancelled: 'Cancelada' })[status] || status || 'Sem assinatura';
 }
 function freemiumActive(user) {
-  return Boolean(user.manualAccessLifetime) || Date.parse(user.manualAccessUntil || '') > Date.now();
+  return user.planCode === 'freemium' || Boolean(user.manualAccessLifetime) || Date.parse(user.manualAccessUntil || '') > Date.now();
 }
 function accessLabel(user) {
   if (user.role === 'admin') return 'Administrador';
@@ -35,6 +51,7 @@ function validityLabel(user) {
   if (user.suspensionScheduledAt && Date.parse(user.suspensionScheduledAt) > Date.now()) return `Suspende em ${date(user.suspensionScheduledAt)}`;
   if (user.manualAccessLifetime) return 'Vitalício';
   if (Date.parse(user.manualAccessUntil || '') > Date.now()) return date(user.manualAccessUntil);
+  if (user.planCode === 'freemium') return 'Sem prazo';
   return user.subscription?.current_period_end ? date(user.subscription.current_period_end) : '—';
 }
 
@@ -82,8 +99,16 @@ function durationFields(prefix, unit = 'days', value = 7) {
   return `<div class="duration-grid"><label>Período<input id="${prefix}-duration-value" type="number" min="1" max="3650" value="${value}" ${unit === 'lifetime' ? 'disabled' : ''}/></label><label>Unidade<select id="${prefix}-duration-unit"><option value="days" ${unit === 'days' ? 'selected' : ''}>Dias</option><option value="weeks" ${unit === 'weeks' ? 'selected' : ''}>Semanas</option><option value="months" ${unit === 'months' ? 'selected' : ''}>Meses</option><option value="years" ${unit === 'years' ? 'selected' : ''}>Anos</option><option value="lifetime" ${unit === 'lifetime' ? 'selected' : ''}>Vitalício</option></select></label></div>`;
 }
 
+function insertPhoneFields(formId, prefix, user = {}) {
+  const form = $(`#${formId}`);
+  const anchor = form?.querySelector('.two-columns');
+  if (!anchor) return;
+  anchor.insertAdjacentHTML('afterend', `<div class="two-columns"><label>País<input id="${prefix}-phone-country" inputmode="tel" maxlength="4" value="${escapeHtml(formatPhoneCountryCode(user.phoneCountryCode || '+55'))}" required/></label><label>Celular<input id="${prefix}-phone" inputmode="tel" maxlength="18" value="${escapeHtml(formatPhone(user.phoneNumber || '', user.phoneCountryCode || '+55'))}" placeholder="(11) 99999-9999" required/></label></div>`);
+}
+
 function openCreateUser() {
   $('#admin-modal-root').innerHTML = `<div class="admin-modal-wrap"><section class="admin-modal" role="dialog" aria-modal="true" aria-labelledby="create-title"><header><div><span>NOVO ACESSO</span><h2 id="create-title">Criar usuário Freemium</h2></div><button data-modal-close type="button">×</button></header><form id="create-user-form" class="admin-form"><label>Nome completo<input id="create-name" autocomplete="name" required/></label><div class="two-columns"><label>E-mail<input id="create-email" type="email" autocomplete="email" required/></label><label>CPF<input id="create-cpf" inputmode="numeric" maxlength="14" required/></label></div><label>Senha provisória<input id="create-password" type="password" minlength="8" autocomplete="new-password" required/></label><div class="form-section"><h3>Validade Freemium</h3><p>O acesso é liberado sem cobrança pelo período definido.</p>${durationFields('create')}</div><div class="modal-error" id="create-error"></div><div class="modal-actions"><button class="primary" type="submit">Criar e liberar acesso</button><button class="secondary" data-modal-close type="button">Cancelar</button></div></form></section></div>`;
+  insertPhoneFields('create-user-form', 'create');
 }
 
 function openUserEditor(userId) {
@@ -91,6 +116,7 @@ function openUserEditor(userId) {
   if (!user || user.role === 'admin') return;
   const durationUnit = user.manualAccessLifetime ? 'lifetime' : 'days';
   $('#admin-modal-root').innerHTML = `<div class="admin-modal-wrap"><section class="admin-modal wide" role="dialog" aria-modal="true" aria-labelledby="edit-title"><header><div><span>CLIENTE •••.${escapeHtml(user.cpfLast4)}</span><h2 id="edit-title">Gerenciar ${escapeHtml(user.fullName)}</h2></div><button data-modal-close type="button">×</button></header><div class="admin-form"><form id="edit-profile-form" class="form-section"><h3>Dados cadastrais</h3><div class="two-columns"><label>Nome completo<input id="edit-name" value="${escapeHtml(user.fullName)}" required/></label><label>E-mail<input id="edit-email" type="email" value="${escapeHtml(user.email)}" required/></label></div><label>Novo CPF (somente para correção)<input id="edit-cpf" inputmode="numeric" maxlength="14" placeholder="Deixe vazio para manter •••.${escapeHtml(user.cpfLast4)}"/></label><button class="primary" type="submit">Salvar correções</button></form><form id="freemium-form" class="form-section"><h3>Concessão Freemium</h3><p>${freemiumActive(user) ? `Ativa até ${escapeHtml(validityLabel(user))}.` : 'Nenhuma concessão Freemium ativa.'}</p>${durationFields('edit', durationUnit)}<div class="inline-actions"><button class="primary" type="submit">Aplicar período</button>${freemiumActive(user) ? '<button class="secondary" data-admin-action="revoke_freemium" type="button">Revogar Freemium</button>' : ''}</div></form><section class="form-section warning-zone"><h3>Suspensão</h3><p>A suspensão comum preserva o acesso até o fim do período já pago. A suspensão forçada é imediata e deve ser reservada a infrações às regras de uso.</p><div class="inline-actions">${user.suspensionScheduledAt ? '<button class="secondary" data-admin-action="clear_suspension" type="button">Cancelar suspensão agendada</button>' : '<button class="secondary" data-admin-action="schedule_suspension" type="button">Programar suspensão</button>'}<button class="danger" data-admin-action="force_suspension" type="button">Forçar suspensão imediata</button></div></section><section class="form-section danger-zone"><h3>Excluir cliente</h3><p>Exclui o login e os dados sincronizados. Esta ação não pode ser desfeita.</p><button class="danger" data-admin-action="delete_user" type="button">Excluir cadastro definitivamente</button></section><div class="modal-error" id="edit-error"></div><div class="modal-actions"><button class="secondary" data-modal-close type="button">Fechar</button></div></div></section></div>`;
+  insertPhoneFields('edit-profile-form', 'edit', user);
   $('#admin-modal-root').dataset.userId = userId;
 }
 
@@ -151,6 +177,15 @@ $('#admin-users').addEventListener('click', (event) => {
 
 $('#admin-modal-root').addEventListener('input', (event) => {
   if (['create-cpf', 'edit-cpf'].includes(event.target.id)) event.target.value = formatCpf(event.target.value);
+  if (['create-phone-country', 'edit-phone-country'].includes(event.target.id)) {
+    event.target.value = formatPhoneCountryCode(event.target.value);
+    const prefix = event.target.id.split('-')[0];
+    $(`#${prefix}-phone`).value = formatPhone($(`#${prefix}-phone`).value, event.target.value);
+  }
+  if (['create-phone', 'edit-phone'].includes(event.target.id)) {
+    const prefix = event.target.id.split('-')[0];
+    event.target.value = formatPhone(event.target.value, $(`#${prefix}-phone-country`).value);
+  }
 });
 $('#admin-modal-root').addEventListener('change', (event) => {
   if (!event.target.id.endsWith('-duration-unit')) return;
@@ -168,7 +203,7 @@ $('#admin-modal-root').addEventListener('submit', async (event) => {
     const error = $('#create-error');
     error.textContent = '';
     try {
-      await cloud.adminCreateUser({ fullName: $('#create-name').value.trim(), email: $('#create-email').value.trim(), cpf: digits($('#create-cpf').value), password: $('#create-password').value, durationValue: Number($('#create-duration-value').value), durationUnit: $('#create-duration-unit').value });
+      await cloud.adminCreateUser({ fullName: $('#create-name').value.trim(), email: $('#create-email').value.trim(), cpf: digits($('#create-cpf').value), phoneCountryCode: $('#create-phone-country').value, phoneNumber: phoneDigits($('#create-phone').value), password: $('#create-password').value, durationValue: Number($('#create-duration-value').value), durationUnit: $('#create-duration-unit').value });
       $('#admin-modal-root').innerHTML = '';
       await loadUsers();
     } catch (caught) { error.textContent = caught instanceof Error ? caught.message : 'Não foi possível criar o usuário.'; }
@@ -176,7 +211,7 @@ $('#admin-modal-root').addEventListener('submit', async (event) => {
   if (event.target.id === 'edit-profile-form') {
     const userId = $('#admin-modal-root').dataset.userId;
     try {
-      await cloud.adminUpdateUser({ userId, action: 'update_profile', fullName: $('#edit-name').value.trim(), email: $('#edit-email').value.trim(), cpf: digits($('#edit-cpf').value) });
+      await cloud.adminUpdateUser({ userId, action: 'update_profile', fullName: $('#edit-name').value.trim(), email: $('#edit-email').value.trim(), cpf: digits($('#edit-cpf').value), phoneCountryCode: $('#edit-phone-country').value, phoneNumber: phoneDigits($('#edit-phone').value) });
       $('#admin-modal-root').innerHTML = '';
       await loadUsers();
     } catch (caught) { $('#edit-error').textContent = caught instanceof Error ? caught.message : 'Não foi possível salvar.'; }
