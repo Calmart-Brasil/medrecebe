@@ -108,7 +108,7 @@ assert.ok(
   'appState só pode ser carregado depois da mensagem padrão usada pelo estado vazio',
 );
 assert.ok(!appHtml.includes('Beta local:'), 'o aviso antigo de beta local não deve aparecer na entrada');
-assert.ok(appHtml.includes('styles.css?v=18') && appHtml.includes('cloud.js?v=8') && appHtml.includes('reconciliation-pdf.js?v=2') && appHtml.includes('app.js?v=26'), 'os arquivos corrigidos precisam de cache busting');
+assert.ok(appHtml.includes('styles.css?v=23') && appHtml.includes('cloud.js?v=8') && appHtml.includes('reconciliation-pdf.js?v=2') && appHtml.includes('app.js?v=26'), 'os arquivos corrigidos precisam de cache busting');
 for (const marker of ['auth-phone-country', 'auth-phone', 'Cadastre-se grátis']) assert.ok(appHtml.includes(marker), `cadastro gratuito sem: ${marker}`);
 for (const marker of ['formatMobilePhone', 'isFreemiumAccount', 'canCreateWorkplace', 'phoneCountryCode', 'phoneNumber']) assert.ok(app.includes(marker), `plano Freemium ou celular sem: ${marker}`);
 for (const marker of ['Esqueci minha senha', 'auth-new-password', 'auth-confirm-password']) assert.ok(appHtml.includes(marker), `recuperação de senha sem: ${marker}`);
@@ -154,7 +154,7 @@ for (const marker of ['showCloudLoading', 'syncPendingEvidence', 'mergeUnsyncedL
 for (const marker of ['MedRecebe Admin', 'admin-users']) {
   assert.ok(adminHtml.includes(marker) || adminApp.includes(marker), `painel administrativo sem: ${marker}`);
 }
-for (const marker of ['admin.css?v=4', 'admin.js?v=7', 'cloud.js?v=8', 'users-toolbar', 'Base de clientes', 'Entrar no painel']) {
+for (const marker of ['admin.css?v=5', 'admin.js?v=7', 'cloud.js?v=8', 'users-toolbar', 'Base de clientes', 'Entrar no painel']) {
   assert.ok(adminHtml.includes(marker), `layout administrativo desktop sem: ${marker}`);
 }
 for (const forbidden of ['SEGUNDA ETAPA', 'segundo fator', 'Authenticator', 'admin-mfa', 'adminMfaSatisfied', 'prompt(']) assert.ok(!`${adminHtml}\n${adminApp}\n${cloud}`.includes(forbidden), `painel administrativo ainda contém: ${forbidden}`);
@@ -202,7 +202,7 @@ for (const [name, document] of [['Landing', landing], ['Aplicativo', `${appHtml}
   }
 }
 
-for (const marker of ['install', 'activate', 'fetch', 'caches.open', 'medrecebe-app-v25', './app.html', 'reconciliation-pdf.js?v=2', 'institution-directory-rmsp.json']) {
+for (const marker of ['install', 'activate', 'fetch', 'caches.open', 'medrecebe-app-v30', './app.html', 'reconciliation-pdf.js?v=2', 'institution-directory-rmsp.json']) {
   assert.ok(worker.includes(marker), `sw.js sem: ${marker}`);
 }
 
