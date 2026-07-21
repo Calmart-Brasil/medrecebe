@@ -50,7 +50,7 @@ const [manifestText, landing, landingCss, appHtml, app, appCss, reconciliationPd
   read('supabase/functions/_shared/rate-limit.ts'),
   read('supabase/config.toml'),
   read('frame-guard.js'),
-  read('supabase/migrations/202607200002_self_service_freemium.sql'),
+  read('supabase/migrations/202607200003_self_service_freemium.sql'),
   read('supabase/functions/_shared/phone.ts'),
 ]);
 const manifest = JSON.parse(manifestText);
@@ -60,6 +60,18 @@ const [institutionDirectoryText, institutionBuilder, mobileInstitutionDirectory]
   read('mobile/src/services/institutionDirectory.ts'),
 ]);
 const institutionDirectory = JSON.parse(institutionDirectoryText);
+const [nationalInstitutionIndexText, nationalSpDirectoryText, nationalInstitutionBuilder, medicalSpecialtiesText, professionalMigration, professionalFunction, marketFunction] = await Promise.all([
+  read('data/institutions/index.json'),
+  read('data/institutions/SP.json'),
+  read('scripts/build-national-institution-directory.mjs'),
+  read('data/medical-specialties.json'),
+  read('supabase/migrations/202607210001_professional_intelligence.sql'),
+  read('supabase/functions/professional-profile/index.ts'),
+  read('supabase/functions/market-intelligence/index.ts'),
+]);
+const nationalInstitutionIndex = JSON.parse(nationalInstitutionIndexText);
+const nationalSpDirectory = JSON.parse(nationalSpDirectoryText);
+const medicalSpecialties = JSON.parse(medicalSpecialtiesText);
 
 assert.equal(manifest.display, 'standalone');
 assert.equal(manifest.start_url, './app.html?source=homescreen');
@@ -68,7 +80,7 @@ assert.equal(manifest.orientation, 'portrait');
 assert.ok(manifest.icons.some((icon) => icon.sizes === '192x192'));
 assert.ok(manifest.icons.some((icon) => icon.sizes === '512x512'));
 
-for (const asset of ['landing.css', 'legal.css', 'styles.css', 'app.html', 'app.js', 'reconciliation-pdf.js', 'cloud.js', 'frame-guard.js', 'admin.html', 'admin.js', 'admin.css', 'manifest.webmanifest', 'termos.html', 'privacidade.html', 'cancelamento.html', 'data/institution-directory-rmsp.json', 'scripts/build-institution-directory.mjs', 'assets/apple-touch-icon.png', 'assets/icon-192.png', 'assets/icon-512.png', 'branding/medrecebe-liquid-glass-master.png']) {
+for (const asset of ['landing.css', 'legal.css', 'styles.css', 'app.html', 'app.js', 'reconciliation-pdf.js', 'cloud.js', 'frame-guard.js', 'admin.html', 'admin.js', 'admin.css', 'manifest.webmanifest', 'termos.html', 'privacidade.html', 'cancelamento.html', 'data/institution-directory-rmsp.json', 'data/institutions/index.json', 'data/institutions/SP.json', 'data/medical-specialties.json', 'scripts/build-institution-directory.mjs', 'scripts/build-national-institution-directory.mjs', 'assets/apple-touch-icon.png', 'assets/icon-192.png', 'assets/icon-512.png', 'branding/medrecebe-liquid-glass-master.png']) {
   const file = await stat(join(root, asset));
   assert.ok(file.size > 0, `${asset} precisa existir e não pode estar vazio`);
 }
@@ -82,7 +94,7 @@ for (const marker of [
   'Conciliação',
   'Mais',
 ]) assert.ok(appHtml.includes(marker), `app.html sem: ${marker}`);
-assert.equal((appHtml.match(/<nav>[\s\S]*?<\/nav>/)?.[0].match(/<svg /g) || []).length, 5, 'menu web precisa usar os cinco ícones SVG da navegação');
+assert.equal((appHtml.match(/<nav>[\s\S]*?<\/nav>/)?.[0].match(/<svg /g) || []).length, 6, 'menu web precisa usar os seis ícones SVG da navegação');
 
 for (const marker of ['Cadastre-se grátis', 'Freemium', 'R$ 39,90', 'Nota Fiscal', 'Cancelamento e reembolso']) {
   assert.ok(landing.includes(marker), `landing page sem: ${marker}`);
@@ -109,8 +121,9 @@ assert.ok(
   'appState só pode ser carregado depois da mensagem padrão usada pelo estado vazio',
 );
 assert.ok(!appHtml.includes('Beta local:'), 'o aviso antigo de beta local não deve aparecer na entrada');
-assert.ok(appHtml.includes('styles.css?v=24') && appHtml.includes('cloud.js?v=8') && appHtml.includes('reconciliation-pdf.js?v=2') && appHtml.includes('app.js?v=26'), 'os arquivos corrigidos precisam de cache busting');
+assert.ok(appHtml.includes('styles.css?v=25') && appHtml.includes('cloud.js?v=9') && appHtml.includes('reconciliation-pdf.js?v=2') && appHtml.includes('app.js?v=27'), 'os arquivos corrigidos precisam de cache busting');
 for (const marker of ['auth-phone-country', 'auth-phone', 'Cadastre-se grátis']) assert.ok(appHtml.includes(marker), `cadastro gratuito sem: ${marker}`);
+for (const marker of ['auth-crm-uf', 'auth-crm-number', 'auth-specialty', 'Inteligência de mercado']) assert.ok(appHtml.includes(marker), `perfil profissional sem: ${marker}`);
 for (const marker of ['formatMobilePhone', 'isFreemiumAccount', 'canCreateWorkplace', 'phoneCountryCode', 'phoneNumber']) assert.ok(app.includes(marker), `plano Freemium ou celular sem: ${marker}`);
 for (const marker of ['Esqueci minha senha', 'auth-new-password', 'auth-confirm-password']) assert.ok(appHtml.includes(marker), `recuperação de senha sem: ${marker}`);
 for (const marker of ['consumeRecoveryLink', 'history.replaceState', "setAuthMode('forgot')", 'cloud.updatePassword']) assert.ok(app.includes(marker), `jornada de recuperação sem: ${marker}`);
@@ -140,6 +153,25 @@ assert.ok(institutionDirectory.institutions.every((item) => /^\d{14}$/.test(item
 assert.ok(institutionDirectory.institutions.filter((item) => item.tradeName).length >= 950, 'o diretório precisa preservar os nomes fantasia informados pelo CNES');
 assert.ok(institutionDirectory.institutions.every((item) => item.tradeName !== undefined), 'todo registro precisa declarar o campo tradeName, ainda que vazio');
 for (const marker of ['RMSP_MUNICIPALITIES', 'isValidCnpj', 'medical_staffing', 'sourceUpdatedAt', 'tradeName']) assert.ok(institutionBuilder.includes(marker), `gerador do diretório sem: ${marker}`);
+assert.equal(nationalInstitutionIndex.meta.states, 27, 'o diretório nacional precisa cobrir as 27 UFs');
+assert.ok(nationalInstitutionIndex.meta.total >= 22000, 'o diretório nacional está incompleto');
+assert.ok(nationalInstitutionIndex.meta.uniqueCnpjs >= 14000, 'o diretório nacional precisa preservar os CNPJs pagadores distintos');
+assert.equal(nationalInstitutionIndex.states.length, 27, 'o índice nacional precisa listar todos os arquivos estaduais');
+assert.ok(nationalSpDirectory.meta.total >= 3300 && nationalSpDirectory.meta.municipalities >= 640, 'a expansão estadual de São Paulo está incompleta');
+for (const state of nationalInstitutionIndex.states) {
+  const stateFile = join(root, 'data/institutions', state.file);
+  const file = await stat(stateFile);
+  assert.ok(file.size > 0, `arquivo institucional ausente para ${state.uf}`);
+  const stateDirectory = JSON.parse(await readFile(stateFile, 'utf8'));
+  assert.ok(stateDirectory.institutions.every((item) => item.phone === undefined && item.email === undefined), `diretório de ${state.uf} expõe contato desnecessário`);
+}
+for (const marker of ['UF_BY_CODE', 'servicodados.ibge.gov.br', 'isValidCnpj', 'output-dir', 'index.json']) assert.ok(nationalInstitutionBuilder.includes(marker), `gerador nacional sem: ${marker}`);
+assert.equal(medicalSpecialties.meta.count, 55, 'a lista precisa conter as 55 especialidades reconhecidas pelo CFM');
+assert.equal(medicalSpecialties.specialties.length, 55, 'a lista de especialidades está incompleta');
+for (const marker of ['professional_profiles', 'professional_registrations', 'professional_specialties', 'market_data_snapshots', 'market_indicators']) assert.ok(professionalMigration.includes(marker), `migration profissional sem: ${marker}`);
+for (const marker of ['normalizeSpecialties', 'self_reported', 'opportunityRadiusKm', 'cfmConnectorAvailable']) assert.ok(professionalFunction.includes(marker), `perfil profissional sem: ${marker}`);
+for (const marker of ['pncp.gov.br/api/consulta', 'GENERAL_MEDICAL_TERMS', 'regional', 'recordsInspected']) assert.ok(marketFunction.includes(marker), `radar de mercado sem: ${marker}`);
+for (const marker of ['incomeConcentration', 'loadMarketIntelligence', 'renderIntelligence', 'professionalProfile']) assert.ok(app.includes(marker), `inteligência no aplicativo sem: ${marker}`);
 for (const marker of ['loadInstitutionDirectory', 'searchInstitutionDirectory', 'CNPJ_CARD_URL']) assert.ok(mobileInstitutionDirectory.includes(marker), `diretório nativo sem: ${marker}`);
 for (const marker of ['billing-view', 'R$ 39,90', 'PLANO COMPLETO', 'runtime-config.js', 'cloud.js']) {
   assert.ok(appHtml.includes(marker), `fluxo de assinatura sem: ${marker}`);
@@ -155,7 +187,7 @@ for (const marker of ['showCloudLoading', 'syncPendingEvidence', 'mergeUnsyncedL
 for (const marker of ['MedRecebe Admin', 'admin-users']) {
   assert.ok(adminHtml.includes(marker) || adminApp.includes(marker), `painel administrativo sem: ${marker}`);
 }
-for (const marker of ['admin.css?v=5', 'admin.js?v=7', 'cloud.js?v=8', 'users-toolbar', 'Base de clientes', 'Entrar no painel']) {
+for (const marker of ['admin.css?v=5', 'admin.js?v=7', 'cloud.js?v=9', 'users-toolbar', 'Base de clientes', 'Entrar no painel']) {
   assert.ok(adminHtml.includes(marker), `layout administrativo desktop sem: ${marker}`);
 }
 for (const forbidden of ['SEGUNDA ETAPA', 'segundo fator', 'Authenticator', 'admin-mfa', 'adminMfaSatisfied', 'prompt(']) assert.ok(!`${adminHtml}\n${adminApp}\n${cloud}`.includes(forbidden), `painel administrativo ainda contém: ${forbidden}`);
@@ -203,7 +235,7 @@ for (const [name, document] of [['Landing', landing], ['Aplicativo', `${appHtml}
   }
 }
 
-for (const marker of ['install', 'activate', 'fetch', 'caches.open', 'medrecebe-app-v31', './app.html', 'reconciliation-pdf.js?v=2', 'institution-directory-rmsp.json']) {
+for (const marker of ['install', 'activate', 'fetch', 'caches.open', 'medrecebe-app-v32', './app.html', 'reconciliation-pdf.js?v=2', 'data/institutions/index.json', 'data/medical-specialties.json']) {
   assert.ok(worker.includes(marker), `sw.js sem: ${marker}`);
 }
 

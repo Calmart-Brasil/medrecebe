@@ -3,7 +3,9 @@ const SESSION_KEY = 'medrecebe.beta.session.v1';
 const DEMO_CPF = '52998224725';
 const DEMO_PASSWORD = 'Teste@123';
 const FEEDBACK_EMAIL = 'ti@calmart.com.br';
-const INSTITUTION_DIRECTORY_URL = './data/institution-directory-rmsp.json?v=20260717';
+const INSTITUTION_DIRECTORY_BASE_URL = './data/institutions';
+const INSTITUTION_DIRECTORY_VERSION = '20260718';
+const MEDICAL_SPECIALTIES_URL = './data/medical-specialties.json?v=20260721';
 const CNPJ_CARD_URL = 'https://solucoes.receita.fazenda.gov.br/Servicos/cnpjreva/cnpj.aspx';
 
 const $ = (selector, root = document) => root.querySelector(selector);
@@ -40,7 +42,21 @@ let evidenceSyncRunning = false;
 let institutionDirectory = [];
 let institutionDirectoryMeta = null;
 let institutionDirectoryPromise = null;
+let institutionDirectoryIndex = null;
+let institutionDirectoryIndexPromise = null;
+let institutionDirectoryState = 'SP';
+const institutionDirectoryCache = new Map();
 let pendingInvoiceWorkplaceId = '';
+let medicalSpecialties = [];
+let medicalSpecialtiesPromise = null;
+let registrationSpecialtiesDraft = [];
+let professionalProfile = null;
+let professionalProfileLoading = false;
+let professionalProfileError = '';
+let professionalDraft = null;
+let marketIntelligenceCache = null;
+let marketIntelligenceLoading = false;
+let marketIntelligenceError = '';
 
 const TITLES = {
   home: 'Início',
@@ -48,6 +64,7 @@ const TITLES = {
   dashboard: 'Dashboard',
   workplaces: 'Locais e repasses',
   reconciliation: 'Conciliação',
+  intelligence: 'Inteligência',
   feedback: 'Feedback',
   account: 'Mais',
   cancellation: 'Cancelamento',
@@ -329,28 +346,62 @@ function normalizeDirectoryText(value = '') {
     .trim();
 }
 
-async function loadInstitutionDirectory() {
-  if (institutionDirectory.length) return institutionDirectory;
-  if (institutionDirectoryPromise) return institutionDirectoryPromise;
-  institutionDirectoryPromise = fetch(INSTITUTION_DIRECTORY_URL)
+async function loadInstitutionDirectoryIndex() {
+  if (institutionDirectoryIndex) return institutionDirectoryIndex;
+  if (institutionDirectoryIndexPromise) return institutionDirectoryIndexPromise;
+  institutionDirectoryIndexPromise = fetch(`${INSTITUTION_DIRECTORY_BASE_URL}/index.json?v=${INSTITUTION_DIRECTORY_VERSION}`)
     .then((response) => {
-      if (!response.ok) throw new Error('Diretório institucional indisponível.');
+      if (!response.ok) throw new Error('Índice institucional indisponível.');
       return response.json();
     })
     .then((payload) => {
-      institutionDirectoryMeta = payload.meta || null;
-      institutionDirectory = (payload.institutions || []).map((institution) => ({
+      institutionDirectoryIndex = payload;
+      return payload;
+    })
+    .catch((error) => {
+      institutionDirectoryIndexPromise = null;
+      throw error;
+    });
+  return institutionDirectoryIndexPromise;
+}
+
+async function loadInstitutionDirectory(uf = institutionDirectoryState || 'SP') {
+  const state = BRAZIL_UFS?.includes?.(String(uf).toUpperCase()) ? String(uf).toUpperCase() : 'SP';
+  institutionDirectoryState = state;
+  if (institutionDirectoryCache.has(state)) {
+    const cached = institutionDirectoryCache.get(state);
+    institutionDirectory = cached.institutions;
+    institutionDirectoryMeta = cached.meta;
+    return institutionDirectory;
+  }
+  if (institutionDirectoryPromise?.state === state) return institutionDirectoryPromise.promise;
+  const promise = Promise.all([
+    loadInstitutionDirectoryIndex().catch(() => null),
+    fetch(`${INSTITUTION_DIRECTORY_BASE_URL}/${state}.json?v=${INSTITUTION_DIRECTORY_VERSION}`).then((response) => {
+      if (!response.ok) throw new Error(`Diretório de ${state} indisponível.`);
+      return response.json();
+    }),
+  ])
+    .then(([, payload]) => {
+      const normalized = (payload.institutions || []).map((institution) => ({
         ...institution,
         tradeName: institution.tradeName || institution.name || '',
         searchKey: normalizeDirectoryText(`${institution.tradeName || ''} ${institution.name} ${institution.legalName} ${institution.city} ${institution.payerCnpj} ${institution.cnes}`),
       }));
+      const cached = { institutions: normalized, meta: payload.meta || null };
+      institutionDirectoryCache.set(state, cached);
+      if (institutionDirectoryState === state) {
+        institutionDirectory = normalized;
+        institutionDirectoryMeta = cached.meta;
+      }
       return institutionDirectory;
     })
     .catch((error) => {
       institutionDirectoryPromise = null;
       throw error;
     });
-  return institutionDirectoryPromise;
+  institutionDirectoryPromise = { state, promise };
+  return promise;
 }
 
 function directorySelectionMarkup() {
@@ -374,7 +425,7 @@ function renderInstitutionSearchResults(query = '') {
   if (!normalized && !cnpjQuery) {
     resultsRoot.innerHTML = '';
     statusRoot.textContent = institutionDirectoryMeta
-      ? `${institutionDirectoryMeta.total} locais e empresas em ${institutionDirectoryMeta.municipalities} municípios. Fonte: CNES.`
+      ? `${institutionDirectoryMeta.total} locais e empresas em ${institutionDirectoryMeta.municipalities} municípios de ${institutionDirectoryState}. Fonte: CNES.`
       : 'Digite ao menos duas letras para pesquisar.';
     return;
   }
@@ -408,6 +459,9 @@ function selectDirectoryInstitution(institutionId) {
     directoryTradeName: institution.tradeName || institution.name,
     directoryLegalName: institution.legalName,
     directoryUpdatedAt: institutionDirectoryMeta?.sourceUpdatedAt || '',
+    city: institution.city,
+    state: institution.state,
+    cityCode: institution.cityCode,
     cnes: institution.cnes,
     payerCnpjSource: institution.payerCnpjSource,
     establishmentCnpj: institution.establishmentCnpj,
@@ -539,6 +593,63 @@ function monthLabel(month) {
 
 function isPastOrToday(value) {
   return parseDate(value).getTime() <= parseDate(dateOnly()).getTime();
+}
+
+async function loadMedicalSpecialties() {
+  if (medicalSpecialties.length) return medicalSpecialties;
+  if (medicalSpecialtiesPromise) return medicalSpecialtiesPromise;
+  medicalSpecialtiesPromise = fetch(MEDICAL_SPECIALTIES_URL)
+    .then((response) => {
+      if (!response.ok) throw new Error('Lista de especialidades indisponível.');
+      return response.json();
+    })
+    .then((payload) => {
+      medicalSpecialties = Array.isArray(payload.specialties) ? payload.specialties : [];
+      populateSpecialtySelect($('#auth-specialty'));
+      return medicalSpecialties;
+    })
+    .catch((error) => {
+      medicalSpecialtiesPromise = null;
+      throw error;
+    });
+  return medicalSpecialtiesPromise;
+}
+
+function populateSpecialtySelect(select, selected = '') {
+  if (!select) return;
+  const current = selected || select.value;
+  select.innerHTML = `<option value="">Selecione</option>${medicalSpecialties.map((item) => `<option value="${escapeHtml(item.code)}" ${item.code === current ? 'selected' : ''}>${escapeHtml(item.name)}</option>`).join('')}`;
+}
+
+function specialtyByCode(code) {
+  return medicalSpecialties.find((item) => item.code === code);
+}
+
+function normalizeCrmNumber(value = '') {
+  return String(value).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 13);
+}
+
+function renderSpecialtyChips(root, specialties, removeAction) {
+  if (!root) return;
+  root.innerHTML = specialties.map((item, index) => `<span class="specialty-chip"><span><strong>${escapeHtml(item.name)}</strong>${item.rqeNumber ? `<small>RQE ${escapeHtml(item.rqeNumber)}</small>` : '<small>RQE não informado</small>'}</span><button data-action="${removeAction}" data-index="${index}" aria-label="Remover ${escapeHtml(item.name)}" type="button">×</button></span>`).join('');
+}
+
+function renderRegistrationSpecialties() {
+  renderSpecialtyChips($('#auth-specialty-list'), registrationSpecialtiesDraft, 'remove-registration-specialty');
+}
+
+function addSpecialtyToDraft(target) {
+  const source = target === 'registration' ? registrationSpecialtiesDraft : professionalDraft?.specialties;
+  const select = target === 'registration' ? $('#auth-specialty') : $('#professional-specialty');
+  const rqe = target === 'registration' ? $('#auth-rqe') : $('#professional-rqe');
+  const specialty = specialtyByCode(select?.value);
+  if (!source || !specialty) return showToast('Selecione uma especialidade.');
+  if (source.some((item) => item.code === specialty.code)) return showToast('Esta especialidade já foi adicionada.');
+  source.push({ code: specialty.code, name: specialty.name, rqeNumber: onlyDigits(rqe?.value || '').slice(0, 12), status: 'self_reported' });
+  if (select) select.value = '';
+  if (rqe) rqe.value = '';
+  if (target === 'registration') renderRegistrationSpecialties();
+  else renderProfessionalProfileModal();
 }
 
 function phoneDigits(value = '', maxLength = 15) {
@@ -930,8 +1041,30 @@ async function reconcileBillingReturn(initialAccount) {
   return false;
 }
 
+async function loadProfessionalProfile(force = false) {
+  if (!isCloudMode() || !cloudAccount) return professionalProfile;
+  if (professionalProfileLoading) return professionalProfile;
+  if (professionalProfile && !force) return professionalProfile;
+  professionalProfileLoading = true;
+  professionalProfileError = '';
+  try {
+    const result = await cloud.professionalProfile({ action: 'get' });
+    professionalProfile = result.professional || { registrations: [], specialties: [] };
+    return professionalProfile;
+  } catch (error) {
+    professionalProfileError = error instanceof Error ? error.message : 'Não foi possível carregar o perfil profissional.';
+    return null;
+  } finally {
+    professionalProfileLoading = false;
+  }
+}
+
 function applyCloudAccount(result, cpf = '') {
   cloudAccount = result;
+  professionalProfile = result.professional || null;
+  professionalProfileError = '';
+  marketIntelligenceCache = null;
+  marketIntelligenceError = '';
   selectedPlanCode = cloudPlanCode();
   document.body.classList.toggle('web-plan', isDesktopComputer());
   activeStateKey = `${APP_KEY}.user.${result.profile.id}`;
@@ -950,7 +1083,7 @@ function applyCloudAccount(result, cpf = '') {
   if (!cloudAccessAllowed()) return showBilling();
   const hydrationSequence = ++cloudHydrationSequence;
   showCloudLoading();
-  void hydrateCloudState().finally(() => {
+  void Promise.all([hydrateCloudState(), loadProfessionalProfile()]).finally(() => {
     if (hydrationSequence === cloudHydrationSequence && cloudAccessAllowed()) showApp();
   });
 }
@@ -1060,6 +1193,9 @@ function renderRoute() {
     case 'reconciliation':
       renderReconciliation();
       break;
+    case 'intelligence':
+      renderIntelligence();
+      break;
     case 'feedback':
       renderFeedback();
       break;
@@ -1152,7 +1288,101 @@ function renderDashboard() {
     ${pageHeading('', 'Dashboard', '')}
     <div class="dashboard-overview"><details class="card summary-card dashboard-expandable dashboard-total-card"><summary><div><span class="summary-main"><small>TOTAL A RECEBER</small><strong>${currency(total)}</strong><span class="desktop-summary-note">Toque para ver a composição</span></span><div class="metrics"><span class="metric"><strong>${attendanceCount(pending)}</strong><small>EM ABERTO</small></span><span class="metric"><strong>${attendanceCount(dueToday)}</strong><small>VENCE HOJE</small></span><span class="metric overdue"><strong>${attendanceCount(overdue)}</strong><small>VENCIDOS</small></span><span class="metric"><strong>${attendanceCount(inReconciliation)}</strong><small>EM CONCILIAÇÃO</small></span></div></div></summary><div class="dashboard-expanded-content dashboard-status-list">${statusBreakdown}</div></details><details class="card dashboard-insight dashboard-expandable"><summary><span class="round-icon">⇄</span><small>VENCIDOS</small><strong>${currency(overdue.reduce((sum, item) => sum + item.amountCents, 0))}</strong><span class="dashboard-tap-hint">Ver detalhes</span></summary><div class="dashboard-expanded-content">${dashboardAttendanceDetails(overdue, { showWorkplace: true })}<button class="button secondary small" data-nav="reconciliation" type="button">Abrir conciliação</button></div></details></div>
     <div class="dashboard-columns">${dueCards ? `<section class="attention-panel"><h2 class="section-title">Requer sua atenção</h2><div class="list due-list">${dueCards}</div></section>` : ''}<section class="locations-panel"><h2 class="section-title">Por local</h2><div class="list">${workplaceCards || emptyCard('Ainda não há dados', 'Cadastre um local para começar.')}</div></section></div>
+    <button class="card intelligence-shortcut" data-nav="intelligence" type="button"><span class="intelligence-shortcut-icon">↗</span><span><small>INTELIGÊNCIA DE MERCADO</small><strong>Veja concentração de renda e oportunidades</strong><em>${professionalProfile?.specialties?.length ? `${professionalProfile.specialties.length} ${professionalProfile.specialties.length === 1 ? 'especialidade cadastrada' : 'especialidades cadastradas'}` : 'Complete seu CRM para personalizar o radar'}</em></span><b>Explorar ›</b></button>
   </div>`;
+}
+
+function workplaceRegion(workplace) {
+  if (workplace?.city) return `${workplace.city}${workplace.state ? `/${workplace.state}` : ''}`;
+  const address = String(workplace?.address || '');
+  const cityState = address.match(/([^·,—]+)\s*[/–-]\s*([A-Z]{2})\s*$/i);
+  if (cityState) return `${cityState[1].trim()}/${cityState[2].toUpperCase()}`;
+  const directoryCity = address.split('·').map((item) => item.trim()).filter(Boolean).at(-1);
+  return directoryCity && !/\d/.test(directoryCity) ? directoryCity : 'Município não informado';
+}
+
+function incomeConcentration() {
+  const total = appState.attendances.reduce((sum, item) => sum + Number(item.amountCents || 0), 0);
+  const byWorkplace = appState.workplaces.map((workplace) => {
+    const attendances = appState.attendances.filter((item) => item.workplaceId === workplace.id);
+    const amountCents = attendances.reduce((sum, item) => sum + Number(item.amountCents || 0), 0);
+    return { id: workplace.id, name: workplace.name, region: workplaceRegion(workplace), amountCents, quantity: attendanceCount(attendances), share: total ? amountCents / total : 0 };
+  }).filter((item) => item.amountCents > 0).sort((a, b) => b.amountCents - a.amountCents);
+  const byRegionMap = new Map();
+  byWorkplace.forEach((item) => {
+    const current = byRegionMap.get(item.region) || { name: item.region, amountCents: 0, quantity: 0 };
+    current.amountCents += item.amountCents;
+    current.quantity += item.quantity;
+    byRegionMap.set(item.region, current);
+  });
+  const byRegion = [...byRegionMap.values()].map((item) => ({ ...item, share: total ? item.amountCents / total : 0 })).sort((a, b) => b.amountCents - a.amountCents);
+  const hhi = byWorkplace.reduce((sum, item) => sum + (item.share * 100) ** 2, 0);
+  return { total, byWorkplace, byRegion, topShare: byWorkplace[0]?.share || 0, hhi };
+}
+
+function concentrationBars(items, emptyMessage) {
+  if (!items.length) return `<div class="intelligence-empty">${escapeHtml(emptyMessage)}</div>`;
+  return `<div class="concentration-bars">${items.slice(0, 8).map((item) => `<div class="concentration-row"><div><span><strong>${escapeHtml(item.name)}</strong><small>${item.quantity} atend.</small></span><b>${Math.round(item.share * 100)}%</b></div><div class="concentration-track"><span style="width:${Math.max(3, item.share * 100).toFixed(1)}%"></span></div><small>${currency(item.amountCents)}</small></div>`).join('')}</div>`;
+}
+
+function opportunityCard(item) {
+  const deadline = item.closesAt ? new Date(item.closesAt).toLocaleDateString('pt-BR') : 'Consulte o edital';
+  const matches = Array.isArray(item.matches) && item.matches.length ? `<div class="opportunity-matches">${item.matches.slice(0, 3).map((match) => `<span>${escapeHtml(match)}</span>`).join('')}</div>` : '';
+  return `<article class="card opportunity-card"><div class="opportunity-card-head"><span class="source-pill">PNCP</span><small>Encerra em ${escapeHtml(deadline)}</small></div><h3>${escapeHtml(item.title)}</h3><p>${escapeHtml(item.organization)}${item.city ? ` · ${escapeHtml(item.city)}/${escapeHtml(item.uf || '')}` : ''}</p>${matches}<div class="opportunity-footer"><span>${item.estimatedValue ? `<small>VALOR ESTIMADO</small><strong>${currency(Math.round(item.estimatedValue * 100))}</strong>` : '<small>VALOR NO EDITAL</small><strong>Consultar</strong>'}</span><a class="button secondary small" href="${escapeHtml(item.url)}" target="_blank" rel="noopener">Abrir no PNCP</a></div></article>`;
+}
+
+function opportunityList(items, emptyTitle, emptyDescription) {
+  if (!items?.length) return emptyCard(emptyTitle, emptyDescription);
+  return `<div class="opportunity-list">${items.slice(0, 12).map(opportunityCard).join('')}</div>`;
+}
+
+async function loadMarketIntelligence(force = false) {
+  if (!isCloudMode() || !professionalProfile?.registrations?.length || marketIntelligenceLoading) return;
+  if (marketIntelligenceCache && !force) return;
+  marketIntelligenceLoading = true;
+  marketIntelligenceError = '';
+  if (currentRoute === 'intelligence') renderIntelligence();
+  try {
+    marketIntelligenceCache = await cloud.marketIntelligence();
+  } catch (error) {
+    marketIntelligenceError = error instanceof Error ? error.message : 'Não foi possível consultar o radar.';
+  } finally {
+    marketIntelligenceLoading = false;
+    if (currentRoute === 'intelligence') renderIntelligence();
+  }
+}
+
+function renderIntelligence() {
+  const concentration = incomeConcentration();
+  const primary = professionalProfile?.registrations?.find((item) => item.primary) || professionalProfile?.registrations?.[0];
+  const specialties = professionalProfile?.specialties || [];
+  const concentrationLabel = concentration.topShare >= 0.6 ? 'Alta dependência' : concentration.topShare >= 0.4 ? 'Atenção à concentração' : concentration.byWorkplace.length ? 'Receita diversificada' : 'Sem base suficiente';
+  const concentrationClass = concentration.topShare >= 0.6 ? 'risk' : concentration.topShare >= 0.4 ? 'warning' : 'healthy';
+  const profileMarkup = professionalProfileLoading
+    ? '<div class="card intelligence-loading">Carregando perfil profissional…</div>'
+    : `<div class="card professional-summary"><div><span class="source-pill ${primary?.status?.startsWith('verified') ? 'verified' : ''}">${primary?.status?.startsWith('verified') ? 'VERIFICADO' : 'INFORMADO PELO MÉDICO'}</span><h2>${primary ? `CRM ${escapeHtml(primary.crmNumber)}/${escapeHtml(primary.crmUf)}` : 'Cadastre seu CRM'}</h2><p>${specialties.length ? specialties.map((item) => escapeHtml(item.name)).join(' · ') : 'Sem especialidade registrada. O radar exibirá oportunidades que aceitam CRM sem RQE específico.'}</p></div><button class="button secondary small" data-action="edit-professional-profile" type="button">${primary ? 'Editar perfil' : 'Completar perfil'}</button></div>`;
+  const radarMarkup = marketIntelligenceLoading
+    ? '<div class="card intelligence-loading"><span class="sync-spinner" aria-hidden="true"></span><strong>Consultando o PNCP</strong><p>Buscando contratações públicas abertas na sua UF.</p></div>'
+    : marketIntelligenceError
+      ? `<div class="notice warning">${escapeHtml(marketIntelligenceError)} <button class="link-button" data-action="refresh-market-intelligence" type="button">Tentar novamente</button></div>`
+      : primary
+        ? opportunityList(marketIntelligenceCache?.radar, 'Nenhuma contratação compatível agora', 'O radar será atualizado quando houver novos editais médicos na sua UF.')
+        : emptyCard('CRM necessário', 'Cadastre o CRM principal para definir a UF da busca.');
+  const regionalMarkup = primary
+    ? opportunityList(marketIntelligenceCache?.regional, 'Nenhuma correspondência por especialidade', specialties.length ? 'Não encontramos editais compatíveis nesta atualização.' : 'Oportunidades sem exigência de especialidade aparecerão aqui.')
+    : emptyCard('Perfil incompleto', 'Informe seu CRM e, se houver, suas especialidades.');
+  screen.innerHTML = `<div class="screen-stack intelligence-page">${pageHeading('Dados para decidir melhor', 'Inteligência de mercado', 'Transforme seus registros e fontes públicas em sinais de concentração e novas oportunidades.')}${profileMarkup}<section class="intelligence-section"><div class="section-heading"><div><p class="eyebrow">SEUS DADOS</p><h2>Mapa da concentração de renda</h2></div><span class="concentration-status ${concentrationClass}">${concentrationLabel}</span></div><div class="intelligence-kpis"><div class="card"><small>HONORÁRIOS REGISTRADOS</small><strong>${currency(concentration.total)}</strong></div><div class="card"><small>MAIOR PAGADOR</small><strong>${Math.round(concentration.topShare * 100)}%</strong></div><div class="card"><small>FONTES DE RECEITA</small><strong>${concentration.byWorkplace.length}</strong></div></div><div class="intelligence-grid"><div class="card"><h3>Por pagador</h3>${concentrationBars(concentration.byWorkplace, 'Registre atendimentos para formar o mapa.')}</div><div class="card"><h3>Por município</h3>${concentrationBars(concentration.byRegion, 'O município aparecerá quando estiver informado no local de trabalho.')}</div></div><p class="data-footnote">Cálculo feito apenas com os honorários registrados na sua conta. Valores recebidos e a receber são mantidos separados no Dashboard.</p></section><section class="intelligence-section"><div class="section-heading"><div><p class="eyebrow">FONTE PÚBLICA</p><h2>Radar de contratações públicas</h2></div><button class="link-button" data-action="refresh-market-intelligence" type="button">Atualizar</button></div>${radarMarkup}</section><section class="intelligence-section"><div class="section-heading"><div><p class="eyebrow">COMPATIBILIDADE</p><h2>Oportunidades regionais</h2></div></div>${regionalMarkup}</section><details class="card intelligence-method"><summary>Como os resultados são classificados</summary><p>O MedRecebe consulta propostas abertas no PNCP, filtra objetos relacionados à atuação médica e prioriza município, UF e especialidades confirmadas no perfil. Sem especialidade, entram apenas oportunidades compatíveis com CRM geral. O edital oficial sempre prevalece.</p><p>As próximas camadas agregadas usarão CNES, Receita Federal, IBGE, SIH/SUS, SIA/SUS, SIGTAP, ANS, RAIS, CAGED e CMED, cada uma com data e fonte visíveis.</p></details></div>`;
+  if (!professionalProfile && isCloudMode() && !professionalProfileLoading) {
+    professionalProfileLoading = true;
+    cloud.professionalProfile({ action: 'get' }).then((result) => {
+      professionalProfile = result.professional || { registrations: [], specialties: [] };
+    }).catch((error) => {
+      professionalProfileError = error instanceof Error ? error.message : 'Perfil profissional indisponível.';
+    }).finally(() => {
+      professionalProfileLoading = false;
+      if (currentRoute === 'intelligence') renderIntelligence();
+    });
+  } else if (primary && !marketIntelligenceCache && !marketIntelligenceLoading && !marketIntelligenceError) void loadMarketIntelligence();
 }
 
 function groupDueDates(receivables) {
@@ -1435,6 +1665,74 @@ function renderFeedback() {
   screen.innerHTML = `<div class="screen-stack">${pageHeading('Ajude a construir', 'Enviar feedback', 'Conte o que funcionou, o que confundiu e o que precisa melhorar antes do TestFlight.')}<form class="card feedback-form" id="feedback-form"><label>Nota para esta experiência</label><div class="rating" role="group" aria-label="Nota de 1 a 5">${[1, 2, 3, 4, 5].map((value) => `<button class="${value === feedbackRating ? 'selected' : ''}" data-action="rate-feedback" data-value="${value}" type="button">${value}</button>`).join('')}</div><label>Área avaliada<select id="feedback-area"><option>Experiência geral</option><option>Registro de atendimento</option><option>Dashboard</option><option>Cadastros e regras</option><option>Conciliação</option><option>Instalação no iPhone</option></select></label><label>Seu comentário<textarea id="feedback-message" required placeholder="Ex.: não entendi como escolher a regra de pagamento…"></textarea></label><label>Seu e-mail (opcional)<input id="feedback-contact" type="email" value="${escapeHtml(appState.profile?.email || '')}"/></label><button class="button primary" type="submit">Preparar e-mail de feedback</button><p class="field-hint">O beta abrirá o Mail para você revisar e enviar. Uma cópia fica no histórico local.</p></form>${history ? `<h2 class="section-title">Feedbacks preparados neste aparelho</h2><div class="feedback-history">${history}</div>` : ''}</div>`;
 }
 
+const BRAZIL_UFS = ['AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO'];
+
+function ufOptions(selected = '') {
+  return `<option value="">UF</option>${BRAZIL_UFS.map((uf) => `<option value="${uf}" ${uf === selected ? 'selected' : ''}>${uf}</option>`).join('')}`;
+}
+
+function openProfessionalProfileModal() {
+  const primary = professionalProfile?.registrations?.find((item) => item.primary) || professionalProfile?.registrations?.[0] || {};
+  professionalDraft = {
+    crmUf: primary.crmUf || 'SP',
+    crmNumber: primary.crmNumber || '',
+    opportunityUf: professionalProfile?.opportunityUf || primary.crmUf || 'SP',
+    opportunityCity: professionalProfile?.opportunityCity || '',
+    opportunityRadiusKm: professionalProfile?.opportunityRadiusKm || 100,
+    specialties: structuredClone(professionalProfile?.specialties || []),
+  };
+  renderProfessionalProfileModal();
+  void loadMedicalSpecialties()
+    .then(() => {
+      if (professionalDraft && $('#professional-specialty')) populateSpecialtySelect($('#professional-specialty'));
+    })
+    .catch(() => {});
+}
+
+function preserveProfessionalDraft() {
+  if (!professionalDraft || !$('#professional-crm-number')) return;
+  professionalDraft.crmUf = $('#professional-crm-uf').value;
+  professionalDraft.crmNumber = normalizeCrmNumber($('#professional-crm-number').value);
+  professionalDraft.opportunityUf = $('#professional-opportunity-uf').value;
+  professionalDraft.opportunityCity = $('#professional-opportunity-city').value.trim();
+  professionalDraft.opportunityRadiusKm = Number($('#professional-radius').value) || 100;
+}
+
+function renderProfessionalProfileModal() {
+  if (!professionalDraft) return;
+  const specialties = professionalDraft.specialties.map((item, index) => `<div class="editor-row specialty-editor-row"><span><strong>${escapeHtml(item.name)}</strong><small>${item.rqeNumber ? `RQE ${escapeHtml(item.rqeNumber)}` : 'RQE não informado'} · ${item.status === 'verified' ? 'Verificado no CFM' : 'Informado pelo médico'}</small></span><button class="danger-link" data-action="remove-professional-specialty" data-index="${index}" type="button">Excluir</button></div>`).join('');
+  modalRoot.innerHTML = `<div class="modal-wrap"><section class="modal-sheet" role="dialog" aria-modal="true" aria-labelledby="professional-title"><header class="modal-header simple"><span></span><h2 id="professional-title">Perfil profissional</h2><button data-action="close-modal" aria-label="Fechar" type="button">×</button></header><div class="modal-body"><div class="form-grid"><div class="crm-fields"><label>UF do CRM<select id="professional-crm-uf">${ufOptions(professionalDraft.crmUf)}</select></label><label>CRM principal<input id="professional-crm-number" value="${escapeHtml(professionalDraft.crmNumber)}" inputmode="text" maxlength="13" placeholder="123456"/></label></div><div class="notice"><strong>Verificação com fonte oficial</strong><br/>O CRM e as especialidades informadas ficam identificados como autodeclarados até a conferência pelo webservice oficial do CFM. <a href="https://portal.cfm.org.br/busca-medicos/" target="_blank" rel="noopener">Consultar no CFM</a>.</div><h3>Especialidades</h3><div class="inline-grid"><label>Especialidade<select id="professional-specialty"><option value="">Selecione</option></select></label><label>RQE (opcional)<input id="professional-rqe" inputmode="numeric" maxlength="12" placeholder="Número do RQE"/></label></div><button class="button secondary small" data-action="add-professional-specialty" type="button">Adicionar especialidade</button><div class="modalities-editor professional-specialties-editor">${specialties || '<div class="notice warning">Sem especialidade cadastrada. O CRM continuará sendo usado para vagas generalistas.</div>'}</div><h3>Região de interesse</h3><div class="inline-grid"><label>UF<select id="professional-opportunity-uf">${ufOptions(professionalDraft.opportunityUf)}</select></label><label>Município (opcional)<input id="professional-opportunity-city" value="${escapeHtml(professionalDraft.opportunityCity)}" placeholder="Ex.: São Paulo"/></label></div><label>Raio de interesse<select id="professional-radius"><option value="50" ${professionalDraft.opportunityRadiusKm === 50 ? 'selected' : ''}>50 km</option><option value="100" ${professionalDraft.opportunityRadiusKm === 100 ? 'selected' : ''}>100 km</option><option value="250" ${professionalDraft.opportunityRadiusKm === 250 ? 'selected' : ''}>250 km</option><option value="500" ${professionalDraft.opportunityRadiusKm === 500 ? 'selected' : ''}>500 km</option><option value="1000" ${professionalDraft.opportunityRadiusKm === 1000 ? 'selected' : ''}>Todo o estado</option></select></label></div><div class="modal-final-actions"><button class="button primary" data-action="save-professional-profile" type="button">Salvar perfil</button><button class="button secondary" data-action="close-modal" type="button">Cancelar</button></div></div></section></div>`;
+  populateSpecialtySelect($('#professional-specialty'));
+}
+
+async function saveProfessionalProfile(button) {
+  preserveProfessionalDraft();
+  if (!professionalDraft.crmUf) return showToast('Selecione a UF do CRM.');
+  if (!/^(EME)?[0-9]{1,10}P?$/.test(professionalDraft.crmNumber)) return showToast('Informe um CRM válido.');
+  if (!professionalDraft.opportunityUf) return showToast('Selecione a UF das oportunidades.');
+  const original = button.textContent;
+  button.disabled = true;
+  button.textContent = 'Salvando…';
+  try {
+    if (isCloudMode()) {
+      const result = await cloud.professionalProfile({ action: 'save', ...professionalDraft });
+      professionalProfile = result.professional;
+    } else {
+      professionalProfile = { opportunityCity: professionalDraft.opportunityCity, opportunityUf: professionalDraft.opportunityUf, opportunityRadiusKm: professionalDraft.opportunityRadiusKm, registrations: [{ crmUf: professionalDraft.crmUf, crmNumber: professionalDraft.crmNumber, primary: true, status: 'self_reported' }], specialties: professionalDraft.specialties };
+    }
+    professionalDraft = null;
+    marketIntelligenceCache = null;
+    marketIntelligenceError = '';
+    modalRoot.innerHTML = '';
+    renderRoute();
+    showToast('Perfil profissional atualizado.');
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : 'Não foi possível salvar o perfil.');
+    button.disabled = false;
+    button.textContent = original;
+  }
+}
+
 function renderAccount() {
   const subscriptionLabels = {
     active: 'Assinatura ativa',
@@ -1452,7 +1750,12 @@ function renderAccount() {
     : '';
   const deleteLabel = isCloudMode() ? 'Excluir dados salvos neste aparelho' : 'Excluir conta e dados locais';
   const phone = appState.profile?.phoneNumber ? `<br/>${escapeHtml(appState.profile.phoneCountryCode || '+55')} ${escapeHtml(formatMobilePhone(appState.profile.phoneNumber, appState.profile.phoneCountryCode || '+55'))}` : '';
-  screen.innerHTML = `<div class="screen-stack">${pageHeading('', 'Mais', '')}<div class="card card-head"><span class="avatar">${escapeHtml((appState.profile?.name || 'M').charAt(0))}</span><div><h3>${escapeHtml(appState.profile?.name || 'Médico')}</h3><p>${formatCpf(appState.profile?.cpf || '')}<br/>${escapeHtml(appState.profile?.email || '')}${phone}</p></div></div>${cloudSection}<div class="notice success"><strong>Dados e documentos sincronizados</strong><br/>Comprovantes e Notas Fiscais ficam disponíveis nos seus dispositivos autenticados.</div><h2 class="section-title">Aplicativo</h2><div class="card install-card"><span class="install-icon">${isStandalone() ? '✓' : '⇧'}</span><div><strong>${isStandalone() ? 'MedRecebe instalado' : 'Adicionar à Tela de Início'}</strong><p>${isStandalone() ? 'Você está usando o modo aplicativo.' : 'Instale pelo Safari para abrir como aplicativo.'}</p></div>${isStandalone() ? '' : '<button class="link-button" data-action="install" type="button">Ver passos</button>'}</div><h2 class="section-title">Ajuda e preferências</h2><div class="card account-links"><button class="account-link" data-nav="feedback" type="button">Enviar feedback <span>›</span></button><a class="account-link" href="./privacidade.html" target="_blank" rel="noopener">Política de Privacidade <span>›</span></a><a class="account-link" href="./termos.html" target="_blank" rel="noopener">Termos de Uso <span>›</span></a><a class="account-link" href="./cancelamento.html" target="_blank" rel="noopener">Política de cancelamento e reembolso <span>›</span></a><a class="account-link" href="./suporte.html" target="_blank" rel="noopener">Ajuda e suporte <span>›</span></a></div><button class="button secondary" data-action="logout" type="button">Sair</button><button class="button danger" data-action="delete-beta-data" type="button">${deleteLabel}</button><p class="muted" style="text-align:center">MedRecebe • versão web 2.4</p></div>`;
+  const primary = professionalProfile?.registrations?.find((item) => item.primary) || professionalProfile?.registrations?.[0];
+  const professionalSection = `<h2 class="section-title">Perfil profissional</h2><div class="card professional-account-card"><div><span class="source-pill ${primary?.status?.startsWith('verified') ? 'verified' : ''}">${primary?.status?.startsWith('verified') ? 'VERIFICADO' : primary ? 'AUTODECLARADO' : 'PENDENTE'}</span><h3>${primary ? `CRM ${escapeHtml(primary.crmNumber)}/${escapeHtml(primary.crmUf)}` : 'Informe seu CRM'}</h3><p>${professionalProfile?.specialties?.length ? professionalProfile.specialties.map((item) => escapeHtml(item.name)).join(' · ') : 'Sem especialidade cadastrada'}</p></div><button class="button secondary small" data-action="edit-professional-profile" type="button">${primary ? 'Editar' : 'Completar'}</button></div>`;
+  screen.innerHTML = `<div class="screen-stack">${pageHeading('', 'Mais', '')}<div class="card card-head"><span class="avatar">${escapeHtml((appState.profile?.name || 'M').charAt(0))}</span><div><h3>${escapeHtml(appState.profile?.name || 'Médico')}</h3><p>${formatCpf(appState.profile?.cpf || '')}<br/>${escapeHtml(appState.profile?.email || '')}${phone}</p></div></div>${professionalSection}${cloudSection}<div class="notice success"><strong>Dados e documentos sincronizados</strong><br/>Comprovantes e Notas Fiscais ficam disponíveis nos seus dispositivos autenticados.</div><h2 class="section-title">Aplicativo</h2><div class="card install-card"><span class="install-icon">${isStandalone() ? '✓' : '⇧'}</span><div><strong>${isStandalone() ? 'MedRecebe instalado' : 'Adicionar à Tela de Início'}</strong><p>${isStandalone() ? 'Você está usando o modo aplicativo.' : 'Instale pelo Safari para abrir como aplicativo.'}</p></div>${isStandalone() ? '' : '<button class="link-button" data-action="install" type="button">Ver passos</button>'}</div><h2 class="section-title">Ajuda e preferências</h2><div class="card account-links"><button class="account-link" data-nav="feedback" type="button">Enviar feedback <span>›</span></button><a class="account-link" href="./privacidade.html" target="_blank" rel="noopener">Política de Privacidade <span>›</span></a><a class="account-link" href="./termos.html" target="_blank" rel="noopener">Termos de Uso <span>›</span></a><a class="account-link" href="./cancelamento.html" target="_blank" rel="noopener">Política de cancelamento e reembolso <span>›</span></a><a class="account-link" href="./suporte.html" target="_blank" rel="noopener">Ajuda e suporte <span>›</span></a></div><button class="button secondary" data-action="logout" type="button">Sair</button><button class="button danger" data-action="delete-beta-data" type="button">${deleteLabel}</button><p class="muted" style="text-align:center">MedRecebe • versão web 2.5</p></div>`;
+  if (!professionalProfile && isCloudMode() && !professionalProfileLoading && !professionalProfileError) {
+    void loadProfessionalProfile().then(() => { if (currentRoute === 'account') renderAccount(); });
+  }
 }
 
 function cancellationBackup() {
@@ -1588,8 +1891,10 @@ function renderWorkplaceModal() {
   if (workNameLabel?.firstChild) workNameLabel.firstChild.textContent = 'Nome fantasia / nome do local';
   if (workNameInput) workNameInput.placeholder = 'Ex.: Hospital São Paulo';
   const workplaceFormGrid = $('.form-grid', modalRoot);
-  workplaceFormGrid?.insertAdjacentHTML('beforebegin', `<section class="institution-directory"><div class="directory-heading"><span class="round-icon">⌕</span><div><h3>Buscar hospital ou empresa</h3><p>Consulte nome fantasia, razão social e dados oficiais do CNES.</p></div></div><label>Nome fantasia, razão social, cidade, CNPJ ou CNES<input id="institution-search" autocomplete="off" placeholder="Ex.: A.C.Camargo, Fundação Antonio Prudente ou CNPJ"/></label><p class="field-hint" id="institution-directory-status">Carregando diretório institucional…</p><div class="directory-results" id="institution-results" role="listbox"></div>${directorySelectionMarkup()}</section>`);
-  void loadInstitutionDirectory()
+  const primaryRegistration = professionalProfile?.registrations?.find((item) => item.primary) || professionalProfile?.registrations?.[0];
+  institutionDirectoryState = draftWorkplace.state || professionalProfile?.opportunityUf || primaryRegistration?.crmUf || institutionDirectoryState || 'SP';
+  workplaceFormGrid?.insertAdjacentHTML('beforebegin', `<section class="institution-directory"><div class="directory-heading"><span class="round-icon">⌕</span><div><h3>Buscar hospital ou empresa</h3><p>Consulte nome fantasia, razão social e dados oficiais do CNES em todo o Brasil.</p></div></div><div class="directory-search-fields"><label>Estado<select id="institution-directory-uf">${ufOptions(institutionDirectoryState)}</select></label><label>Nome fantasia, razão social, cidade, CNPJ ou CNES<input id="institution-search" autocomplete="off" placeholder="Ex.: hospital, empresa, cidade ou CNPJ"/></label></div><p class="field-hint" id="institution-directory-status">Carregando diretório de ${escapeHtml(institutionDirectoryState)}…</p><div class="directory-results" id="institution-results" role="listbox"></div>${directorySelectionMarkup()}</section>`);
+  void loadInstitutionDirectory(institutionDirectoryState)
     .then(() => {
       if ($('#institution-search')) renderInstitutionSearchResults($('#institution-search').value);
     })
@@ -1918,6 +2223,8 @@ function setAuthMode(mode) {
   const confirmPassword = $('#auth-confirm-password');
   const phoneCountryInput = $('#auth-phone-country');
   const phoneInput = $('#auth-phone');
+  const crmUfInput = $('#auth-crm-uf');
+  const crmNumberInput = $('#auth-crm-number');
 
   $('#register-fields').hidden = !register;
   $('#reset-password-fields').hidden = !reset;
@@ -1929,6 +2236,8 @@ function setAuthMode(mode) {
   confirmPassword.required = reset;
   phoneCountryInput.required = register;
   phoneInput.required = register;
+  crmUfInput.required = register;
+  crmNumberInput.required = register;
 
   const titles = {
     login: 'Boas-vindas',
@@ -1960,6 +2269,9 @@ function bindEvents() {
     $('#auth-phone').value = formatMobilePhone($('#auth-phone').value, event.target.value);
   });
   $('#auth-phone').addEventListener('input', (event) => (event.target.value = formatMobilePhone(event.target.value, $('#auth-phone-country').value)));
+  $('#auth-crm-number').addEventListener('input', (event) => (event.target.value = normalizeCrmNumber(event.target.value)));
+  $('#auth-rqe').addEventListener('input', (event) => (event.target.value = onlyDigits(event.target.value).slice(0, 12)));
+  $('#auth-add-specialty').addEventListener('click', () => addSpecialtyToDraft('registration'));
   $('#auth-toggle').addEventListener('click', () => setAuthMode(authMode === 'login' ? 'register' : 'login'));
   $('#forgot-password').addEventListener('click', () => setAuthMode('forgot'));
 
@@ -2001,12 +2313,16 @@ function bindEvents() {
           const email = $('#auth-email').value.trim().toLowerCase();
           const phoneCountryCode = formatPhoneCountryCode($('#auth-phone-country').value);
           const phoneNumber = phoneDigits($('#auth-phone').value);
+          const crmUf = $('#auth-crm-uf').value;
+          const crmNumber = normalizeCrmNumber($('#auth-crm-number').value);
           if (name.length < 3) throw new Error('Informe seu nome completo.');
           if (!isValidCpf(cpf)) throw new Error('Informe um CPF válido.');
           if (!/^\S+@\S+\.\S+$/.test(email)) throw new Error('Informe um e-mail válido.');
           if (!isValidPhone(phoneCountryCode, phoneNumber)) throw new Error('Informe um celular válido com DDD.');
+          if (!crmUf) throw new Error('Selecione a UF do CRM.');
+          if (!/^(EME)?[0-9]{1,10}P?$/.test(crmNumber)) throw new Error('Informe um número de CRM válido.');
           if (password.length < 8) throw new Error('A senha deve ter pelo menos oito caracteres.');
-          const result = await cloud.register({ name, email, cpf, password, phoneCountryCode, phoneNumber });
+          const result = await cloud.register({ name, email, cpf, password, phoneCountryCode, phoneNumber, crmUf, crmNumber, specialties: registrationSpecialtiesDraft });
           if (result.requiresLogin) {
             setAuthMode('login');
             $('#auth-title').textContent = 'Cadastro recebido';
@@ -2034,13 +2350,18 @@ function bindEvents() {
       const email = $('#auth-email').value.trim().toLowerCase();
       const phoneCountryCode = formatPhoneCountryCode($('#auth-phone-country').value);
       const phoneNumber = phoneDigits($('#auth-phone').value);
+      const crmUf = $('#auth-crm-uf').value;
+      const crmNumber = normalizeCrmNumber($('#auth-crm-number').value);
       if (name.length < 3) return (error.textContent = 'Informe seu nome completo.');
       if (!isValidCpf(cpf)) return (error.textContent = 'Informe um CPF válido.');
       if (!/^\S+@\S+\.\S+$/.test(email)) return (error.textContent = 'Informe um e-mail válido.');
       if (!isValidPhone(phoneCountryCode, phoneNumber)) return (error.textContent = 'Informe um celular válido com DDD.');
+      if (!crmUf) return (error.textContent = 'Selecione a UF do CRM.');
+      if (!/^(EME)?[0-9]{1,10}P?$/.test(crmNumber)) return (error.textContent = 'Informe um número de CRM válido.');
       if (password.length < 8) return (error.textContent = 'A senha deve ter pelo menos oito caracteres.');
       const salt = id('salt');
       appState = { ...emptyState(), account: { cpf, salt, passwordHash: await hashPassword(password, salt) }, profile: { name, cpf, email, phoneCountryCode, phoneNumber } };
+      professionalProfile = { opportunityCity: '', opportunityUf: crmUf, opportunityRadiusKm: 100, registrations: [{ crmUf, crmNumber, primary: true, status: 'self_reported' }], specialties: structuredClone(registrationSpecialtiesDraft) };
       if (!saveState()) return (error.textContent = 'Não foi possível salvar seu acesso neste aparelho. Verifique o espaço disponível e tente novamente.');
     } else {
       if (!appState.account) return (error.textContent = 'Acesso não encontrado. Crie seu acesso ou use a demonstração.');
@@ -2055,6 +2376,7 @@ function bindEvents() {
     void requestPersistentStorage();
     const salt = id('demo-salt');
     appState = demoState(await hashPassword(DEMO_PASSWORD, salt), salt);
+    professionalProfile = { opportunityCity: 'São Paulo', opportunityUf: 'SP', opportunityRadiusKm: 100, registrations: [{ crmUf: 'SP', crmNumber: '123456', primary: true, status: 'self_reported' }], specialties: [{ code: 'clinica-medica', name: 'Clínica médica', rqeNumber: '12345', status: 'self_reported' }] };
     if (!saveState() || !activateSession()) return;
     showApp();
   });
@@ -2126,6 +2448,26 @@ async function handleClick(event) {
   if (action === 'close-modal') {
     modalRoot.innerHTML = '';
     pendingInvoiceWorkplaceId = '';
+    professionalDraft = null;
+  }
+  if (action === 'edit-professional-profile') openProfessionalProfileModal();
+  if (action === 'add-professional-specialty') {
+    preserveProfessionalDraft();
+    addSpecialtyToDraft('professional');
+  }
+  if (action === 'remove-professional-specialty' && professionalDraft) {
+    preserveProfessionalDraft();
+    professionalDraft.specialties.splice(Number(index), 1);
+    renderProfessionalProfileModal();
+  }
+  if (action === 'save-professional-profile') void saveProfessionalProfile(target);
+  if (action === 'remove-registration-specialty') {
+    registrationSpecialtiesDraft.splice(Number(index), 1);
+    renderRegistrationSpecialties();
+  }
+  if (action === 'refresh-market-intelligence') {
+    marketIntelligenceError = '';
+    void loadMarketIntelligence(true);
   }
   if (action === 'upgrade-plan') {
     modalRoot.innerHTML = '';
@@ -2281,6 +2623,21 @@ async function handleClick(event) {
 }
 
 function handleChange(event) {
+  if (event.target.id === 'institution-directory-uf') {
+    institutionDirectoryState = event.target.value || 'SP';
+    institutionDirectory = [];
+    institutionDirectoryMeta = null;
+    const status = $('#institution-directory-status');
+    const results = $('#institution-results');
+    if (status) status.textContent = `Carregando diretório de ${institutionDirectoryState}…`;
+    if (results) results.innerHTML = '';
+    void loadInstitutionDirectory(institutionDirectoryState)
+      .then(() => renderInstitutionSearchResults($('#institution-search')?.value || ''))
+      .catch(() => {
+        if (status) status.textContent = 'A busca automática está indisponível agora. O preenchimento manual continua disponível.';
+      });
+    return;
+  }
   if (event.target.id === 'mod-rule') $('#rule-fields').innerHTML = ruleFields({ kind: event.target.value });
   if (event.target.id === 'mod-type') {
     const custom = $('#mod-custom-type-wrap');
@@ -2539,6 +2896,10 @@ async function logout() {
     cloudHydrationSequence += 1;
     cloudStateDirty = false;
     cloudAccount = null;
+    professionalProfile = null;
+    professionalProfileError = '';
+    marketIntelligenceCache = null;
+    marketIntelligenceError = '';
     localStorage.removeItem(SESSION_KEY);
     activeStateKey = APP_KEY;
     appState = loadState(APP_KEY);
@@ -2554,6 +2915,7 @@ async function logout() {
 async function boot() {
   const hasRecoveryToken = consumeRecoveryLink();
   bindEvents();
+  void loadMedicalSpecialties().catch(() => {});
   if (new URLSearchParams(window.location.search).get('signup') === '1') setAuthMode('register');
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(() => {});
   void loadInstitutionDirectory().catch(() => {});

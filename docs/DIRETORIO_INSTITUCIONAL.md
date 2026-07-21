@@ -1,16 +1,15 @@
-# Diretório institucional — São Paulo e Região Metropolitana
+# Diretório institucional — Brasil
 
-## Escopo do primeiro lote
+## Escopo nacional
 
-O diretório cobre os 39 municípios da Região Metropolitana de São Paulo e contém somente registros ativos encontrados na competência consultada do Cadastro Nacional de Estabelecimentos de Saúde (CNES).
+O diretório cobre as 27 UFs do Brasil e contém somente registros ativos, com CNPJ válido, encontrados na competência consultada do Cadastro Nacional de Estabelecimentos de Saúde (CNES). A aplicação baixa apenas o arquivo da UF escolhida para preservar desempenho no celular.
 
-Base gerada em 17/07/2026 com dados CNES atualizados em 16/07/2026:
+Base gerada em 21/07/2026 com dados CNES atualizados em 18/07/2026:
 
-- 506 hospitais ou estabelecimentos com atendimento hospitalar;
-- 14 cooperativas ou empresas de cessão de trabalhadores na saúde;
-- 426 unidades móveis ou prestadores pré-hospitalares de urgência;
-- 110 centrais de gestão em saúde;
-- 1.056 estabelecimentos e 583 CNPJs pagadores distintos.
+- 22.782 estabelecimentos e empresas elegíveis;
+- 14.422 CNPJs pagadores distintos;
+- 26 estados e Distrito Federal;
+- 627.864 registros CNES inspecionados.
 
 Cada unidade física permanece separada pelo código CNES. Isso permite que dois hospitais da mesma rede apareçam como locais de trabalho diferentes, ainda que compartilhem a mesma mantenedora.
 
@@ -20,7 +19,7 @@ O campo `tradeName` preserva o nome fantasia informado pelo estabelecimento ao C
 
 - CNES / Ministério da Saúde: https://dadosabertos.saude.gov.br/dataset/cnes-cadastro-nacional-de-estabelecimentos-de-saude
 - API de tipos de unidade do CNES: https://apidadosabertos.saude.gov.br/cnes/tipounidades
-- Municípios da RMSP: https://admin.sggd.sp.gov.br/habitacao/institucional/subsecretaria%20de%20desenvolvimento%20urbano/PDUI/rmsp
+- API de Localidades do IBGE: https://servicodados.ibge.gov.br/api/docs/localidades
 - Consulta do comprovante oficial do CNPJ: https://solucoes.receita.fazenda.gov.br/Servicos/cnpjreva/cnpj.aspx
 
 ## Regra para o CNPJ sugerido
@@ -36,13 +35,13 @@ O comprovante oficial é emitido sob demanda pela Receita Federal e pode exigir 
 ## Atualização da base
 
 1. Baixar o recurso CSV mais recente do CNES.
-2. Extrair `cnes_estabelecimentos.csv` em `.tmp-cnes/csv/`.
-3. Executar:
+2. Extrair `cnes_estabelecimentos.csv` em uma pasta temporária.
+3. Executar o gerador nacional, que consulta a API oficial do IBGE para nomear os municípios:
 
 ```powershell
-node scripts/build-institution-directory.mjs --input=.tmp-cnes/csv/cnes_estabelecimentos.csv --output=data/institution-directory-rmsp.json --source-date=AAAA-MM-DD
+node scripts/build-national-institution-directory.mjs --input=.tmp-cnes/csv/cnes_estabelecimentos.csv --output-dir=data/institutions --source-date=AAAA-MM-DD
 ```
 
 4. Executar `node validate-beta.mjs` e os testes do projeto mobile.
 
-O gerador valida os dígitos do CNPJ, remove estabelecimentos desativados, limita o território aos 39 municípios e preserva a rastreabilidade pelo CNES.
+O gerador valida os dígitos do CNPJ, remove estabelecimentos desativados, particiona o resultado por UF e preserva a rastreabilidade pelos códigos CNES e IBGE.

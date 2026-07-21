@@ -16,7 +16,8 @@ SaaS para médicos registrarem atendimentos, acompanharem repasses e prepararem 
 - Comprovantes e Notas Fiscais são armazenados em área privada e sincronizados entre os dispositivos autenticados do médico.
 - Cobrança recorrente, cancelamento e reembolso processados pelo provedor de pagamentos vigente.
 - Conciliação de Nota Fiscal em PDF/XML por CNPJ, Razão Social e valor contabilizado.
-- Diretório CNES com nome fantasia, razão social, CNPJ e CNES de hospitais e empresas de saúde dos 39 municípios da Região Metropolitana de São Paulo.
+- Diretório nacional CNES, particionado por UF, com nome fantasia, razão social, 14.422 CNPJs e 22.782 hospitais e empresas de saúde.
+- Inteligência de mercado com concentração de honorários, radar ao vivo do PNCP e oportunidades por CRM, região e múltiplas especialidades.
 
 ## Estrutura
 
@@ -26,7 +27,8 @@ SaaS para médicos registrarem atendimentos, acompanharem repasses e prepararem 
 - `termos.html`, `privacidade.html`, `cancelamento.html` e `suporte.html`: documentos e suporte.
 - `supabase/`: banco, RLS e Edge Functions.
 - `docs/historias-usuario-lancamento.md`: jornadas e critérios de aceite.
-- `data/institution-directory-rmsp.json` e `scripts/build-institution-directory.mjs`: base institucional e gerador auditável.
+- `data/institutions/` e `scripts/build-national-institution-directory.mjs`: base institucional nacional por UF e gerador auditável.
+- `data/medical-specialties.json`: especialidades reconhecidas pela Resolução CFM nº 2.380/2024.
 - `docs/DIRETORIO_INSTITUCIONAL.md`: escopo, fontes, critérios de CNPJ e rotina de atualização.
 - `mobile/`: base do aplicativo iOS para TestFlight.
 

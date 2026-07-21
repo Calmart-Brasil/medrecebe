@@ -1,0 +1,183 @@
+import { json, options, publicError } from '../_shared/http.ts';
+import { clientAddress, consumeRateLimit } from '../_shared/rate-limit.ts';
+import { adminClient, authenticatedUser, authenticationStatus } from '../_shared/supabase.ts';
+
+type PncpRecord = Record<string, any>;
+
+const GENERAL_MEDICAL_TERMS = [
+  'medic', 'plantao', 'consulta', 'cirurgia', 'procedimento', 'assistencia a saude',
+  'servicos de saude', 'profissionais de saude', 'equipe de saude', 'atendimento hospitalar',
+  'urgencia', 'emergencia', 'ambulator', 'diagnostico', 'terapia',
+];
+
+const SPECIALTY_ALIASES: Record<string, string[]> = {
+  'clinica-medica': ['clinica medica', 'medico clinico', 'generalista'],
+  'medicina-emergencia': ['emergencia', 'urgencia', 'pronto atendimento', 'pronto socorro'],
+  'medicina-familia-comunidade': ['medicina de familia', 'estrategia saude da familia', 'atencao basica', 'generalista'],
+  'medicina-intensiva': ['intensivista', 'terapia intensiva', 'uti'],
+  'ginecologia-obstetricia': ['ginecologia', 'obstetricia', 'ginecologista', 'obstetra'],
+  'ortopedia-traumatologia': ['ortopedia', 'traumatologia', 'ortopedista'],
+  'radiologia-diagnostico-imagem': ['radiologia', 'diagnostico por imagem', 'radiologista'],
+  'patologia-clinica-medicina-laboratorial': ['patologia clinica', 'medicina laboratorial', 'laboratorio clinico'],
+  'medicina-legal-pericia': ['pericia medica', 'medico perito', 'junta medica'],
+  'medicina-trabalho': ['medicina do trabalho', 'medico do trabalho', 'saude ocupacional'],
+  'otorrinolaringologia': ['otorrino'],
+  'oncologia-clinica': ['oncologia', 'oncologista', 'cancerologia'],
+};
+
+function normalized(value: unknown): string {
+  return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+function specialtyTerms(code: string, name: string): string[] {
+  const ignored = new Set(['medicina', 'medica', 'medico', 'cirurgia', 'clinica', 'geral', 'diagnostico', 'imagem']);
+  const base = normalized(name);
+  const tokens = base.split(' ').filter((token) => token.length >= 5 && !ignored.has(token));
+  return [...new Set([base, ...tokens, ...(SPECIALTY_ALIASES[code] || []).map(normalized)])].filter((term) => term.length >= 4);
+}
+
+function formatPncpDate(value: Date): string {
+  return value.toISOString().slice(0, 10).replace(/-/g, '');
+}
+
+function detailUrl(item: PncpRecord): string {
+  const cnpj = String(item.orgaoEntidade?.cnpj || '').replace(/\D/g, '');
+  const year = Number(item.anoCompra || 0);
+  const sequence = Number(item.sequencialCompra || 0);
+  return cnpj && year && sequence ? `https://pncp.gov.br/app/editais/${cnpj}/${year}/${sequence}` : 'https://pncp.gov.br/app/editais';
+}
+
+function compact(item: PncpRecord, score: number, matches: string[]) {
+  return {
+    id: String(item.numeroControlePNCP || `${item.anoCompra}-${item.sequencialCompra}`),
+    title: String(item.objetoCompra || 'Contratação pública na área da saúde').slice(0, 1200),
+    organization: String(item.orgaoEntidade?.razaoSocial || item.unidadeOrgao?.nomeUnidade || ''),
+    cnpj: String(item.orgaoEntidade?.cnpj || ''),
+    city: String(item.unidadeOrgao?.municipioNome || ''),
+    uf: String(item.unidadeOrgao?.ufSigla || ''),
+    ibgeCode: String(item.unidadeOrgao?.codigoIbge || ''),
+    modality: String(item.modalidadeNome || ''),
+    estimatedValue: Number(item.valorTotalEstimado) || null,
+    publishedAt: item.dataPublicacaoPncp || null,
+    closesAt: item.dataEncerramentoProposta || null,
+    pncpNumber: String(item.numeroControlePNCP || ''),
+    url: detailUrl(item),
+    score,
+    matches,
+    source: 'PNCP',
+  };
+}
+
+async function fetchPage(uf: string, dataFinal: string, page: number): Promise<{ data: PncpRecord[]; totalPages: number; totalRecords: number }> {
+  const url = new URL('https://pncp.gov.br/api/consulta/v1/contratacoes/proposta');
+  url.searchParams.set('dataFinal', dataFinal);
+  url.searchParams.set('uf', uf);
+  url.searchParams.set('pagina', String(page));
+  url.searchParams.set('tamanhoPagina', '50');
+  const response = await fetch(url, { headers: { Accept: 'application/json', 'User-Agent': 'MedRecebe/1.0 (inteligencia de mercado)' }, signal: AbortSignal.timeout(12_000) });
+  if (!response.ok) throw new Error(`PNCP ${response.status}`);
+  const body = await response.json();
+  return { data: Array.isArray(body.data) ? body.data : [], totalPages: Number(body.totalPaginas) || 1, totalRecords: Number(body.totalRegistros) || 0 };
+}
+
+Deno.serve(async (request) => {
+  const preflight = options(request);
+  if (preflight) return preflight;
+  if (request.method !== 'POST') return publicError(request, 'Método não permitido.', 405);
+
+  try {
+    const user = await authenticatedUser(request);
+    const [ipLimit, accountLimit] = await Promise.all([
+      consumeRateLimit('market_intelligence_ip', clientAddress(request), 30, 60 * 60, 60 * 60),
+      consumeRateLimit('market_intelligence_account', user.id, 8, 60 * 60, 60 * 60),
+    ]);
+    if (!ipLimit.allowed || !accountLimit.allowed) {
+      const retryAfter = Math.max(ipLimit.retryAfterSeconds, accountLimit.retryAfterSeconds, 1);
+      return publicError(request, 'O radar foi atualizado recentemente. Aguarde antes de consultar novamente.', 429, { 'Retry-After': String(retryAfter) });
+    }
+
+    const admin = adminClient();
+    const [accountResult, profileResult, registrationResult, specialtiesResult] = await Promise.all([
+      admin.from('profiles').select('role, access_status').eq('id', user.id).single(),
+      admin.from('professional_profiles').select('opportunity_city, opportunity_uf, opportunity_radius_km').eq('user_id', user.id).maybeSingle(),
+      admin.from('professional_registrations').select('crm_uf, crm_number, registration_status').eq('user_id', user.id).eq('is_primary', true).maybeSingle(),
+      admin.from('professional_specialties').select('specialty_code, specialty_name, rqe_number, verification_status').eq('user_id', user.id),
+    ]);
+    if (accountResult.error || !accountResult.data) return publicError(request, 'Conta não encontrada.', 404);
+    if (accountResult.data.role !== 'admin' && accountResult.data.access_status !== 'active') return publicError(request, 'Acesso inativo.', 403);
+    if (profileResult.error) throw profileResult.error;
+    if (registrationResult.error) throw registrationResult.error;
+    if (specialtiesResult.error) throw specialtiesResult.error;
+    if (!registrationResult.data) return publicError(request, 'Cadastre seu CRM para ativar o radar.', 409);
+
+    const uf = String(profileResult.data?.opportunity_uf || registrationResult.data.crm_uf).toUpperCase();
+    const city = normalized(profileResult.data?.opportunity_city || '');
+    const specialties = specialtiesResult.data || [];
+    const termsBySpecialty = specialties.map((item) => ({
+      code: item.specialty_code,
+      name: item.specialty_name,
+      terms: specialtyTerms(item.specialty_code, item.specialty_name),
+    }));
+    const limitDate = new Date();
+    limitDate.setUTCDate(limitDate.getUTCDate() + 120);
+    const dataFinal = formatPncpDate(limitDate);
+    const first = await fetchPage(uf, dataFinal, 1);
+    const pageLimit = Math.min(first.totalPages, 10);
+    const remaining = await Promise.all(Array.from({ length: Math.max(0, pageLimit - 1) }, (_, index) => fetchPage(uf, dataFinal, index + 2)));
+    const records = [first, ...remaining].flatMap((page) => page.data);
+
+    const ranked = records.map((item) => {
+      const text = normalized(`${item.objetoCompra || ''} ${item.informacaoComplementar || ''} ${item.modalidadeNome || ''}`);
+      const generalMatches = GENERAL_MEDICAL_TERMS.filter((term) => text.includes(term));
+      const specialtyMatches = termsBySpecialty.filter((specialty) => specialty.terms.some((term) => text.includes(term)));
+      const itemCity = normalized(item.unidadeOrgao?.municipioNome || '');
+      let score = Math.min(5, generalMatches.length);
+      if (specialtyMatches.length) score += 7 + Math.min(4, specialtyMatches.length - 1);
+      if (city && itemCity === city) score += 4;
+      if (normalized(item.modalidadeNome).includes('credenciamento')) score += 2;
+      const matches = [
+        ...specialtyMatches.map((specialty) => specialty.name),
+        ...(city && itemCity === city ? [`Mesmo município: ${item.unidadeOrgao?.municipioNome}`] : []),
+        ...(!specialtyMatches.length && generalMatches.length ? ['Compatível com CRM sem especialidade exigida'] : []),
+      ];
+      return { item, text, generalMatches, specialtyMatches, score, matches };
+    });
+
+    const health = ranked.filter((entry) => entry.generalMatches.length || entry.specialtyMatches.length);
+    const radar = health
+      .sort((a, b) => Date.parse(a.item.dataEncerramentoProposta || '') - Date.parse(b.item.dataEncerramentoProposta || '') || b.score - a.score)
+      .slice(0, 30)
+      .map((entry) => compact(entry.item, entry.score, entry.matches));
+    const regional = [...health]
+      .filter((entry) => entry.specialtyMatches.length || !specialties.length)
+      .sort((a, b) => b.score - a.score || Date.parse(a.item.dataEncerramentoProposta || '') - Date.parse(b.item.dataEncerramentoProposta || ''))
+      .slice(0, 20)
+      .map((entry) => compact(entry.item, entry.score, entry.matches));
+
+    return json(request, {
+      radar,
+      regional,
+      profile: {
+        crmUf: registrationResult.data.crm_uf,
+        crmNumber: registrationResult.data.crm_number,
+        registrationStatus: registrationResult.data.registration_status,
+        opportunityUf: uf,
+        opportunityCity: profileResult.data?.opportunity_city || '',
+        specialties: specialties.map((item) => ({ code: item.specialty_code, name: item.specialty_name, rqeNumber: item.rqe_number || '', status: item.verification_status })),
+      },
+      meta: {
+        source: 'Portal Nacional de Contratações Públicas (PNCP)',
+        sourceUrl: 'https://pncp.gov.br/app/editais',
+        fetchedAt: new Date().toISOString(),
+        recordsInspected: records.length,
+        totalRecordsReported: first.totalRecords,
+        pagesInspected: pageLimit,
+        truncated: first.totalPages > pageLimit,
+        scope: `${uf} · propostas abertas com encerramento em até 120 dias`,
+      },
+    });
+  } catch (error) {
+    console.error('market-intelligence', error);
+    return publicError(request, 'Não foi possível atualizar o radar agora.', authenticationStatus(error, 502));
+  }
+});

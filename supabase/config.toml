@@ -38,3 +38,9 @@ verify_jwt = true
 
 [functions.analyze-invoice]
 verify_jwt = true
+
+[functions.professional-profile]
+verify_jwt = true
+
+[functions.market-intelligence]
+verify_jwt = true

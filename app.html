@@ -21,7 +21,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="styles.css?v=24" />
+    <link rel="stylesheet" href="styles.css?v=25" />
   </head>
   <body>
     <noscript>Ative o JavaScript para usar o MedRecebe.</noscript>
@@ -45,6 +45,21 @@
           <div class="phone-fields">
             <label class="country-code-field">País<input autocomplete="tel-country-code" id="auth-phone-country" inputmode="tel" maxlength="4" value="+55" /></label>
             <label>Celular<input autocomplete="tel-national" id="auth-phone" inputmode="tel" maxlength="18" placeholder="(11) 99999-9999" /></label>
+          </div>
+          <div class="professional-registration-fields">
+            <div class="crm-fields">
+              <label>UF do CRM<select id="auth-crm-uf"><option value="">UF</option><option>AC</option><option>AL</option><option>AP</option><option>AM</option><option>BA</option><option>CE</option><option>DF</option><option>ES</option><option>GO</option><option>MA</option><option>MT</option><option>MS</option><option>MG</option><option>PA</option><option>PB</option><option>PR</option><option>PE</option><option>PI</option><option>RJ</option><option>RN</option><option>RS</option><option>RO</option><option>RR</option><option>SC</option><option selected>SP</option><option>SE</option><option>TO</option></select></label>
+              <label>CRM<input autocomplete="off" id="auth-crm-number" inputmode="text" maxlength="13" placeholder="123456" /></label>
+            </div>
+            <details class="auth-specialties">
+              <summary>Adicionar especialidades e RQE <span>Opcional</span></summary>
+              <div class="auth-specialty-editor">
+                <label>Especialidade<select id="auth-specialty"><option value="">Selecione</option></select></label>
+                <label>RQE (opcional)<input id="auth-rqe" inputmode="numeric" maxlength="12" placeholder="Número do RQE" /></label>
+                <button class="button secondary small" id="auth-add-specialty" type="button">Adicionar especialidade</button>
+                <div class="specialty-chip-list" id="auth-specialty-list"></div>
+              </div>
+            </details>
           </div>
         </div>
         <label id="auth-cpf-field">CPF<input autocomplete="username" id="auth-cpf" inputmode="numeric" maxlength="14" placeholder="000.000.000-00" required /></label>
@@ -119,6 +134,7 @@
         <button data-nav="workplaces" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V6.5h10V20M14 10h6v10M7.5 10h3M7.5 13.5h3M7.5 17h3M17 13.5h1M17 17h1M2.5 20h19"/></svg>Locais e modalidades</button>
         <button data-nav="home" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4.5h8M9 3v3M15 3v3M6 5h12v16H6zM9 11h6M12 8v6M9 17h6"/></svg>Registrar atendimento</button>
         <button data-nav="reconciliation" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h13M14 5l3 3-3 3M20 16H7M10 13l-3 3 3 3"/></svg>Conciliação</button>
+        <button data-nav="intelligence" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V9M10 19V5M16 19v-7M3 19h18M4 10l6-4 6 5 4-6"/></svg>Inteligência de mercado</button>
         <hr />
         <button data-nav="account" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM4.5 21a7.5 7.5 0 0 1 15 0"/></svg>Mais</button>
       </nav>
@@ -133,8 +149,8 @@
     <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
     <script src="runtime-config.js?v=1"></script>
-    <script src="cloud.js?v=8"></script>
+    <script src="cloud.js?v=9"></script>
     <script src="reconciliation-pdf.js?v=2"></script>
-    <script src="app.js?v=26" defer></script>
+    <script src="app.js?v=27" defer></script>
   </body>
 </html>
