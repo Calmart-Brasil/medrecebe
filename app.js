@@ -8,7 +8,7 @@ const INSTITUTION_DIRECTORY_VERSION = '20260718';
 const MEDICAL_SPECIALTIES_URL = './data/medical-specialties.json?v=20260721';
 const MUNICIPALITY_DIRECTORY_BASE_URL = './data/municipalities';
 const MEDICAL_DENSITY_BASE_URL = './data/medical-density';
-const MARKET_MAP_VERSION = '202606';
+const MARKET_MAP_VERSION = '202606-pop2025-v2';
 const CNPJ_CARD_URL = 'https://solucoes.receita.fazenda.gov.br/Servicos/cnpjreva/cnpj.aspx';
 
 const $ = (selector, root = document) => root.querySelector(selector);
@@ -65,7 +65,9 @@ const municipalityDirectoryPromises = new Map();
 const medicalDensityCache = new Map();
 const medicalDensityPromises = new Map();
 let medicalDensityError = '';
+let selectedMedicalMapUf = '';
 let selectedMedicalMapSpecialty = 'all';
+let selectedMedicalMapMetric = 'per_100k';
 
 const TITLES = {
   home: 'Início',
@@ -1433,38 +1435,26 @@ function addOpportunityDistances(payload, territory) {
   };
 }
 
-function densitySpecialtyIndex(density, specialty) {
-  if (!specialty || specialty === 'all') return -1;
-  const target = normalizeDirectoryText(specialty).replace(/\b(medico|medica|medicina)\b/g, '').trim();
-  const aliases = {
-    'clinica': ['clinico'],
-    'ginecologia obstetricia': ['ginecologista obstetra'],
-    'ortopedia traumatologia': ['ortopedista traumatologista'],
-    'radiologia diagnostico por imagem': ['radiologia diagnostico por imagem'],
-    'patologia clinica medicina laboratorial': ['patologista clinico medicina laboratorial'],
-    'oncologia clinica': ['oncologista clinico'],
-  };
-  const candidates = [target, ...(aliases[target] || [])];
-  return (density?.specialtyNames || []).findIndex((name) => {
-    const normalizedName = normalizeDirectoryText(name).replace(/\b(medico|medica|medicina)\b/g, '').trim();
-    return candidates.some((candidate) => normalizedName === candidate || normalizedName.includes(candidate) || candidate.includes(normalizedName));
-  });
-}
-
 function medicalMapMarkup(uf) {
   const directory = municipalityDirectoryCache.get(uf);
   const density = medicalDensityCache.get(uf);
   if (medicalDensityError) return `<div class="notice warning">${escapeHtml(medicalDensityError)}</div>`;
   if (!directory || !density) return '<div class="card intelligence-loading"><span class="sync-spinner" aria-hidden="true"></span><strong>Preparando mapa territorial</strong><p>Carregando municípios do IBGE e dados agregados do CNES.</p></div>';
-  const profileSpecialties = professionalProfile?.specialties || [];
-  const availableSpecialties = profileSpecialties.map((item) => ({ ...item, index: densitySpecialtyIndex(density, item.name) })).filter((item) => item.index >= 0);
-  if (selectedMedicalMapSpecialty !== 'all' && !availableSpecialties.some((item) => item.code === selectedMedicalMapSpecialty)) selectedMedicalMapSpecialty = 'all';
-  const selected = availableSpecialties.find((item) => item.code === selectedMedicalMapSpecialty);
-  const specialtyIndex = selected?.index ?? -1;
-  const valuesByCode = new Map(density.municipalities.map((item) => [item.ibgeCode, specialtyIndex >= 0 ? Number(item.specialties?.[specialtyIndex] || 0) : Number(item.physicians || 0)]));
-  const locations = directory.municipalities.map((item) => ({ ...item, value: valuesByCode.get(item.ibgeCode) || 0 }));
+  const specialtyIndex = selectedMedicalMapSpecialty === 'all' ? -1 : Number(selectedMedicalMapSpecialty);
+  if (specialtyIndex >= (density.specialtyNames || []).length || specialtyIndex < -1) selectedMedicalMapSpecialty = 'all';
+  const effectiveSpecialtyIndex = selectedMedicalMapSpecialty === 'all' ? -1 : Number(selectedMedicalMapSpecialty);
+  const title = effectiveSpecialtyIndex >= 0 ? density.specialtyNames[effectiveSpecialtyIndex] : 'Todos os médicos';
+  const densityByCode = new Map(density.municipalities.map((item) => [item.ibgeCode, item]));
+  const locations = directory.municipalities.map((item) => {
+    const source = densityByCode.get(item.ibgeCode) || {};
+    const count = effectiveSpecialtyIndex >= 0 ? Number(source.specialties?.[effectiveSpecialtyIndex] || 0) : Number(source.physicians || 0);
+    const population = Number(source.population || 0);
+    const rate = population > 0 ? count * 100000 / population : 0;
+    return { ...item, count, population, rate, value: selectedMedicalMapMetric === 'per_100k' ? rate : count };
+  });
   const positive = locations.filter((item) => item.value > 0);
-  const max = Math.max(...positive.map((item) => item.value), 1);
+  const sortedValues = positive.map((item) => item.value).sort((left, right) => left - right);
+  const scaleMax = sortedValues[Math.min(sortedValues.length - 1, Math.floor(sortedValues.length * 0.95))] || 1;
   const longitudes = locations.map((item) => item.longitude);
   const latitudes = locations.map((item) => item.latitude);
   const bounds = { minX: Math.min(...longitudes), maxX: Math.max(...longitudes), minY: Math.min(...latitudes), maxY: Math.max(...latitudes) };
@@ -1474,19 +1464,27 @@ function medicalMapMarkup(uf) {
   });
   const circles = locations.map((item) => {
     const point = project(item);
-    const intensity = item.value ? Math.max(0.16, Math.log1p(item.value) / Math.log1p(max)) : 0.055;
+    const intensity = item.value ? Math.max(0.16, Math.min(1, Math.log1p(item.value) / Math.log1p(scaleMax))) : 0.055;
     const radius = item.value ? 2.2 + intensity * 7 : 1.1;
     const color = item.value ? `rgba(0,77,182,${Math.min(0.9, 0.22 + intensity * 0.72).toFixed(2)})` : 'rgba(90,100,114,.16)';
-    return `<circle cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="${radius.toFixed(1)}" fill="${color}"><title>${escapeHtml(item.name)}: ${item.value.toLocaleString('pt-BR')}</title></circle>`;
+    const measure = selectedMedicalMapMetric === 'per_100k' ? `${item.rate.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} por 100 mil hab.` : `${item.count.toLocaleString('pt-BR')} profissionais`;
+    return `<circle cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="${radius.toFixed(1)}" fill="${color}"><title>${escapeHtml(item.name)}: ${measure} · ${item.count.toLocaleString('pt-BR')} profissionais · população ${item.population.toLocaleString('pt-BR')}</title></circle>`;
   }).join('');
   const top = positive.sort((left, right) => right.value - left.value).slice(0, 8);
-  const options = `<option value="all">Todos os médicos</option>${availableSpecialties.map((item) => `<option value="${escapeHtml(item.code)}" ${item.code === selectedMedicalMapSpecialty ? 'selected' : ''}>${escapeHtml(item.name)}</option>`).join('')}`;
-  const title = selected?.name || 'Todos os médicos';
-  return `<div class="medical-map-layout"><div class="card medical-map-card"><div class="medical-map-toolbar"><label>Visualizar<select id="medical-map-specialty">${options}</select></label><span><strong>${Number(density.meta?.uniquePhysicians || 0).toLocaleString('pt-BR')}</strong><small>médicos únicos na UF</small></span></div><svg class="medical-heatmap" viewBox="0 0 640 400" role="img" aria-label="Mapa da concentração de ${escapeHtml(title)} em ${escapeHtml(uf)}">${circles}</svg><div class="map-legend"><span>Menor presença</span><i></i><span>Maior presença</span></div></div><div class="card medical-map-ranking"><h3>Maiores concentrações</h3>${top.map((item, index) => `<div><span><b>${index + 1}</b><strong>${escapeHtml(item.name)}</strong></span><em>${item.value.toLocaleString('pt-BR')}</em></div>`).join('') || '<p class="muted">Sem registros para esta ocupação.</p>'}</div></div><p class="data-footnote">Fonte: CNES/DATASUS, ${escapeHtml(density.meta?.period || '')}. O total usa profissionais-indivíduos nas ocupações médicas. A visão por especialidade usa CBO e não equivale a RQE ativo no CFM.</p>`;
+  const specialtyOptions = (density.specialtyNames || []).map((name, index) => ({ name, index })).sort((left, right) => left.name.localeCompare(right.name, 'pt-BR'));
+  const options = `<option value="all">Todos os médicos</option>${specialtyOptions.map((item) => `<option value="${item.index}" ${String(item.index) === selectedMedicalMapSpecialty ? 'selected' : ''}>${escapeHtml(item.name)}</option>`).join('')}`;
+  const statePopulation = Number(density.meta?.statePopulation || locations.reduce((sum, item) => sum + item.population, 0));
+  const stateCount = effectiveSpecialtyIndex >= 0 ? Number(density.stateSpecialties?.[effectiveSpecialtyIndex] || 0) : Number(density.meta?.uniquePhysicians || 0);
+  const stateRate = statePopulation > 0 ? stateCount * 100000 / statePopulation : 0;
+  const formatValue = (item) => selectedMedicalMapMetric === 'per_100k'
+    ? item.rate.toLocaleString('pt-BR', { maximumFractionDigits: 1 })
+    : item.count.toLocaleString('pt-BR');
+  const rankingUnit = selectedMedicalMapMetric === 'per_100k' ? 'por 100 mil' : 'profissionais';
+  return `<div class="medical-map-filters"><label>Estado<select id="medical-map-uf">${ufOptions(uf)}</select></label><label>Especialidade<select id="medical-map-specialty">${options}</select></label><label>Indicador<select id="medical-map-metric"><option value="per_100k" ${selectedMedicalMapMetric === 'per_100k' ? 'selected' : ''}>Profissionais por 100 mil habitantes</option><option value="absolute" ${selectedMedicalMapMetric === 'absolute' ? 'selected' : ''}>Quantidade de profissionais</option></select></label></div><div class="medical-map-state-summary"><span><small>PROFISSIONAIS NA UF</small><strong>${stateCount.toLocaleString('pt-BR')}</strong></span><span><small>POPULAÇÃO ESTIMADA</small><strong>${statePopulation.toLocaleString('pt-BR')}</strong></span><span><small>PROFISSIONAIS / 100 MIL HAB.</small><strong>${stateRate.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}</strong></span></div><div class="medical-map-layout"><div class="card medical-map-card"><svg class="medical-heatmap" viewBox="0 0 640 400" role="img" aria-label="Mapa da concentração de ${escapeHtml(title)} em ${escapeHtml(uf)}">${circles}</svg><div class="map-legend"><span>Menor ${selectedMedicalMapMetric === 'per_100k' ? 'taxa' : 'quantidade'}</span><i></i><span>Maior ${selectedMedicalMapMetric === 'per_100k' ? 'taxa' : 'quantidade'}</span></div></div><div class="card medical-map-ranking"><h3>Maiores concentrações municipais</h3>${top.map((item, index) => `<div><span><b>${index + 1}</b><span><strong>${escapeHtml(item.name)}</strong><small>${item.count.toLocaleString('pt-BR')} profissionais · ${item.population.toLocaleString('pt-BR')} habitantes</small></span></span><em>${formatValue(item)}<small>${rankingUnit}</small></em></div>`).join('') || '<p class="muted">Sem registros para esta ocupação.</p>'}</div></div><p class="data-footnote">Fontes: CNES/DATASUS, ${escapeHtml(density.meta?.period || '')}, e estimativa populacional IBGE ${escapeHtml(density.meta?.populationPeriod || '2025')}. Os indicadores municipais dividem profissionais-indivíduos pela população estimada e multiplicam por 100 mil. A especialidade representa a ocupação CBO e não equivale a RQE ativo no CFM.</p>`;
 }
 
 async function ensureMarketMapData() {
-  const uf = professionalProfile?.opportunityUf || professionalProfile?.registrations?.find((item) => item.primary)?.crmUf;
+  const uf = selectedMedicalMapUf || professionalProfile?.opportunityUf || professionalProfile?.registrations?.find((item) => item.primary)?.crmUf || 'SP';
   if (!uf || medicalDensityError || (municipalityDirectoryCache.has(uf) && medicalDensityCache.has(uf))) return;
   try {
     await Promise.all([loadMunicipalityDirectory(uf), loadMedicalDensity(uf)]);
@@ -1551,7 +1549,8 @@ function renderIntelligence() {
   const regionDescription = professionalProfile?.opportunityCity
     ? `${professionalProfile.opportunityCity}/${professionalProfile.opportunityUf} · ${Number(professionalProfile.opportunityRadiusKm) >= 1000 ? 'todo o estado' : `raio de ${professionalProfile.opportunityRadiusKm || 100} km`}`
     : `${professionalProfile?.opportunityUf || primary?.crmUf || ''} · selecione um município-base para aplicar o raio`;
-  const uf = professionalProfile?.opportunityUf || primary?.crmUf || 'SP';
+  const uf = selectedMedicalMapUf || professionalProfile?.opportunityUf || primary?.crmUf || 'SP';
+  if (!selectedMedicalMapUf) selectedMedicalMapUf = uf;
   screen.innerHTML = `<div class="screen-stack intelligence-page">${pageHeading('Dados para decidir melhor', 'Inteligência de mercado', 'Transforme seus registros e fontes públicas em sinais de concentração e novas oportunidades.')}${profileMarkup}<section class="intelligence-section"><div class="section-heading"><div><p class="eyebrow">SEUS DADOS</p><h2>Mapa da concentração de renda</h2></div><span class="concentration-status ${concentrationClass}">${concentrationLabel}</span></div><div class="intelligence-kpis"><div class="card"><small>HONORÁRIOS REGISTRADOS</small><strong>${currency(concentration.total)}</strong></div><div class="card"><small>MAIOR PAGADOR</small><strong>${Math.round(concentration.topShare * 100)}%</strong></div><div class="card"><small>FONTES DE RECEITA</small><strong>${concentration.byWorkplace.length}</strong></div></div><div class="intelligence-grid"><div class="card"><h3>Por pagador</h3>${concentrationBars(concentration.byWorkplace, 'Registre atendimentos para formar o mapa.')}</div><div class="card"><h3>Por município</h3>${concentrationBars(concentration.byRegion, 'O município aparecerá quando estiver informado no local de trabalho.')}</div></div><p class="data-footnote">Cálculo feito apenas com os honorários registrados na sua conta. Valores recebidos e a receber são mantidos separados no Dashboard.</p></section><section class="intelligence-section"><div class="section-heading"><div><p class="eyebrow">CNES + IBGE</p><h2>Concentração de médicos e especialidades</h2></div><span class="source-pill">${escapeHtml(uf)}</span></div>${medicalMapMarkup(uf)}</section><section class="intelligence-section"><div class="section-heading"><div><p class="eyebrow">FONTE PÚBLICA</p><h2>Radar de contratações públicas</h2></div><button class="link-button" data-action="refresh-market-intelligence" type="button">Atualizar</button></div>${radarMarkup}</section><section class="intelligence-section"><div class="section-heading"><div><p class="eyebrow">RAIO DE INTERESSE</p><h2>Oportunidades regionais</h2><p class="section-subtitle">${escapeHtml(regionDescription)}</p></div></div>${regionalMarkup}</section><section class="intelligence-section"><div class="section-heading"><div><p class="eyebrow">EMPRESAS PRIVADAS</p><h2>Vagas oficiais no SINE</h2></div></div><div class="card private-opportunities-card"><div><span class="source-pill verified">SERVIÇO OFICIAL</span><h3>Emprega Brasil e Carteira de Trabalho Digital</h3><p>Empresas privadas registram vagas no SINE. A consulta e a candidatura exigem acesso gov.br e permanecem no ambiente oficial.</p></div><a class="button secondary" href="https://www.gov.br/pt-br/servicos/buscar-emprego-no-sistema-nacional-de-emprego-sine" target="_blank" rel="noopener">Consultar vagas privadas</a></div></section><details class="card intelligence-method"><summary>Como os resultados são classificados</summary><p>O município é escolhido na lista oficial do IBGE. O raio usa a distância territorial entre os centroides municipais e limita de fato a lista regional; o GPS do aparelho não é consultado.</p><p>Contratações públicas vêm do PNCP. As vagas privadas são consultadas no SINE com acesso gov.br; a antiga API SINE Aberto foi descontinuada, então o MedRecebe direciona ao serviço oficial em vez de prometer um feed nacional inexistente.</p></details></div>`;
   if (!professionalProfile && isCloudMode() && !professionalProfileLoading) {
     professionalProfileLoading = true;
@@ -2842,6 +2841,22 @@ function handleChange(event) {
   if (event.target.id === 'medical-map-specialty') {
     selectedMedicalMapSpecialty = event.target.value || 'all';
     renderIntelligence();
+    return;
+  }
+  if (event.target.id === 'medical-map-metric') {
+    selectedMedicalMapMetric = event.target.value === 'absolute' ? 'absolute' : 'per_100k';
+    renderIntelligence();
+    return;
+  }
+  if (event.target.id === 'medical-map-uf') {
+    selectedMedicalMapUf = event.target.value || 'SP';
+    medicalDensityError = '';
+    renderIntelligence();
+    void Promise.all([loadMunicipalityDirectory(selectedMedicalMapUf), loadMedicalDensity(selectedMedicalMapUf)])
+      .catch(() => {})
+      .finally(() => {
+        if (currentRoute === 'intelligence') renderIntelligence();
+      });
     return;
   }
   if (event.target.id === 'institution-directory-uf') {

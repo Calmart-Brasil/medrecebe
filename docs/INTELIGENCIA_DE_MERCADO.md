@@ -5,7 +5,7 @@
 - **Mapa da concentração de renda:** usa somente atendimentos registrados pelo médico e mostra participação por pagador e município.
 - **Radar de contratações públicas:** consulta propostas abertas na API oficial do PNCP, filtra objetos médicos e preserva o link do edital.
 - **Oportunidades regionais:** o município-base vem da lista oficial do IBGE e o raio limita de fato os resultados do PNCP pela distância entre centroides municipais. O GPS do aparelho não é usado.
-- **Mapa de concentração médica:** apresenta profissionais-indivíduos do CNES por município e permite alternar entre o total médico e ocupações CBO compatíveis com as especialidades do perfil. A camada atual usa a competência junho/2026.
+- **Mapa de concentração médica:** apresenta profissionais-indivíduos do CNES por município e permite selecionar qualquer UF, o total médico ou uma das 63 ocupações CBO. Alterna entre quantidade absoluta e profissionais por 100 mil habitantes usando a estimativa populacional IBGE 2025. A camada CNES atual usa a competência junho/2026.
 - **Vagas privadas oficiais:** direciona ao SINE/Emprega Brasil. O projeto/API SINE Aberto foi descontinuado; portanto, não é apresentado como feed público automático.
 - **Diretório nacional:** 22.782 estabelecimentos e empresas elegíveis, particionados por UF, derivados de 627.864 registros do CNES de 18/07/2026. Os municípios são nomeados pela API do IBGE.
 
@@ -20,7 +20,7 @@ O CFM disponibiliza um webservice oficial, normatizado pela Resolução CFM nº 
 As tabelas `market_data_snapshots` e `market_indicators` registram fonte, versão, data de referência, território e especialidade. Cada indicador deve apontar para um snapshot auditável.
 
 1. Receita Federal + CNES: identidade e situação do pagador e do estabelecimento.
-2. IBGE + CNES: 5.571 municípios atuais, centro territorial e concentração agregada de médicos por CBO.
+2. IBGE + CNES: 5.571 unidades municipais atuais, centro territorial, população estimada de 2025 e concentração agregada de médicos por CBO.
 3. IBGE + RAIS + CAGED: população, renda, emprego formal e tendência ocupacional.
 4. SIH/SUS + SIA/SUS + SIGTAP: volume assistencial, procedimentos, compatibilidades e valores de referência.
 5. ANS: cobertura e desempenho da saúde suplementar por região e operadora.

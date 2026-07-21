@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 
 const UFS = ['AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO'];
 const LOCALITIES_URL = 'https://servicodados.ibge.gov.br/api/v1/localidades/municipios?view=nivelado';
+const POPULATION_URL = 'https://apisidra.ibge.gov.br/values/t/6579/n6/all/v/9324/p/2025?formato=json';
 const TABNET_FORM_URL = 'http://tabnet.datasus.gov.br/cgi/deftohtm.exe?cnes/cnv/prid02br.def';
 const TABNET_QUERY_URL = 'http://tabnet.datasus.gov.br/cgi/tabcgi.exe?cnes/cnv/prid02br.def';
 
@@ -175,8 +176,12 @@ const stateRows = await tabnetQuery([
 const specialtyRows = await tabnetQuery([
   ['Linha', 'Município'], ['Coluna', 'Médicos'], ...basePairs,
 ]);
+const stateSpecialtyRows = await tabnetQuery([
+  ['Linha', 'Unidade_da_Federação'], ['Coluna', 'Médicos'], ...basePairs,
+]);
 
 const localities = await fetchJsonWithRetry(LOCALITIES_URL, { headers: { Accept: 'application/json' }, timeout: 120_000 });
+const populationRows = await fetchJsonWithRetry(POPULATION_URL, { headers: { Accept: 'application/json' }, timeout: 120_000 });
 const municipalitiesByUf = await municipalityDirectory(localities);
 const localityBySixDigits = new Map(localities.map((row) => [String(row['municipio-id']).slice(0, 6), row]));
 const uniqueByCode = new Map(uniqueRows.slice(1).map((row) => [String(row[0]).match(/^\d{6}/)?.[0] || '', Number(row[1]) || 0]).filter(([code]) => code));
@@ -187,6 +192,14 @@ const specialtyByCode = new Map(specialtyRows.slice(1).map((row) => {
   const code = String(row[0]).match(/^\d{6}/)?.[0] || '';
   return [code, row.slice(1, -1).map((value) => value === '-' ? 0 : Number(value) || 0)];
 }).filter(([code]) => code));
+const stateSpecialtyByCode = new Map(stateSpecialtyRows.slice(1).map((row) => {
+  const code = String(row[0]).match(/^\d{2}/)?.[0] || '';
+  return [code, row.slice(1, -1).map((value) => value === '-' ? 0 : Number(value) || 0)];
+}).filter(([code]) => code));
+const populationByCode = new Map(populationRows.slice(1).map((row) => [
+  String(row.D1C || ''),
+  Number(String(row.V || '').replace(/\D/g, '')) || 0,
+]).filter(([code]) => /^\d{7}$/.test(code)));
 
 await Promise.all([mkdir(municipalityOutput, { recursive: true }), mkdir(densityOutput, { recursive: true })]);
 for (const uf of UFS) {
@@ -209,6 +222,7 @@ for (const uf of UFS) {
     return {
       ibgeCode: municipality.ibgeCode,
       name: municipality.name,
+      population: populationByCode.get(municipality.ibgeCode) || 0,
       physicians: uniqueByCode.get(shortCode) || 0,
       specialties: specialtyByCode.get(shortCode) || specialtyHeaders.map(() => 0),
     };
@@ -216,6 +230,9 @@ for (const uf of UFS) {
   const municipalPresence = densityMunicipalities.reduce((sum, municipality) => sum + municipality.physicians, 0);
   const stateCode = localities.find((row) => row['UF-sigla'] === uf)?.['UF-id'];
   const uniquePhysicians = uniqueByStateCode.get(String(stateCode || '')) || 0;
+  const statePopulation = [...populationByCode.entries()]
+    .filter(([code]) => code.startsWith(String(stateCode || '')))
+    .reduce((sum, [, population]) => sum + population, 0);
   const densityPayload = {
     meta: {
       source: 'CNES / DATASUS — Recursos Humanos — Profissionais (indivíduos) segundo CBO 2002',
@@ -226,11 +243,17 @@ for (const uf of UFS) {
       generatedAt: new Date().toISOString(),
       uf,
       uniquePhysicians,
+      statePopulation,
+      populationPeriod: '2025',
+      populationReferenceDate: '1º de julho de 2025',
+      populationSource: 'IBGE/SIDRA — Estimativas da População, tabela 6579, variável 9324',
+      populationSourceUrl: POPULATION_URL,
       municipalPresence,
       municipalities: densityMunicipalities.filter((municipality) => municipality.physicians > 0).length,
       methodology: 'O total considera indivíduos selecionados em todas as ocupações médicas. A visão por especialidade utiliza a ocupação CBO e não equivale ao RQE do CFM.',
     },
     specialtyNames: specialtyHeaders,
+    stateSpecialties: stateSpecialtyByCode.get(String(stateCode || '')) || specialtyHeaders.map(() => 0),
     municipalities: densityMunicipalities,
   };
   await writeFile(resolve(densityOutput, `${uf}.json`), `${JSON.stringify(densityPayload)}\n`, 'utf8');

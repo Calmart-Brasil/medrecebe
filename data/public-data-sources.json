@@ -12,6 +12,7 @@
     { "code": "CAGED", "name": "Novo Caged", "use": "Admissões, desligamentos e tendência ocupacional", "status": "planned", "url": "https://www.gov.br/trabalho-e-emprego/pt-br/assuntos/estatisticas-trabalho" },
     { "code": "CMED", "name": "Preços de medicamentos", "use": "Custos regulados de terapias recorrentes", "status": "planned", "url": "https://www.gov.br/anvisa/pt-br/assuntos/medicamentos/cmed/precos" },
     { "code": "IBGE", "name": "Localidades e indicadores territoriais", "use": "Municípios, população, renda e território", "status": "live", "url": "https://servicodados.ibge.gov.br/api/docs/localidades" },
+    { "code": "IBGE_POP", "name": "Estimativas da População 2025", "use": "População municipal e estadual para indicadores de médicos e especialistas por 100 mil habitantes", "status": "live", "url": "https://apisidra.ibge.gov.br/values/t/6579/n6/all/v/9324/p/2025?formato=json" },
     { "code": "SINE", "name": "Sistema Nacional de Emprego", "use": "Vagas registradas por empresas privadas; consulta oficial autenticada no Emprega Brasil", "status": "official_redirect", "url": "https://www.gov.br/pt-br/servicos/buscar-emprego-no-sistema-nacional-de-emprego-sine" },
     { "code": "CFM", "name": "Webservice — Listagem de médicos", "use": "CRM, UF, situação e especialidades", "status": "awaiting_contract", "url": "https://sistemas.cfm.org.br/listamedicos/informacoes" }
   ]
