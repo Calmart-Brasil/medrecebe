@@ -1,17 +1,19 @@
-const CACHE_NAME = 'medrecebe-app-v32';
+const CACHE_NAME = 'medrecebe-app-v33';
 const APP_SHELL = [
   './',
   './index.html',
   './app.html',
   './landing.css?v=5',
-  './styles.css?v=25',
-  './cloud.js?v=9',
+  './styles.css?v=26',
+  './cloud.js?v=10',
   './frame-guard.js?v=1',
   './reconciliation-pdf.js?v=2',
-  './app.js?v=27',
+  './app.js?v=28',
   './data/institutions/index.json?v=20260718',
   './data/institutions/SP.json?v=20260718',
   './data/medical-specialties.json?v=20260721',
+  './data/municipalities/SP.json?v=202606',
+  './data/medical-density/SP.json?v=202606',
   './legal.css?v=2',
   './termos.html',
   './privacidade.html',

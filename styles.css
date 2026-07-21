@@ -962,6 +962,32 @@ label, .drawer nav button { font-size: 14px; }
 .opportunity-footer strong { color: var(--deep); font-size: 11px; }
 .intelligence-method > summary { color: var(--deep); font-size: 11px; font-weight: 850; cursor: pointer; }
 .intelligence-method p { color: var(--muted); font-size: 9px; line-height: 1.55; }
+.section-subtitle { margin: 5px 0 0; color: var(--muted); font-size: 10px; line-height: 1.45; }
+.medical-map-layout { display: grid; gap: 11px; }
+.medical-map-card { display: grid; gap: 11px; overflow: hidden; }
+.medical-map-toolbar { display: flex; align-items: end; justify-content: space-between; gap: 12px; }
+.medical-map-toolbar label { min-width: 0; flex: 1; }
+.medical-map-toolbar > span { display: grid; justify-items: end; flex: 0 0 auto; }
+.medical-map-toolbar > span strong { color: var(--deep); font-size: 18px; line-height: 1; }
+.medical-map-toolbar > span small { margin-top: 4px; color: var(--muted); font-size: 8px; }
+.medical-heatmap { display: block; width: 100%; min-height: 230px; border: 1px solid #C9D9ED; border-radius: 15px; background: radial-gradient(circle at 52% 46%,#fff 0,#F1F7FE 58%,#E3EEF9 100%); }
+.medical-heatmap circle { transition: r .18s ease, opacity .18s ease; }
+.medical-heatmap circle:hover { stroke: #0A1F44; stroke-width: 1.5px; }
+.map-legend { display: flex; align-items: center; justify-content: center; gap: 8px; color: var(--muted); font-size: 8px; }
+.map-legend i { width: min(180px,45%); height: 7px; border-radius: 999px; background: linear-gradient(90deg,rgba(90,100,114,.16),rgba(86,160,232,.56),#004DB6); }
+.medical-map-ranking { display: grid; align-content: start; gap: 4px; }
+.medical-map-ranking h3 { margin: 0 0 8px; color: var(--deep); font-size: 12px; }
+.medical-map-ranking > div { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.medical-map-ranking > div:last-child { border-bottom: 0; }
+.medical-map-ranking > div span { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.medical-map-ranking b { display: grid; place-items: center; width: 22px; height: 22px; flex: 0 0 auto; border-radius: 7px; background: var(--ice); color: var(--blue-700); font-size: 8px; }
+.medical-map-ranking strong { overflow: hidden; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.medical-map-ranking em { color: var(--deep); font-size: 11px; font-style: normal; font-weight: 850; }
+.private-opportunities-card { display: flex; align-items: center; justify-content: space-between; gap: 18px; }
+.private-opportunities-card > div { min-width: 0; }
+.private-opportunities-card h3 { margin: 9px 0 4px; color: var(--deep); font-size: 12px; }
+.private-opportunities-card p { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.55; }
+.private-opportunities-card > a { flex: 0 0 auto; }
 
 @media (min-width: 900px) {
   body.web-plan .intelligence-page { gap: 24px; }
@@ -973,11 +999,20 @@ label, .drawer nav button { font-size: 14px; }
   body.web-plan .intelligence-kpis .card { padding: 20px; }
   body.web-plan .intelligence-kpis strong { font-size: 24px; }
   body.web-plan .intelligence-grid { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px; }
+  body.web-plan .medical-map-layout { grid-template-columns: minmax(0,1.55fr) minmax(270px,.7fr); gap: 16px; }
+  body.web-plan .medical-map-card, body.web-plan .medical-map-ranking { padding: 20px; }
+  body.web-plan .medical-heatmap { min-height: 410px; }
   body.web-plan .opportunity-list { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px; }
   body.web-plan .opportunity-card { padding: 20px; }
   body.web-plan .opportunity-card h3 { font-size: 13px; }
   body.web-plan .opportunity-card > p { font-size: 11px; }
   body.web-plan .intelligence-shortcut { padding: 20px; }
+}
+
+@media (max-width: 520px) {
+  .medical-map-toolbar, .private-opportunities-card { align-items: stretch; flex-direction: column; }
+  .medical-map-toolbar > span { justify-items: start; }
+  .private-opportunities-card > a { width: 100%; }
 }
 
 /* Prioridade final dos tokens do console desktop. */

@@ -87,6 +87,7 @@ Deno.serve(async (request) => {
 
   try {
     const user = await authenticatedUser(request);
+    const body = await request.json().catch(() => ({}));
     const [ipLimit, accountLimit] = await Promise.all([
       consumeRateLimit('market_intelligence_ip', clientAddress(request), 30, 60 * 60, 60 * 60),
       consumeRateLimit('market_intelligence_account', user.id, 8, 60 * 60, 60 * 60),
@@ -99,7 +100,7 @@ Deno.serve(async (request) => {
     const admin = adminClient();
     const [accountResult, profileResult, registrationResult, specialtiesResult] = await Promise.all([
       admin.from('profiles').select('role, access_status').eq('id', user.id).single(),
-      admin.from('professional_profiles').select('opportunity_city, opportunity_uf, opportunity_radius_km').eq('user_id', user.id).maybeSingle(),
+      admin.from('professional_profiles').select('opportunity_city, opportunity_city_code, opportunity_uf, opportunity_radius_km').eq('user_id', user.id).maybeSingle(),
       admin.from('professional_registrations').select('crm_uf, crm_number, registration_status').eq('user_id', user.id).eq('is_primary', true).maybeSingle(),
       admin.from('professional_specialties').select('specialty_code, specialty_name, rqe_number, verification_status').eq('user_id', user.id),
     ]);
@@ -112,6 +113,17 @@ Deno.serve(async (request) => {
 
     const uf = String(profileResult.data?.opportunity_uf || registrationResult.data.crm_uf).toUpperCase();
     const city = normalized(profileResult.data?.opportunity_city || '');
+    const cityCode = String(profileResult.data?.opportunity_city_code || '');
+    const radiusKm = Math.min(1000, Math.max(10, Number(profileResult.data?.opportunity_radius_km) || 100));
+    const originCityCode = String(body.originCityCode || '').replace(/\D/g, '').slice(0, 7);
+    const requestedMunicipalityCodes = Array.isArray(body.municipalityCodes)
+      ? [...new Set(body.municipalityCodes.map((value: unknown) => String(value || '').replace(/\D/g, '')).filter((value: string) => /^\d{7}$/.test(value)))].slice(0, 1200)
+      : [];
+    const effectiveCityCode = cityCode || originCityCode;
+    const territorialFilterActive = radiusKm < 1000 && Boolean(effectiveCityCode);
+    if (cityCode && territorialFilterActive && originCityCode !== cityCode) return publicError(request, 'Atualize o município-base antes de consultar o raio.', 409);
+    if (territorialFilterActive && !requestedMunicipalityCodes.length) return publicError(request, 'Não foi possível determinar os municípios dentro do raio.', 422);
+    const allowedMunicipalities = new Set(requestedMunicipalityCodes);
     const specialties = specialtiesResult.data || [];
     const termsBySpecialty = specialties.map((item) => ({
       code: item.specialty_code,
@@ -149,7 +161,8 @@ Deno.serve(async (request) => {
       .slice(0, 30)
       .map((entry) => compact(entry.item, entry.score, entry.matches));
     const regional = [...health]
-      .filter((entry) => entry.specialtyMatches.length || !specialties.length)
+      .filter((entry) => (entry.specialtyMatches.length || !specialties.length)
+        && (!territorialFilterActive || allowedMunicipalities.has(String(entry.item.unidadeOrgao?.codigoIbge || ''))))
       .sort((a, b) => b.score - a.score || Date.parse(a.item.dataEncerramentoProposta || '') - Date.parse(b.item.dataEncerramentoProposta || ''))
       .slice(0, 20)
       .map((entry) => compact(entry.item, entry.score, entry.matches));
@@ -163,6 +176,8 @@ Deno.serve(async (request) => {
         registrationStatus: registrationResult.data.registration_status,
         opportunityUf: uf,
         opportunityCity: profileResult.data?.opportunity_city || '',
+        opportunityCityCode: effectiveCityCode,
+        opportunityRadiusKm: radiusKm,
         specialties: specialties.map((item) => ({ code: item.specialty_code, name: item.specialty_name, rqeNumber: item.rqe_number || '', status: item.verification_status })),
       },
       meta: {
@@ -174,6 +189,10 @@ Deno.serve(async (request) => {
         pagesInspected: pageLimit,
         truncated: first.totalPages > pageLimit,
         scope: `${uf} · propostas abertas com encerramento em até 120 dias`,
+        regionalScope: territorialFilterActive
+          ? `${profileResult.data?.opportunity_city || cityCode} · raio territorial de ${radiusKm} km`
+          : `${uf} · todo o estado`,
+        regionalMunicipalities: territorialFilterActive ? allowedMunicipalities.size : null,
       },
     });
   } catch (error) {

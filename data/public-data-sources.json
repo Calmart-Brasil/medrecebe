@@ -2,7 +2,7 @@
   "updatedAt": "2026-07-21",
   "sources": [
     { "code": "RECEITA_CNPJ", "name": "Cadastro Nacional da Pessoa Jurídica", "use": "Situação cadastral e identidade do pagador", "status": "planned", "url": "https://www.gov.br/receitafederal/pt-br/acesso-a-informacao/dados-abertos/cadastros" },
-    { "code": "CNES", "name": "Cadastro Nacional de Estabelecimentos de Saúde", "use": "Diretório nacional de hospitais e empresas de saúde", "status": "live", "url": "https://dadosabertos.saude.gov.br/dataset/cnes-cadastro-nacional-de-estabelecimentos-de-saude" },
+    { "code": "CNES", "name": "Cadastro Nacional de Estabelecimentos de Saúde", "use": "Diretório nacional e mapa agregado de profissionais médicos por município e CBO", "status": "live", "url": "https://tabnet.datasus.gov.br/cgi/deftohtm.exe?cnes/cnv/prid02br.def" },
     { "code": "SIH_SUS", "name": "Produção Hospitalar SIH/SUS", "use": "Internações, procedimentos e valores agregados", "status": "planned", "url": "https://datasus.saude.gov.br/acesso-a-informacao/producao-hospitalar-sih-sus/" },
     { "code": "SIA_SUS", "name": "Produção Ambulatorial SIA/SUS", "use": "Produção e valores ambulatoriais agregados", "status": "planned", "url": "https://datasus.saude.gov.br/acesso-a-informacao/producao-ambulatorial-sia-sus/" },
     { "code": "SIGTAP", "name": "Tabela SUS", "use": "Procedimentos, compatibilidades, regras e valores", "status": "planned", "url": "http://sigtap.datasus.gov.br/tabela-unificada/app/sec/inicio.jsp" },
@@ -12,6 +12,7 @@
     { "code": "CAGED", "name": "Novo Caged", "use": "Admissões, desligamentos e tendência ocupacional", "status": "planned", "url": "https://www.gov.br/trabalho-e-emprego/pt-br/assuntos/estatisticas-trabalho" },
     { "code": "CMED", "name": "Preços de medicamentos", "use": "Custos regulados de terapias recorrentes", "status": "planned", "url": "https://www.gov.br/anvisa/pt-br/assuntos/medicamentos/cmed/precos" },
     { "code": "IBGE", "name": "Localidades e indicadores territoriais", "use": "Municípios, população, renda e território", "status": "live", "url": "https://servicodados.ibge.gov.br/api/docs/localidades" },
+    { "code": "SINE", "name": "Sistema Nacional de Emprego", "use": "Vagas registradas por empresas privadas; consulta oficial autenticada no Emprega Brasil", "status": "official_redirect", "url": "https://www.gov.br/pt-br/servicos/buscar-emprego-no-sistema-nacional-de-emprego-sine" },
     { "code": "CFM", "name": "Webservice — Listagem de médicos", "use": "CRM, UF, situação e especialidades", "status": "awaiting_contract", "url": "https://sistemas.cfm.org.br/listamedicos/informacoes" }
   ]
 }

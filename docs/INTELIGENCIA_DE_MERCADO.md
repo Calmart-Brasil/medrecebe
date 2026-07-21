@@ -4,7 +4,9 @@
 
 - **Mapa da concentração de renda:** usa somente atendimentos registrados pelo médico e mostra participação por pagador e município.
 - **Radar de contratações públicas:** consulta propostas abertas na API oficial do PNCP, filtra objetos médicos e preserva o link do edital.
-- **Oportunidades regionais:** classifica por UF, município e especialidades confirmadas no perfil. Sem especialidade, considera oportunidades compatíveis com CRM generalista.
+- **Oportunidades regionais:** o município-base vem da lista oficial do IBGE e o raio limita de fato os resultados do PNCP pela distância entre centroides municipais. O GPS do aparelho não é usado.
+- **Mapa de concentração médica:** apresenta profissionais-indivíduos do CNES por município e permite alternar entre o total médico e ocupações CBO compatíveis com as especialidades do perfil. A camada atual usa a competência junho/2026.
+- **Vagas privadas oficiais:** direciona ao SINE/Emprega Brasil. A API SINE Aberto requer adesão e credenciais do Ministério do Trabalho, portanto não é apresentada como feed público automático.
 - **Diretório nacional:** 22.782 estabelecimentos e empresas elegíveis, particionados por UF, derivados de 627.864 registros do CNES de 18/07/2026. Os municípios são nomeados pela API do IBGE.
 
 ## Perfil profissional e CFM
@@ -18,11 +20,15 @@ O CFM disponibiliza um webservice oficial, normatizado pela Resolução CFM nº 
 As tabelas `market_data_snapshots` e `market_indicators` registram fonte, versão, data de referência, território e especialidade. Cada indicador deve apontar para um snapshot auditável.
 
 1. Receita Federal + CNES: identidade e situação do pagador e do estabelecimento.
-2. IBGE + RAIS + CAGED: população, renda, emprego formal e tendência ocupacional.
-3. SIH/SUS + SIA/SUS + SIGTAP: volume assistencial, procedimentos, compatibilidades e valores de referência.
-4. ANS: cobertura e desempenho da saúde suplementar por região e operadora.
-5. CMED: pressão de custo para terapias e medicamentos recorrentes.
-6. PNCP: credenciamentos e contratações abertas.
-7. CFM: CRM e especialidades, somente pelo canal oficial contratado.
+2. IBGE + CNES: 5.571 municípios atuais, centro territorial e concentração agregada de médicos por CBO.
+3. IBGE + RAIS + CAGED: população, renda, emprego formal e tendência ocupacional.
+4. SIH/SUS + SIA/SUS + SIGTAP: volume assistencial, procedimentos, compatibilidades e valores de referência.
+5. ANS: cobertura e desempenho da saúde suplementar por região e operadora.
+6. CMED: pressão de custo para terapias e medicamentos recorrentes.
+7. PNCP: credenciamentos e contratações abertas.
+8. SINE: vagas privadas, após eventual adesão formal ao SINE Aberto.
+9. CFM: CRM e especialidades, somente pelo canal oficial contratado.
+
+O total do mapa considera profissionais-indivíduos selecionados nas ocupações médicas do CNES. A visualização por especialidade usa CBO e não deve ser interpretada como quantidade de RQEs ativos no CFM. Um mesmo médico pode aparecer em mais de um município; por isso o total estadual de indivíduos é exibido separadamente da presença municipal.
 
 Indicadores agregados não podem identificar pacientes. Dados públicos de profissionais mantêm finalidade, minimização, proveniência, prazo de atualização e canal de correção, conforme LGPD.
