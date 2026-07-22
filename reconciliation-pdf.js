@@ -355,5 +355,81 @@
     return pdf.build(catalogId);
   }
 
-  global.MedRecebePdf = Object.freeze({ build, jpegDimensions });
+  function buildFiscalAgreement(input) {
+    const sections = [
+      ['1. Objeto e finalidade', 'O titular autoriza o tratamento dos dados fiscais estritamente necessários para localizar, importar, conferir e relacionar documentos fiscais de serviços aos pagadores e registros mantidos no MedRecebe. O acesso deverá respeitar o escopo selecionado pelo titular no canal oficial da Receita Federal.'],
+      ['2. Confidencialidade', 'O MedRecebe deverá manter sigilo sobre documentos, identificadores, valores e metadados fiscais, restringindo o acesso a pessoas e operadores que necessitem dessas informações para executar o serviço e que estejam sujeitos a dever de confidencialidade.'],
+      ['3. Credenciais e certificados', 'O MedRecebe não solicita nem armazena senha GOV.BR ou senha do e-CAC. Quando o piloto utilizar certificado digital, a chave privada deverá permanecer em cofre ou provedor especializado, fora do navegador, do armazenamento local e do banco público da aplicação.'],
+      ['4. Compartilhamento e operadores', 'Dados poderão ser tratados por provedores de nuvem, armazenamento, segurança e conexão fiscal contratados, limitados à finalidade do serviço. Este aceite não autoriza a comercialização dos documentos fiscais.'],
+      ['5. Retenção, revogação e eliminação', 'O titular poderá revogar a autorização no canal oficial e solicitar a desconexão no MedRecebe. A revogação interrompe novas sincronizações. Documentos já importados seguirão a política de retenção aplicável, ressalvadas obrigações legais e registros mínimos de auditoria.'],
+      ['6. Responsabilidades do titular', 'O titular deve conferir o representante, os serviços autorizados, o prazo e o alcance antes de confirmar uma Autorização de Acesso. Não deve conceder poderes genéricos ou serviços não necessários ao piloto fiscal.'],
+      ['7. Evidências do aceite', `O MedRecebe registra a versão ${input.version || '2026.07.1'}, o usuário autenticado e a data e hora do aceite. Este PDF pode ser assinado no Portal de Assinaturas GOV.BR e anexado novamente ao aplicativo.`],
+    ];
+    const pages = [];
+    let commands = [];
+    let y = 720;
+    const startPage = (continuation = false) => {
+      commands = [
+        ...headerCommands('Confidencialidade fiscal'),
+        textCommand(continuation ? 'TERMO DE CONFIDENCIALIDADE — CONTINUAÇÃO' : 'TERMO DE CONFIDENCIALIDADE', MARGIN, 715, continuation ? 9 : 20, true, COLORS.navy),
+      ];
+      if (!continuation) commands.push(textCommand('Tratamento de dados fiscais e preparação da conexão oficial', MARGIN, 691, 9.5, false, COLORS.muted));
+      y = continuation ? 686 : 655;
+    };
+    const flush = () => {
+      pages.push({ commands });
+      startPage(true);
+    };
+    const ensure = (height) => { if (y - height < 86) flush(); };
+    const wrapped = (value, size = 9.2, bold = false, color = COLORS.ink, after = 8) => {
+      const lines = wrapText(value, Math.max(45, Math.floor(96 * (10 / size))));
+      ensure(lines.length * size * 1.48 + after);
+      lines.forEach((line) => {
+        commands.push(textCommand(line, MARGIN, y, size, bold, color));
+        y -= size * 1.48;
+      });
+      y -= after;
+    };
+
+    startPage(false);
+    commands.push(fillRect(MARGIN, y - 92, CONTENT_WIDTH, 92, COLORS.mist));
+    commands.push(textCommand('TITULAR', MARGIN + 14, y - 19, 7.5, true, COLORS.blue));
+    commands.push(textCommand(truncate(input.signerName || 'Não informado', 62), MARGIN + 14, y - 39, 12, true, COLORS.navy));
+    commands.push(textCommand(`Documento fiscal: ${input.subjectLabel || 'não informado'}`, MARGIN + 14, y - 58, 8.5, false, COLORS.ink));
+    commands.push(textCommand(`Aceite registrado em: ${input.acceptedAt || 'não informado'}`, MARGIN + 14, y - 76, 8.5, false, COLORS.muted));
+    commands.push(textCommand(`Identificador: ${input.agreementId || 'não informado'}`, MARGIN + 285, y - 76, 7.5, false, COLORS.muted));
+    y -= 112;
+
+    wrapped('Este termo complementa os Termos de Uso e a Política de Privacidade. Ele não autoriza o MedRecebe a conhecer senha GOV.BR, senha do e-CAC ou chave privada de certificado digital.', 9.4, true, COLORS.navy, 13);
+    sections.forEach(([title, body]) => {
+      wrapped(title.toUpperCase(), 8.5, true, COLORS.blue, 5);
+      wrapped(body, 9.2, false, COLORS.ink, 12);
+    });
+    ensure(116);
+    commands.push(fillRect(MARGIN, y - 98, CONTENT_WIDTH, 98, COLORS.mist));
+    commands.push(textCommand('ÁREA RESERVADA PARA ASSINATURA ELETRÔNICA', MARGIN + 14, y - 20, 8, true, COLORS.blue));
+    commands.push(textCommand('Assine este arquivo no Portal de Assinaturas GOV.BR e preserve o PDF original assinado.', MARGIN + 14, y - 40, 8.5, false, COLORS.ink));
+    commands.push(`q ${COLORS.muted} RG ${MARGIN + 90} ${y - 76} m ${PAGE_WIDTH - MARGIN - 90} ${y - 76} l S Q\n`);
+    commands.push(textCommand(input.signerName || 'Titular', MARGIN + 90, y - 91, 8, false, COLORS.muted));
+    pages.push({ commands });
+    pages.forEach((page, index) => page.commands.push(...footerCommands(index + 1, pages.length, input.generatedAt || input.acceptedAt)));
+
+    const pdf = createDocument();
+    const catalogId = pdf.reserve();
+    const pagesId = pdf.reserve();
+    const regularFontId = pdf.add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>');
+    const boldFontId = pdf.add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>');
+    const pageIds = pages.map(() => pdf.reserve());
+    pages.forEach((page, index) => {
+      const contentId = pdf.add(streamObject('<<', bytesFromBinary(page.commands.join(''))));
+      const linkId = pdf.add(`<< /Type /Annot /Subtype /Link /Rect [${MARGIN} 17 155 38] /Border [0 0 0] /A << /S /URI /URI (${SITE_URL}) >> >>`);
+      const resources = `/Font << /F1 ${regularFontId} 0 R /F2 ${boldFontId} 0 R >>`;
+      pdf.set(pageIds[index], `<< /Type /Page /Parent ${pagesId} 0 R /MediaBox [0 0 ${PAGE_WIDTH} ${PAGE_HEIGHT}] /Resources << ${resources} >> /Contents ${contentId} 0 R /Annots [${linkId} 0 R] >>`);
+    });
+    pdf.set(pagesId, `<< /Type /Pages /Count ${pageIds.length} /Kids [${pageIds.map((id) => `${id} 0 R`).join(' ')}] >>`);
+    pdf.set(catalogId, `<< /Type /Catalog /Pages ${pagesId} 0 R >>`);
+    return pdf.build(catalogId);
+  }
+
+  global.MedRecebePdf = Object.freeze({ build, buildFiscalAgreement, jpegDimensions });
 })(typeof window === 'undefined' ? globalThis : window);

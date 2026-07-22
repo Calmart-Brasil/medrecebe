@@ -11,6 +11,10 @@ const MEDICAL_DENSITY_BASE_URL = './data/medical-density';
 const MEDICAL_SHAPES_BASE_URL = './data/medical-map-shapes';
 const MARKET_MAP_VERSION = '202606-pop2025-v3';
 const CNPJ_CARD_URL = 'https://solucoes.receita.fazenda.gov.br/Servicos/cnpjreva/cnpj.aspx';
+const FISCAL_AGREEMENT_VERSION = '2026.07.1';
+const GOVBR_SIGNATURE_URL = 'https://assinador.iti.br/assinatura/index.xhtml';
+const RFB_AUTHORIZATION_URL = 'https://www.gov.br/pt-br/servicos/cadastrar-ou-cancelar-procuracao-para-acesso-ao-e-cac';
+const MARKET_CACHE_KEY = 'medrecebe.market-intelligence.v2';
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -74,13 +78,20 @@ let selectedMedicalMapSpecialty = 'all';
 let selectedMedicalMapMetric = 'per_100k';
 let selectedMedicalMapLayer = 'concentration';
 let selectedSpecialtyRankingOrder = 'asc';
+let marketplaceMode = 'professional';
+let marketplaceCache = null;
+let marketplaceLoading = false;
+let marketplaceError = '';
+let marketplaceMunicipalitiesLoading = false;
 
 const TITLES = {
   home: 'Início',
   attendance: 'Novo atendimento',
   dashboard: 'Dashboard',
-  workplaces: 'Locais e repasses',
+  workplaces: 'Locais e modalidades',
   reconciliation: 'Conciliação',
+  fiscal: 'Integração fiscal',
+  opportunities: 'Oportunidades',
   intelligence: 'Inteligência',
   feedback: 'Feedback',
   account: 'Mais',
@@ -114,6 +125,26 @@ function emptyState() {
     invoices: [],
     reconciliationMessage: DEFAULT_MESSAGE,
     feedbacks: [],
+    fiscalIntegration: {
+      status: 'not_started',
+      agreementVersion: FISCAL_AGREEMENT_VERSION,
+      agreementAcceptedAt: '',
+      agreementSigner: '',
+      subjectType: 'cnpj',
+      subjectLast4: '',
+      signedDocumentName: '',
+      signedDocumentId: '',
+      selectedWorkplaceId: '',
+      connections: [],
+    },
+    marketplace: {
+      mode: 'professional',
+      search: { uf: '', city: '', cityCode: '', radiusKm: 1000, professionalArea: 'medical', contractType: 'all', publicCategory: 'all' },
+      demoPostings: [],
+      demoOrganization: null,
+      demoWorkers: [],
+      demoApplications: [],
+    },
     demo: false,
   };
 }
@@ -179,7 +210,14 @@ function normalizeState(input) {
   state.attendances = normalized;
   state.invoices = Array.isArray(state.invoices) ? state.invoices : [];
   state.feedbacks = Array.isArray(state.feedbacks) ? state.feedbacks : [];
-  state.schemaVersion = 3;
+  state.fiscalIntegration = { ...emptyState().fiscalIntegration, ...(state.fiscalIntegration || {}) };
+  state.fiscalIntegration.connections = Array.isArray(state.fiscalIntegration.connections) ? state.fiscalIntegration.connections : [];
+  state.marketplace = { ...emptyState().marketplace, ...(state.marketplace || {}) };
+  state.marketplace.search = { ...emptyState().marketplace.search, ...(state.marketplace.search || {}) };
+  state.marketplace.demoPostings = Array.isArray(state.marketplace.demoPostings) ? state.marketplace.demoPostings : [];
+  state.marketplace.demoWorkers = Array.isArray(state.marketplace.demoWorkers) ? state.marketplace.demoWorkers : [];
+  state.marketplace.demoApplications = Array.isArray(state.marketplace.demoApplications) ? state.marketplace.demoApplications : [];
+  state.schemaVersion = 4;
   return state;
 }
 
@@ -1185,6 +1223,11 @@ function navigate(route) {
   $$('[data-nav]').forEach((button) => button.classList.toggle('active', button.dataset.nav === activeNavRoute));
   renderRoute();
   screen.focus({ preventScroll: true });
+  if (typeof screen.scrollTo === 'function') screen.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+  else {
+    screen.scrollTop = 0;
+    screen.scrollLeft = 0;
+  }
   window.scrollTo(0, 0);
 }
 
@@ -1209,6 +1252,12 @@ function renderRoute() {
       break;
     case 'reconciliation':
       renderReconciliation();
+      break;
+    case 'fiscal':
+      renderFiscalIntegration();
+      break;
+    case 'opportunities':
+      renderOpportunities();
       break;
     case 'intelligence':
       renderIntelligence();
@@ -1434,14 +1483,48 @@ function selectedOpportunityMunicipality(directory, profile = professionalProfil
 }
 
 async function opportunityTerritory() {
-  const uf = professionalProfile?.opportunityUf || professionalProfile?.registrations?.find((item) => item.primary)?.crmUf || 'SP';
+  const search = ensureMarketplaceSearch();
+  const uf = search.uf || professionalProfile?.opportunityUf || professionalProfile?.registrations?.find((item) => item.primary)?.crmUf || 'SP';
   const directory = await loadMunicipalityDirectory(uf);
-  const origin = selectedOpportunityMunicipality(directory);
-  const radiusKm = Number(professionalProfile?.opportunityRadiusKm) || 100;
+  const origin = selectedOpportunityMunicipality(directory, { opportunityCityCode: search.cityCode, opportunityCity: search.city });
+  const radiusKm = Number(search.radiusKm) || 1000;
   const municipalities = radiusKm >= 1000 || !origin
     ? directory.municipalities
     : directory.municipalities.filter((item) => haversineKm(origin, item) <= radiusKm);
   return { uf, directory, origin, radiusKm, municipalityCodes: municipalities.map((item) => item.ibgeCode) };
+}
+
+function publicContractCategory(item) {
+  const value = normalizeDirectoryText(`${item?.title || ''} ${(item?.matches || []).join(' ')}`);
+  if (/credenciamento|credenciar/.test(value)) return 'credentialing';
+  if (/plantao|urgencia|emergencia|pronto atendimento|pronto socorro/.test(value)) return 'shifts';
+  if (/diagnost|imagem|radiolog|laborator|exame/.test(value)) return 'diagnostics';
+  if (/ocupacional|trabalho|pcmso/.test(value)) return 'occupational';
+  if (/telemedicina|telessaude|teleconsulta/.test(value)) return 'telemedicine';
+  if (/especializ|cardio|oncolo|neurolog|ortoped|pediatr|ginecolog|psiquiatr/.test(value)) return 'specialized';
+  return 'general';
+}
+
+function filteredPublicContracts(items = []) {
+  const category = appState.marketplace.search.publicCategory || 'all';
+  return category === 'all' ? items : items.filter((item) => publicContractCategory(item) === category);
+}
+
+function publicContractFiltersMarkup() {
+  const search = ensureMarketplaceSearch();
+  return `<div class="card market-public-filters"><div class="form-grid"><div class="inline-grid"><label>Estado<select id="marketplace-uf">${ufOptions(search.uf)}</select></label><label>Município-base<select id="marketplace-city"><option value="">${search.city ? escapeHtml(search.city) : 'Todo o estado'}</option></select></label></div><div class="inline-grid"><label>Raio<select id="marketplace-radius"><option value="50" ${search.radiusKm === 50 ? 'selected' : ''}>50 km</option><option value="100" ${search.radiusKm === 100 ? 'selected' : ''}>100 km</option><option value="250" ${search.radiusKm === 250 ? 'selected' : ''}>250 km</option><option value="500" ${search.radiusKm === 500 ? 'selected' : ''}>500 km</option><option value="1000" ${search.radiusKm >= 1000 ? 'selected' : ''}>Todo o estado</option></select></label><label>Tipo de contratação<select id="public-contract-category">${Object.entries(PUBLIC_CONTRACT_CATEGORIES).map(([value, label]) => `<option value="${value}" ${search.publicCategory === value ? 'selected' : ''}>${label}</option>`).join('')}</select></label></div></div><button class="button primary small" data-action="search-marketplace" type="button">Aplicar filtros</button><p class="field-hint">Busca manual independente. Sua região do perfil permanece reservada aos alertas automáticos.</p></div>`;
+}
+
+function persistedMarketCache(search = appState.marketplace.search) {
+  try {
+    const stored = JSON.parse(localStorage.getItem(MARKET_CACHE_KEY) || '{}');
+    return stored.key === `${search.uf}:${search.cityCode}:${search.radiusKm}` ? stored.payload : null;
+  } catch { return null; }
+}
+
+function savePersistedMarketCache(payload, search = appState.marketplace.search) {
+  if (!payload || !(payload.radar?.length || payload.regional?.length)) return;
+  try { localStorage.setItem(MARKET_CACHE_KEY, JSON.stringify({ key: `${search.uf}:${search.cityCode}:${search.radiusKm}`, payload })); } catch { /* armazenamento indisponível */ }
 }
 
 function addOpportunityDistances(payload, territory) {
@@ -1572,13 +1655,14 @@ function isPrivateHealthInstitution(institution) {
 }
 
 function privateProspectsMarkup() {
-  const uf = professionalProfile?.opportunityUf || professionalProfile?.registrations?.find((item) => item.primary)?.crmUf || 'SP';
+  const search = ensureMarketplaceSearch();
+  const uf = search.uf || professionalProfile?.opportunityUf || professionalProfile?.registrations?.find((item) => item.primary)?.crmUf || 'SP';
   const cached = institutionDirectoryCache.get(uf);
   const directory = municipalityDirectoryCache.get(uf);
   if (privateProspectsError) return `<section class="intelligence-section"><div class="section-heading"><div><p class="eyebrow">REDE PRIVADA</p><h2>Potenciais contratantes</h2></div></div><div class="notice warning">${escapeHtml(privateProspectsError)}</div></section>`;
   if (!cached || !directory) return '<section class="intelligence-section"><div class="section-heading"><div><p class="eyebrow">REDE PRIVADA</p><h2>Potenciais contratantes</h2></div></div><div class="card intelligence-loading"><span class="sync-spinner" aria-hidden="true"></span><strong>Mapeando instituições privadas</strong><p>Consultando hospitais, cooperativas e empresas do CNES na sua região.</p></div></section>';
-  const origin = selectedOpportunityMunicipality(directory);
-  const radiusKm = Number(professionalProfile?.opportunityRadiusKm) || 100;
+  const origin = selectedOpportunityMunicipality(directory, { opportunityCityCode: search.cityCode, opportunityCity: search.city });
+  const radiusKm = Number(search.radiusKm) || 1000;
   const municipalityByCode = new Map(directory.municipalities.map((item) => [item.ibgeCode, item]));
   const categoryPriority = { medical_staffing: 4, health_management: 3, hospital: 2, ambulance: 1 };
   const prospects = cached.institutions.filter(isPrivateHealthInstitution).map((institution) => {
@@ -1593,7 +1677,8 @@ function privateProspectsMarkup() {
 }
 
 async function ensurePrivateProspects() {
-  const uf = professionalProfile?.opportunityUf || professionalProfile?.registrations?.find((item) => item.primary)?.crmUf || 'SP';
+  const search = ensureMarketplaceSearch();
+  const uf = search.uf || professionalProfile?.opportunityUf || professionalProfile?.registrations?.find((item) => item.primary)?.crmUf || 'SP';
   if (institutionDirectoryCache.has(uf) && municipalityDirectoryCache.has(uf)) return;
   try {
     await Promise.all([loadInstitutionDirectory(uf), loadMunicipalityDirectory(uf)]);
@@ -1746,6 +1831,7 @@ async function loadPncpPublicCompatibility(territory, authenticatedResponse) {
 
 async function loadMarketIntelligence(force = false) {
   if (!isCloudMode() || !professionalProfile?.registrations?.length || marketIntelligenceLoading) return;
+  if (!marketIntelligenceCache) marketIntelligenceCache = persistedMarketCache();
   if (marketIntelligenceCache && !force) return;
   marketIntelligenceLoading = true;
   marketIntelligenceError = '';
@@ -1764,7 +1850,9 @@ async function loadMarketIntelligence(force = false) {
         // Preserva a resposta autenticada existente se a API pública estiver temporariamente indisponível.
       }
     }
-    marketIntelligenceCache = addOpportunityDistances(response, territory);
+    const fresh = addOpportunityDistances(response, territory);
+    if (fresh?.radar?.length || fresh?.regional?.length || !marketIntelligenceCache) marketIntelligenceCache = fresh;
+    savePersistedMarketCache(marketIntelligenceCache);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Não foi possível consultar o radar.';
     const activeAccount = cloudAccount?.profile?.role === 'admin' || cloudAccount?.profile?.accessStatus === 'active';
@@ -1803,20 +1891,22 @@ function renderIntelligence() {
     : marketIntelligenceError
       ? `<div class="notice warning">${escapeHtml(marketIntelligenceError)} <button class="link-button" data-action="refresh-market-intelligence" type="button">Tentar novamente</button></div>`
       : primary
-        ? opportunityList(marketIntelligenceCache?.radar, 'Nenhuma contratação compatível agora', 'O radar será atualizado quando houver novos editais médicos na sua UF.')
+        ? opportunityList(filteredPublicContracts(marketIntelligenceCache?.radar), 'Nenhuma contratação compatível agora', 'Altere o tipo, município ou raio e tente novamente.')
         : emptyCard('CRM necessário', 'Cadastre o CRM principal para definir a UF da busca.');
   const regionalMarkup = primary
-    ? opportunityList(marketIntelligenceCache?.regional, 'Nenhuma correspondência por especialidade', specialties.length ? 'Não encontramos editais compatíveis nesta atualização.' : 'Oportunidades sem exigência de especialidade aparecerão aqui.')
+    ? opportunityList(filteredPublicContracts(marketIntelligenceCache?.regional), 'Nenhuma correspondência por especialidade', specialties.length ? 'Não encontramos editais compatíveis nesta atualização.' : 'Oportunidades sem exigência de especialidade aparecerão aqui.')
     : emptyCard('Perfil incompleto', 'Informe seu CRM e, se houver, suas especialidades.');
-  const regionDescription = professionalProfile?.opportunityCity
-    ? `${professionalProfile.opportunityCity}/${professionalProfile.opportunityUf} · ${Number(professionalProfile.opportunityRadiusKm) >= 1000 ? 'todo o estado' : `raio de ${professionalProfile.opportunityRadiusKm || 100} km`}`
-    : `${professionalProfile?.opportunityUf || primary?.crmUf || ''} · selecione um município-base para aplicar o raio`;
+  const searchRegion = ensureMarketplaceSearch();
+  const regionDescription = searchRegion.city
+    ? `${searchRegion.city}/${searchRegion.uf} · ${Number(searchRegion.radiusKm) >= 1000 ? 'todo o estado' : `raio de ${searchRegion.radiusKm || 100} km`}`
+    : `${searchRegion.uf || primary?.crmUf || ''} · todo o estado`;
   const uf = selectedMedicalMapUf || professionalProfile?.opportunityUf || primary?.crmUf || 'SP';
   if (!selectedMedicalMapUf) selectedMedicalMapUf = uf;
   screen.innerHTML = `<div class="screen-stack intelligence-page">${pageHeading('Dados para decidir melhor', 'Inteligência de mercado', 'Transforme seus registros e fontes públicas em sinais de concentração e novas oportunidades.')}${profileMarkup}<section class="intelligence-section"><div class="section-heading"><div><p class="eyebrow">SEUS DADOS</p><h2>Mapa da concentração de renda</h2></div><span class="concentration-status ${concentrationClass}">${concentrationLabel}</span></div><div class="intelligence-kpis"><div class="card"><small>HONORÁRIOS REGISTRADOS</small><strong>${currency(concentration.total)}</strong></div><div class="card"><small>MAIOR PAGADOR</small><strong>${Math.round(concentration.topShare * 100)}%</strong></div><div class="card"><small>FONTES DE RECEITA</small><strong>${concentration.byWorkplace.length}</strong></div></div><div class="intelligence-grid"><div class="card"><h3>Por pagador</h3>${concentrationBars(concentration.byWorkplace, 'Registre atendimentos para formar o mapa.')}</div><div class="card"><h3>Por município</h3>${concentrationBars(concentration.byRegion, 'O município aparecerá quando estiver informado no local de trabalho.')}</div></div><p class="data-footnote">Cálculo feito apenas com os honorários registrados na sua conta. Valores recebidos e a receber são mantidos separados no Dashboard.</p></section><section class="intelligence-section"><div class="section-heading"><div><p class="eyebrow">CNES + IBGE</p><h2>Concentração de médicos e especialidades</h2></div><span class="source-pill">${escapeHtml(uf)}</span></div>${medicalMapMarkup(uf)}</section><section class="intelligence-section"><div class="section-heading"><div><p class="eyebrow">FONTE PÚBLICA</p><h2>Radar de contratações públicas</h2></div><button class="link-button" data-action="refresh-market-intelligence" type="button">Atualizar</button></div>${radarMarkup}</section><section class="intelligence-section"><div class="section-heading"><div><p class="eyebrow">RAIO DE INTERESSE</p><h2>Oportunidades regionais</h2><p class="section-subtitle">${escapeHtml(regionDescription)}</p></div></div>${regionalMarkup}</section><section class="intelligence-section"><div class="section-heading"><div><p class="eyebrow">EMPRESAS PRIVADAS</p><h2>Vagas oficiais no SINE</h2></div></div><div class="card private-opportunities-card"><div><span class="source-pill verified">SERVIÇO OFICIAL</span><h3>Emprega Brasil e Carteira de Trabalho Digital</h3><p>Empresas privadas registram vagas no SINE. A consulta e a candidatura exigem acesso gov.br e permanecem no ambiente oficial.</p></div><a class="button secondary" href="https://www.gov.br/pt-br/servicos/buscar-emprego-no-sistema-nacional-de-emprego-sine" target="_blank" rel="noopener">Consultar vagas privadas</a></div></section><details class="card intelligence-method"><summary>Como os resultados são classificados</summary><p>O município é escolhido na lista oficial do IBGE. O raio usa a distância territorial entre os centroides municipais e limita de fato a lista regional; o GPS do aparelho não é consultado.</p><p>Contratações públicas vêm do PNCP. As vagas privadas são consultadas no SINE com acesso gov.br; a antiga API SINE Aberto foi descontinuada, então o MedRecebe direciona ao serviço oficial em vez de prometer um feed nacional inexistente.</p></details></div>`;
   const obsoletePrivateSection = screen.querySelector('a[href*="buscar-emprego-no-sistema-nacional-de-emprego-sine"]')?.closest('.intelligence-section');
   if (obsoletePrivateSection) obsoletePrivateSection.outerHTML = privateProspectsMarkup();
   const radarHeading = screen.querySelector('[data-action="refresh-market-intelligence"]')?.closest('.section-heading');
+  if (radarHeading) radarHeading.insertAdjacentHTML('afterend', publicContractFiltersMarkup());
   const radarFreshness = marketIntelligenceFreshnessMarkup();
   if (radarHeading && radarFreshness) radarHeading.insertAdjacentHTML('afterend', radarFreshness);
   const method = screen.querySelector('.intelligence-method');
@@ -1834,6 +1924,7 @@ function renderIntelligence() {
   } else if (primary && !marketIntelligenceCache && !marketIntelligenceLoading && !marketIntelligenceError) void loadMarketIntelligence();
   void ensureMarketMapData();
   if (primary) void ensurePrivateProspects();
+  void populateMarketplaceMunicipalities();
 }
 
 function groupDueDates(receivables) {
@@ -1855,7 +1946,7 @@ function renderWorkplaces() {
     .map((workplace) => {
       const modes = workplace.modalities.slice(0, 3).map((modality) => `<div class="modality-line"><span><strong>${escapeHtml(modality.name)}</strong><small>${escapeHtml(describeRule(modality.rule))}</small></span><b>${currency(modality.amountCents)}</b></div>`).join('');
       const remaining = Math.max(0, workplace.modalities.length - 3);
-      return `<article class="card workplace-summary"><div class="card-head"><span class="round-icon">⌂</span><div><h3>${escapeHtml(workplace.name)}</h3><p>${escapeHtml(workplace.payerLegalName || 'Razão Social não informada')}<br/>${workplace.payerCnpj ? `CNPJ ${formatCnpj(workplace.payerCnpj)}` : 'CNPJ não informado'}<br/>${escapeHtml(workplace.address || 'Endereço não informado')}</p></div><span class="badge ${workplace.active ? '' : 'inactive'}">${workplace.active ? 'Ativo' : 'Inativo'}</span></div><div class="modality-lines">${modes || '<p class="muted">Nenhuma modalidade cadastrada.</p>'}${remaining ? `<p class="field-hint">+ ${remaining} ${remaining === 1 ? 'modalidade cadastrada' : 'modalidades cadastradas'}</p>` : ''}</div><div class="row-actions"><button class="danger-link" data-action="toggle-workplace" data-id="${workplace.id}" type="button">${workplace.active ? 'Desativar' : 'Reativar'}</button><button class="button secondary small" data-action="edit-workplace" data-id="${workplace.id}" type="button">Editar cadastro</button></div></article>`;
+      return `<article class="card workplace-summary"><div class="card-head"><span class="round-icon">⌂</span><div><h3>${escapeHtml(workplace.name)}</h3><p>${escapeHtml(workplace.payerLegalName || 'Razão Social não informada')}<br/>${workplace.payerCnpj ? `CNPJ ${formatCnpj(workplace.payerCnpj)}` : 'CNPJ não informado'}<br/>${escapeHtml(workplace.address || 'Endereço não informado')}</p></div><span class="badge ${workplace.active ? '' : 'inactive'}">${workplace.active ? 'Ativo' : 'Inativo'}</span></div><div class="modality-lines">${modes || '<p class="muted">Nenhuma modalidade cadastrada.</p>'}${remaining ? `<p class="field-hint">+ ${remaining} ${remaining === 1 ? 'modalidade cadastrada' : 'modalidades cadastradas'}</p>` : ''}</div><div class="row-actions"><button class="button secondary small" data-action="edit-workplace" data-id="${workplace.id}" type="button">Editar</button><button class="button secondary small" data-action="toggle-workplace" data-id="${workplace.id}" type="button">${workplace.active ? 'Desativar' : 'Reativar'}</button><button class="danger-link" data-action="delete-workplace" data-id="${workplace.id}" type="button">Excluir</button></div></article>`;
     })
     .join('');
   const freemiumLimitReached = isFreemiumAccount() && appState.workplaces.length >= 1;
@@ -1865,7 +1956,7 @@ function renderWorkplaces() {
   const primaryAction = freemiumLimitReached
     ? '<button class="button primary" data-action="upgrade-plan" type="button">Cadastrar mais locais</button>'
     : '<button class="button primary" data-action="new-workplace" type="button">Adicionar local</button>';
-  screen.innerHTML = `<div class="screen-stack">${pageHeading('', 'Locais e repasses', '')}${planNotice}${primaryAction}<div class="list">${cards || emptyCard('Comece pelo primeiro local', 'Cadastre o pagador e suas modalidades.')}</div></div>`;
+  screen.innerHTML = `<div class="screen-stack">${pageHeading('', 'Locais e modalidades', 'Cadastre, consulte, edite ou exclua pagadores e suas regras de atendimento.')}${planNotice}${primaryAction}<div class="list">${cards || emptyCard('Comece pelo primeiro local', 'Cadastre o pagador e suas modalidades.')}</div></div>`;
 }
 
 function renderAttendance() {
@@ -1950,6 +2041,13 @@ function renderAttendance() {
   }).join('');
   const historyToggle = allRecorded.length > 3 ? `<button class="link-button attendance-history-toggle" data-action="toggle-attendance-history" type="button">${attendanceHistoryExpanded ? 'Mostrar menos' : `Ver todos (${allRecorded.length})`}</button>` : '';
   screen.innerHTML = `<div class="screen-stack"><form class="screen-stack" id="attendance-form">${pageHeading('', workplace.name, editingAttendanceId ? 'Editando registro' : '')}<label>Data<input id="attendance-date" type="date" value="${attendanceDraft.occurredAt}" required/></label><h2 class="section-title">Comprovante</h2><div class="attendance-photo">${photo}</div><div class="section-heading compact"><h2 class="section-title">Modalidade de repasse</h2>${totalQuantity ? `<span class="badge">${totalQuantity} atend.</span>` : ''}</div><div class="choice-list">${choices}</div>${recurringFields}<label>Observação (opcional)<textarea id="attendance-notes" placeholder="Adicionar observação">${escapeHtml(attendanceDraft.notes)}</textarea></label><div class="attendance-checkout">${itemSummaries.length ? `<div class="card attendance-total-card"><div class="attendance-total-head"><span><small>TOTAL</small><strong>${currency(totalCents)}</strong><em>${totalQuantity} ${totalQuantity === 1 ? 'atendimento' : 'atendimentos'}</em></span><span><small>PREVISÃO</small><strong>${dueDates.length === 1 ? displayDate(dueDates[0]) : `${dueDates.length} datas`}</strong></span></div><details class="attendance-breakdown"><summary>Ver composição</summary><div class="attendance-summary-lines">${summaryLines}</div></details></div>` : ''}<div class="attendance-actions"><button class="button primary" type="submit">${editingAttendanceId ? 'Salvar correção' : 'Salvar'}</button><button class="text-button" data-action="cancel-attendance" type="button">Cancelar</button></div></div></form><section class="attendance-history-section"><div class="section-heading compact"><h2 class="section-title">Atendimentos</h2><span class="badge">${allRecorded.length}</span></div><div class="list">${recorded || emptyCard('Nenhum atendimento', 'Seus registros aparecerão aqui.')}</div>${historyToggle}</section></div>`;
+  const attendancePageHeading = screen.querySelector('#attendance-form .page-heading');
+  if (attendancePageHeading) attendancePageHeading.insertAdjacentHTML('beforeend', `<p class="page-subtitle">${editingAttendanceId ? 'Editando registro de atendimento' : 'Novo registro de atendimento'}</p>`);
+  const attendanceHistoryHeading = screen.querySelector('.attendance-history-section .section-title');
+  if (attendanceHistoryHeading) {
+    attendanceHistoryHeading.textContent = 'Registros de atendimentos';
+    attendanceHistoryHeading.insertAdjacentHTML('afterend', '<p class="field-hint">Consulte os detalhes e use Editar ou Excluir para corrigir qualquer lançamento.</p>');
+  }
 }
 
 function legalNameMatches(registeredName, extractedNames = []) {
@@ -2131,6 +2229,9 @@ function openProfessionalProfileModal() {
     opportunityCity: professionalProfile?.opportunityCity || '',
     opportunityCityCode: professionalProfile?.opportunityCityCode || '',
     opportunityRadiusKm: professionalProfile?.opportunityRadiusKm || 100,
+    opportunityAlertsEnabled: professionalProfile?.opportunityAlertsEnabled ?? true,
+    companyAlertsEnabled: professionalProfile?.companyAlertsEnabled ?? true,
+    publicContractAlertsEnabled: professionalProfile?.publicContractAlertsEnabled ?? true,
     specialties: structuredClone(professionalProfile?.specialties || []),
   };
   renderProfessionalProfileModal();
@@ -2150,6 +2251,9 @@ function preserveProfessionalDraft() {
   professionalDraft.opportunityCityCode = municipalitySelect?.value || '';
   professionalDraft.opportunityCity = municipalitySelect?.selectedOptions?.[0]?.dataset?.name || '';
   professionalDraft.opportunityRadiusKm = Number($('#professional-radius').value) || 100;
+  professionalDraft.opportunityAlertsEnabled = Boolean($('#professional-alerts-enabled')?.checked);
+  professionalDraft.companyAlertsEnabled = Boolean($('#professional-company-alerts')?.checked);
+  professionalDraft.publicContractAlertsEnabled = Boolean($('#professional-public-alerts')?.checked);
 }
 
 async function populateOpportunityMunicipalities() {
@@ -2177,7 +2281,7 @@ async function populateOpportunityMunicipalities() {
 function renderProfessionalProfileModal() {
   if (!professionalDraft) return;
   const specialties = professionalDraft.specialties.map((item, index) => `<div class="editor-row specialty-editor-row"><span><strong>${escapeHtml(item.name)}</strong><small>${item.rqeNumber ? `RQE ${escapeHtml(item.rqeNumber)}` : 'RQE não informado'} · ${item.status === 'verified' ? 'Verificado no CFM' : 'Informado pelo médico'}</small></span><button class="danger-link" data-action="remove-professional-specialty" data-index="${index}" type="button">Excluir</button></div>`).join('');
-  modalRoot.innerHTML = `<div class="modal-wrap"><section class="modal-sheet" role="dialog" aria-modal="true" aria-labelledby="professional-title"><header class="modal-header simple"><span></span><h2 id="professional-title">Perfil profissional</h2><button data-action="close-modal" aria-label="Fechar" type="button">×</button></header><div class="modal-body"><div class="form-grid"><div class="crm-fields"><label>UF do CRM<select id="professional-crm-uf">${ufOptions(professionalDraft.crmUf)}</select></label><label>CRM principal<input id="professional-crm-number" value="${escapeHtml(professionalDraft.crmNumber)}" inputmode="text" maxlength="13" placeholder="123456"/></label></div><div class="notice"><strong>Verificação com fonte oficial</strong><br/>O CRM e as especialidades informadas ficam identificados como autodeclarados até a conferência pelo webservice oficial do CFM. <a href="https://portal.cfm.org.br/busca-medicos/" target="_blank" rel="noopener">Consultar no CFM</a>.</div><h3>Especialidades</h3><div class="inline-grid"><label>Especialidade<select id="professional-specialty"><option value="">Selecione</option></select></label><label>RQE (opcional)<input id="professional-rqe" inputmode="numeric" maxlength="12" placeholder="Número do RQE"/></label></div><button class="button secondary small" data-action="add-professional-specialty" type="button">Adicionar especialidade</button><div class="modalities-editor professional-specialties-editor">${specialties || '<div class="notice warning">Sem especialidade cadastrada. O CRM continuará sendo usado para vagas generalistas.</div>'}</div><h3>Região de interesse</h3><div class="inline-grid"><label>UF<select id="professional-opportunity-uf">${ufOptions(professionalDraft.opportunityUf)}</select></label><label>Município-base<select id="professional-opportunity-city"><option value="">Carregando municípios…</option></select></label></div><label>Raio de interesse<select id="professional-radius"><option value="50" ${professionalDraft.opportunityRadiusKm === 50 ? 'selected' : ''}>50 km</option><option value="100" ${professionalDraft.opportunityRadiusKm === 100 ? 'selected' : ''}>100 km</option><option value="250" ${professionalDraft.opportunityRadiusKm === 250 ? 'selected' : ''}>250 km</option><option value="500" ${professionalDraft.opportunityRadiusKm === 500 ? 'selected' : ''}>500 km</option><option value="1000" ${professionalDraft.opportunityRadiusKm === 1000 ? 'selected' : ''}>Todo o estado</option></select></label><p class="field-hint">O raio parte do centro territorial do município escolhido. O GPS do aparelho não é utilizado.</p></div><div class="modal-final-actions"><button class="button primary" data-action="save-professional-profile" type="button">Salvar perfil</button><button class="button secondary" data-action="close-modal" type="button">Cancelar</button></div></div></section></div>`;
+  modalRoot.innerHTML = `<div class="modal-wrap"><section class="modal-sheet" role="dialog" aria-modal="true" aria-labelledby="professional-title"><header class="modal-header simple"><span></span><h2 id="professional-title">Perfil profissional</h2><button data-action="close-modal" aria-label="Fechar" type="button">×</button></header><div class="modal-body"><div class="form-grid"><div class="crm-fields"><label>UF do CRM<select id="professional-crm-uf">${ufOptions(professionalDraft.crmUf)}</select></label><label>CRM principal<input id="professional-crm-number" value="${escapeHtml(professionalDraft.crmNumber)}" inputmode="text" maxlength="13" placeholder="123456"/></label></div><div class="notice"><strong>Verificação com fonte oficial</strong><br/>O CRM e as especialidades informadas ficam identificados como autodeclarados até a conferência pelo webservice oficial do CFM. <a href="https://portal.cfm.org.br/busca-medicos/" target="_blank" rel="noopener">Consultar no CFM</a>.</div><h3>Especialidades</h3><div class="inline-grid"><label>Especialidade<select id="professional-specialty"><option value="">Selecione</option></select></label><label>RQE (opcional)<input id="professional-rqe" inputmode="numeric" maxlength="12" placeholder="Número do RQE"/></label></div><button class="button secondary small" data-action="add-professional-specialty" type="button">Adicionar especialidade</button><div class="modalities-editor professional-specialties-editor">${specialties || '<div class="notice warning">Sem especialidade cadastrada. O CRM continuará sendo usado para vagas generalistas.</div>'}</div><h3>Região de alertas automáticos</h3><div class="inline-grid"><label>UF<select id="professional-opportunity-uf">${ufOptions(professionalDraft.opportunityUf)}</select></label><label>Município-base<select id="professional-opportunity-city"><option value="">Carregando municípios…</option></select></label></div><label>Raio dos alertas<select id="professional-radius"><option value="50" ${professionalDraft.opportunityRadiusKm === 50 ? 'selected' : ''}>50 km</option><option value="100" ${professionalDraft.opportunityRadiusKm === 100 ? 'selected' : ''}>100 km</option><option value="250" ${professionalDraft.opportunityRadiusKm === 250 ? 'selected' : ''}>250 km</option><option value="500" ${professionalDraft.opportunityRadiusKm === 500 ? 'selected' : ''}>500 km</option><option value="1000" ${professionalDraft.opportunityRadiusKm === 1000 ? 'selected' : ''}>Todo o estado</option></select></label><div class="profile-alert-choices"><label class="toggle-choice"><input id="professional-alerts-enabled" type="checkbox" ${professionalDraft.opportunityAlertsEnabled ? 'checked' : ''}/><span><strong>Ativar alertas regionais</strong><small>Usar esta região para novidades relevantes.</small></span></label><label class="toggle-choice"><input id="professional-company-alerts" type="checkbox" ${professionalDraft.companyAlertsEnabled ? 'checked' : ''}/><span><strong>Novos potenciais contratantes</strong><small>Avisar quando uma instituição nova for identificada.</small></span></label><label class="toggle-choice"><input id="professional-public-alerts" type="checkbox" ${professionalDraft.publicContractAlertsEnabled ? 'checked' : ''}/><span><strong>Licitações e contratações públicas</strong><small>Avisar quando houver nova oportunidade compatível.</small></span></label></div><p class="field-hint">O GPS do aparelho não é utilizado. As buscas manuais possuem filtros independentes.</p></div><div class="modal-final-actions"><button class="button primary" data-action="save-professional-profile" type="button">Salvar perfil</button><button class="button secondary" data-action="close-modal" type="button">Cancelar</button></div></div></section></div>`;
   populateSpecialtySelect($('#professional-specialty'));
   void populateOpportunityMunicipalities();
 }
@@ -2196,7 +2300,7 @@ async function saveProfessionalProfile(button) {
       const result = await cloud.professionalProfile({ action: 'save', ...professionalDraft });
       professionalProfile = result.professional;
     } else {
-      professionalProfile = { opportunityCity: professionalDraft.opportunityCity, opportunityCityCode: professionalDraft.opportunityCityCode, opportunityUf: professionalDraft.opportunityUf, opportunityRadiusKm: professionalDraft.opportunityRadiusKm, registrations: [{ crmUf: professionalDraft.crmUf, crmNumber: professionalDraft.crmNumber, primary: true, status: 'self_reported' }], specialties: professionalDraft.specialties };
+      professionalProfile = { opportunityCity: professionalDraft.opportunityCity, opportunityCityCode: professionalDraft.opportunityCityCode, opportunityUf: professionalDraft.opportunityUf, opportunityRadiusKm: professionalDraft.opportunityRadiusKm, opportunityAlertsEnabled: professionalDraft.opportunityAlertsEnabled, companyAlertsEnabled: professionalDraft.companyAlertsEnabled, publicContractAlertsEnabled: professionalDraft.publicContractAlertsEnabled, registrations: [{ crmUf: professionalDraft.crmUf, crmNumber: professionalDraft.crmNumber, primary: true, status: 'self_reported' }], specialties: professionalDraft.specialties };
     }
     professionalDraft = null;
     marketIntelligenceCache = null;
@@ -2209,6 +2313,236 @@ async function saveProfessionalProfile(button) {
     button.disabled = false;
     button.textContent = original;
   }
+}
+
+function fiscalStatusLabel(status) {
+  return {
+    not_started: ['Pendente', 'inactive'],
+    agreement_generated: ['Aguardando assinatura', 'inactive'],
+    agreement_signed: ['Contrato assinado', ''],
+    authorization_pending: ['Autorização pendente', 'inactive'],
+    ready_for_pilot: ['Pronto para homologação', ''],
+  }[status] || ['Pendente', 'inactive'];
+}
+
+function renderFiscalIntegration() {
+  const fiscalRoot = appState.fiscalIntegration || emptyState().fiscalIntegration;
+  const fiscalWorkplaces = appState.workplaces.filter((item) => cnpjDigits(item.payerCnpj).length === 14);
+  if (!fiscalRoot.selectedWorkplaceId || !fiscalWorkplaces.some((item) => item.id === fiscalRoot.selectedWorkplaceId)) fiscalRoot.selectedWorkplaceId = fiscalWorkplaces[0]?.id || '';
+  const selectedFiscalWorkplace = fiscalWorkplaces.find((item) => item.id === fiscalRoot.selectedWorkplaceId) || null;
+  const savedConnection = fiscalRoot.connections.find((item) => item.workplaceId === selectedFiscalWorkplace?.id);
+  const fiscal = savedConnection ? { ...fiscalRoot, ...savedConnection } : fiscalRoot;
+  const [statusLabel, statusClass] = fiscalStatusLabel(fiscal.status);
+  const signed = fiscal.status === 'agreement_signed' || fiscal.status === 'authorization_pending' || fiscal.status === 'ready_for_pilot';
+  const agreementSummary = fiscal.agreementAcceptedAt
+    ? `<div class="card fiscal-agreement-summary"><span class="round-icon">✓</span><div><strong>Aceite registrado</strong><p>${escapeHtml(fiscal.agreementSigner)} · ${new Date(fiscal.agreementAcceptedAt).toLocaleString('pt-BR')} · documento final ${escapeHtml(fiscal.subjectLast4 || '----')}</p></div><span class="badge ${statusClass}">${escapeHtml(statusLabel)}</span></div>`
+    : '';
+  const uploadMarkup = fiscal.agreementAcceptedAt
+    ? `<section class="card fiscal-step"><span class="fiscal-step-number">2</span><div><h2>Assine e devolva o PDF</h2><p>Abra o portal oficial, assine o arquivo baixado e anexe o PDF assinado. Não imprima o documento depois da assinatura, pois isso remove a assinatura digital.</p><div class="fiscal-actions"><a class="button secondary" href="${GOVBR_SIGNATURE_URL}" target="_blank" rel="noopener">Abrir Assinaturas GOV.BR</a><label class="button primary file-button">${signed ? 'Substituir PDF assinado' : 'Anexar PDF assinado'}<input id="fiscal-signed-file" type="file" accept="application/pdf,.pdf" /></label></div>${fiscal.signedDocumentName ? `<p class="field-hint">Documento protegido: ${escapeHtml(fiscal.signedDocumentName)}</p>` : ''}</div></section>`
+    : '';
+  const authorizationMarkup = signed
+    ? `<section class="card fiscal-step"><span class="fiscal-step-number">3</span><div><h2>Conceda o escopo necessário na Receita Federal</h2><p>A autorização é feita no canal oficial, com conta GOV.BR prata ou ouro. Confira o representante, limite os serviços e defina um prazo. Não conceda poderes genéricos.</p><div class="notice warning"><strong>Conector ainda em homologação</strong><br/>A assinatura e a autorização não iniciam coleta automática. A sincronização será ativada somente após validação do representante, do provedor fiscal e do escopo técnico.</div><a class="button secondary" href="${RFB_AUTHORIZATION_URL}" target="_blank" rel="noopener">Abrir Autorizações de Acesso</a></div></section>`
+    : '';
+  screen.innerHTML = `<div class="screen-stack fiscal-page">${pageHeading('Conexão protegida', 'Integração fiscal e e-CAC', 'Prepare a autorização para importar e conferir documentos fiscais sem compartilhar sua senha.')}
+    <div class="notice success"><strong>Suas credenciais permanecem fora do MedRecebe</strong><br/>Nunca solicitamos senha GOV.BR, senha do e-CAC, código de autenticação ou chave privada do certificado.</div>
+    ${agreementSummary}
+    <section class="card fiscal-step"><span class="fiscal-step-number">1</span><div><h2>Leia e gere o termo</h2><p>O aceite registra a versão do termo e gera um PDF para assinatura. O número completo é usado somente para montar o arquivo e não é salvo no estado da aplicação.</p><div class="form-grid fiscal-agreement-form"><label>Documento fiscal<select id="fiscal-subject-type"><option value="cnpj" ${fiscal.subjectType === 'cnpj' ? 'selected' : ''}>CNPJ prestador</option><option value="cpf" ${fiscal.subjectType === 'cpf' ? 'selected' : ''}>CPF prestador</option></select></label><label>Número do documento<input id="fiscal-subject" inputmode="numeric" autocomplete="off" placeholder="${fiscal.subjectType === 'cpf' ? '000.000.000-00' : '00.000.000/0000-00'}" /></label><label>Nome completo do signatário<input id="fiscal-signer" autocomplete="name" value="${escapeHtml(fiscal.agreementSigner || appState.profile?.name || '')}" /></label><label class="toggle-choice"><input id="fiscal-confidentiality-accept" type="checkbox"/><span><strong>Li e aceito o termo de confidencialidade</strong><small>Versão ${FISCAL_AGREEMENT_VERSION}</small></span></label><label class="toggle-choice"><input id="fiscal-minimum-scope" type="checkbox"/><span><strong>Usarei o menor escopo necessário</strong><small>Não concederei poderes ou serviços alheios à conciliação fiscal.</small></span></label></div><div class="fiscal-actions"><a class="button secondary" href="confidencialidade-fiscal.html" target="_blank" rel="noopener">Ler termo completo</a><button class="button primary" data-action="download-fiscal-agreement" type="button">Gerar contrato em PDF</button></div></div></section>
+    ${uploadMarkup}${authorizationMarkup}
+    <details class="card intelligence-method"><summary>Por que não existe um botão de login no e-CAC?</summary><p>O canal correto é uma Autorização de Acesso limitada ou um conector fiscal homologado. Automatizar a tela do e-CAC ou guardar senha GOV.BR seria frágil e incompatível com o nível de proteção exigido para dados fiscais.</p></details></div>`;
+  const fiscalPjMarkup = fiscalWorkplaces.length
+    ? `<section class="fiscal-pj-list"><div class="section-heading"><div><p class="eyebrow">CONEXÕES POR PJ</p><h2>Empresas prestadoras cadastradas</h2><p class="section-subtitle">Cada CNPJ possui aceite, assinatura, autorização e checkpoint de XML próprios.</p></div></div><div class="fiscal-pj-grid">${fiscalWorkplaces.map((workplace) => { const connection = fiscalRoot.connections.find((item) => item.workplaceId === workplace.id); const [label, style] = fiscalStatusLabel(connection?.status || 'not_started'); return `<button class="card fiscal-pj-card ${workplace.id === selectedFiscalWorkplace?.id ? 'selected' : ''}" data-action="select-fiscal-workplace" data-id="${workplace.id}" type="button"><span><strong>${escapeHtml(workplace.name)}</strong><small>${escapeHtml(workplace.payerLegalName || '')}<br/>CNPJ ${formatCnpj(workplace.payerCnpj)}</small></span><span class="badge ${style}">${escapeHtml(label)}</span></button>`; }).join('')}</div></section>`
+    : emptyCard('Cadastre uma PJ prestadora', 'Informe o CNPJ em Locais e modalidades para preparar a importação automática de XML.', '<button class="button primary small" data-nav="workplaces" type="button">Abrir Locais e modalidades</button>');
+  screen.querySelector('.notice.success')?.insertAdjacentHTML('afterend', fiscalPjMarkup);
+  const subjectInput = $('#fiscal-subject');
+  if (subjectInput && selectedFiscalWorkplace) subjectInput.value = formatCnpj(selectedFiscalWorkplace.payerCnpj);
+  const firstStepTitle = screen.querySelector('.fiscal-step h2');
+  if (firstStepTitle) firstStepTitle.textContent = 'Leia e gere o termo desta PJ';
+  if (signed) screen.querySelector('.intelligence-method')?.insertAdjacentHTML('beforebegin', '<section class="card fiscal-step"><span class="fiscal-step-number">4</span><div><h2>Recebimento automático do XML</h2><p>Após homologação, o conector consulta a distribuição de documentos por NSU, valida assinatura e estrutura do XML, evita duplicidades e relaciona o CNPJ do pagador aos atendimentos desta PJ.</p><div class="fiscal-xml-flow"><span>ADN/NFS-e</span><b>→</b><span>Validação</span><b>→</b><span>Cofre privado</span><b>→</b><span>Conciliação</span></div><p class="field-hint">Aguardando credencial fiscal ou provedor homologado. Nenhuma coleta automática está ativa ainda.</p></div></section>');
+}
+
+function fiscalSubjectLabel(type, digits) {
+  const last4 = digits.slice(-4);
+  return `${type === 'cpf' ? 'CPF' : 'CNPJ'} final ${last4}`;
+}
+
+async function downloadFiscalAgreement() {
+  const type = $('#fiscal-subject-type')?.value === 'cpf' ? 'cpf' : 'cnpj';
+  const digits = type === 'cpf' ? onlyDigits($('#fiscal-subject')?.value || '') : cnpjDigits($('#fiscal-subject')?.value || '');
+  const signerName = String($('#fiscal-signer')?.value || '').trim();
+  const validLength = type === 'cpf' ? digits.length === 11 : digits.length === 14;
+  if (!validLength) return showToast(`Informe um ${type.toUpperCase()} válido.`);
+  if (signerName.length < 5) return showToast('Informe o nome completo do signatário.');
+  if (!$('#fiscal-confidentiality-accept')?.checked || !$('#fiscal-minimum-scope')?.checked) return showToast('Confirme os dois aceites antes de gerar o contrato.');
+  if (!window.MedRecebePdf?.buildFiscalAgreement) return showToast('Atualize a página para carregar o gerador do contrato.');
+  const acceptedAt = new Date().toISOString();
+  const agreementId = id('fiscal-agreement');
+  const selectedWorkplaceId = appState.fiscalIntegration?.selectedWorkplaceId || '';
+  if (type === 'cnpj' && selectedWorkplaceId) {
+    const registered = appState.workplaces.find((item) => item.id === selectedWorkplaceId);
+    if (registered && cnpjDigits(registered.payerCnpj) !== digits) return showToast('O CNPJ deve corresponder à PJ selecionada. Corrija o cadastro do local se necessário.');
+  }
+  const pdf = window.MedRecebePdf.buildFiscalAgreement({
+    signerName,
+    subjectLabel: fiscalSubjectLabel(type, digits),
+    version: FISCAL_AGREEMENT_VERSION,
+    acceptedAt: new Date(acceptedAt).toLocaleString('pt-BR'),
+    generatedAt: new Date(acceptedAt).toLocaleString('pt-BR'),
+    agreementId,
+  });
+  const file = new File([pdf], `termo-confidencialidade-medrecebe-${digits.slice(-4)}.pdf`, { type: 'application/pdf' });
+  downloadReconciliationFile(file);
+  const connection = {
+    ...(appState.fiscalIntegration.connections || []).find((item) => item.workplaceId === selectedWorkplaceId),
+    workplaceId: selectedWorkplaceId,
+    status: 'agreement_generated',
+    agreementVersion: FISCAL_AGREEMENT_VERSION,
+    agreementAcceptedAt: acceptedAt,
+    agreementSigner: signerName,
+    agreementId,
+    subjectType: type,
+    subjectLast4: digits.slice(-4),
+    providerCode: 'nfse_adn',
+    xmlSyncStatus: 'pending_credential',
+  };
+  appState.fiscalIntegration = { ...appState.fiscalIntegration, connections: [...(appState.fiscalIntegration.connections || []).filter((item) => item.workplaceId !== selectedWorkplaceId), connection] };
+  saveState();
+  renderFiscalIntegration();
+  showToast('Contrato gerado. Assine o PDF no portal oficial e anexe o arquivo assinado.');
+}
+
+async function uploadSignedFiscalAgreement(file) {
+  if (!file || (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf'))) throw new Error('Selecione o PDF assinado.');
+  if (file.size > 10 * 1024 * 1024) throw new Error('O contrato assinado deve ter no máximo 10 MB.');
+  const selectedWorkplaceId = appState.fiscalIntegration?.selectedWorkplaceId || '';
+  const currentConnection = (appState.fiscalIntegration.connections || []).find((item) => item.workplaceId === selectedWorkplaceId) || {};
+  const recordId = currentConnection.agreementId || id('fiscal-agreement');
+  const documentId = `document-${recordId}`;
+  if (isCloudMode() && !appState.demo) {
+    await cloud.uploadDocument({ documentId, recordId, documentType: 'fiscal_agreement', fileName: file.name, mimeType: 'application/pdf', dataBase64: await fileAsBase64(file) });
+  }
+  const connection = { ...currentConnection, workplaceId: selectedWorkplaceId, status: 'agreement_signed', agreementId: recordId, signedDocumentId: documentId, signedDocumentName: file.name, signedAt: new Date().toISOString() };
+  appState.fiscalIntegration = { ...appState.fiscalIntegration, connections: [...(appState.fiscalIntegration.connections || []).filter((item) => item.workplaceId !== selectedWorkplaceId), connection] };
+  saveState();
+  renderFiscalIntegration();
+  showToast('Contrato assinado armazenado com proteção e auditoria.');
+}
+
+const PROFESSIONAL_AREAS = {
+  all: 'Todas as áreas', medical: 'Medicina', nursing: 'Enfermagem', physiotherapy: 'Fisioterapia', psychology: 'Psicologia', nutrition: 'Nutrição', pharmacy: 'Farmácia', administration: 'Administração em saúde', technician: 'Técnicos e auxiliares', other: 'Outra área',
+};
+const CONTRACT_TYPES = { all: 'Todos os vínculos', pj: 'Pessoa jurídica / prestação', clt: 'CLT', shift: 'Plantão', credentialing: 'Credenciamento', temporary: 'Temporário', internship: 'Estágio / residência', other: 'Outro' };
+const PUBLIC_CONTRACT_CATEGORIES = { all: 'Todos os tipos', credentialing: 'Credenciamento médico', shifts: 'Plantões e urgência', specialized: 'Serviços especializados', diagnostics: 'Diagnóstico e exames', occupational: 'Saúde ocupacional', telemedicine: 'Telemedicina', general: 'Serviços médicos gerais' };
+
+function ensureMarketplaceSearch() {
+  const search = appState.marketplace.search;
+  const primary = professionalProfile?.registrations?.find((item) => item.primary) || professionalProfile?.registrations?.[0];
+  if (!search.uf) {
+    search.uf = professionalProfile?.opportunityUf || primary?.crmUf || 'SP';
+    search.city = professionalProfile?.opportunityCity || '';
+    search.cityCode = professionalProfile?.opportunityCityCode || '';
+    search.radiusKm = Number(professionalProfile?.opportunityRadiusKm) || 1000;
+    saveState();
+  }
+  marketplaceMode = appState.marketplace.mode || marketplaceMode;
+  return search;
+}
+
+function demoMarketplaceData() {
+  if (!appState.marketplace.demoPostings.length) appState.marketplace.demoPostings = [
+    { id: 'demo-op-1', source: 'MedRecebe', title: 'Médico plantonista - pronto atendimento', organization: 'Hospital Regional Modelo', city: 'Campinas', uf: 'SP', professionalArea: 'medical', contractType: 'shift', description: 'Escala de plantões para atendimento adulto. CRM ativo obrigatório.', compensationMinCents: 140000, compensationMaxCents: 180000, publishedAt: new Date().toISOString(), closesAt: new Date(Date.now() + 12 * 86400000).toISOString(), status: 'published' },
+    { id: 'demo-op-2', source: 'MedRecebe', title: 'Fisioterapeuta respiratório', organization: 'Clínica Integra Saúde', city: 'São Paulo', uf: 'SP', professionalArea: 'physiotherapy', contractType: 'pj', description: 'Atuação ambulatorial e apoio a tratamentos contínuos.', compensationMinCents: 650000, compensationMaxCents: 850000, publishedAt: new Date().toISOString(), closesAt: new Date(Date.now() + 20 * 86400000).toISOString(), status: 'published' },
+  ];
+  return { opportunities: appState.marketplace.demoPostings, organizations: appState.marketplace.demoOrganization ? [appState.marketplace.demoOrganization] : [], postings: appState.marketplace.demoPostings.filter((item) => item.organizationId), workers: appState.marketplace.demoWorkers, applications: appState.marketplace.demoApplications };
+}
+
+function marketplaceOpportunityCard(item) {
+  const area = PROFESSIONAL_AREAS[item.professionalArea] || item.professionalArea || 'Profissional de saúde';
+  const contract = CONTRACT_TYPES[item.contractType] || item.contractType || 'A combinar';
+  const compensation = item.compensationMinCents ? `${currency(item.compensationMinCents)}${item.compensationMaxCents && item.compensationMaxCents !== item.compensationMinCents ? ` a ${currency(item.compensationMaxCents)}` : ''}` : 'A combinar';
+  const applied = (marketplaceCache?.applications || []).some((application) => application.opportunityId === item.id) || appState.marketplace.demoApplications.some((application) => application.opportunityId === item.id);
+  return `<article class="card marketplace-opportunity-card"><div class="opportunity-card-head"><span class="source-pill ${item.source === 'MedRecebe' ? 'verified' : ''}">${escapeHtml(item.source || 'MedRecebe')}</span><small>${escapeHtml(area)}</small></div><h3>${escapeHtml(item.title)}</h3><p><strong>${escapeHtml(item.organization || '')}</strong> · ${escapeHtml(item.city || '')}/${escapeHtml(item.uf || '')}</p><p>${escapeHtml(item.description || 'Consulte os detalhes da oportunidade.')}</p><div class="opportunity-matches"><span>${escapeHtml(contract)}</span></div><div class="opportunity-footer"><span><small>REMUNERAÇÃO</small><strong>${escapeHtml(compensation)}</strong></span><button class="button ${applied ? 'secondary' : 'primary'} small" data-action="apply-opportunity" data-id="${escapeHtml(item.id)}" type="button" ${applied ? 'disabled' : ''}>${applied ? 'Interesse enviado' : 'Tenho interesse'}</button></div></article>`;
+}
+
+function marketplaceFiltersMarkup(search) {
+  return `<div class="card marketplace-filters"><div class="form-grid"><div class="inline-grid"><label>Estado<select id="marketplace-uf">${ufOptions(search.uf)}</select></label><label>Cidade<select id="marketplace-city"><option value="">${search.city ? escapeHtml(search.city) : 'Todo o estado'}</option></select></label></div><div class="inline-grid"><label>Raio<select id="marketplace-radius"><option value="50" ${search.radiusKm === 50 ? 'selected' : ''}>50 km</option><option value="100" ${search.radiusKm === 100 ? 'selected' : ''}>100 km</option><option value="250" ${search.radiusKm === 250 ? 'selected' : ''}>250 km</option><option value="500" ${search.radiusKm === 500 ? 'selected' : ''}>500 km</option><option value="1000" ${search.radiusKm >= 1000 ? 'selected' : ''}>Todo o estado</option></select></label><label>Área profissional<select id="marketplace-area">${Object.entries(PROFESSIONAL_AREAS).map(([value, label]) => `<option value="${value}" ${search.professionalArea === value ? 'selected' : ''}>${label}</option>`).join('')}</select></label></div><label>Tipo de vínculo<select id="marketplace-contract-type">${Object.entries(CONTRACT_TYPES).map(([value, label]) => `<option value="${value}" ${search.contractType === value ? 'selected' : ''}>${label}</option>`).join('')}</select></label></div><button class="button primary" data-action="search-marketplace" type="button">Buscar oportunidades</button><p class="field-hint">Este filtro é independente da região de alertas do seu perfil.</p></div>`;
+}
+
+async function populateMarketplaceMunicipalities() {
+  const select = $('#marketplace-city');
+  const search = appState.marketplace.search;
+  if (!select || !search.uf || marketplaceMunicipalitiesLoading) return;
+  marketplaceMunicipalitiesLoading = true;
+  select.disabled = true;
+  try {
+    const directory = await loadMunicipalityDirectory(search.uf);
+    if (!$('#marketplace-city')) return;
+    select.innerHTML = `<option value="">Todo o estado</option>${directory.municipalities.map((item) => `<option value="${item.ibgeCode}" data-name="${escapeHtml(item.name)}" ${item.ibgeCode === search.cityCode ? 'selected' : ''}>${escapeHtml(item.name)}</option>`).join('')}`;
+  } catch {
+    select.innerHTML = '<option value="">Municípios indisponíveis</option>';
+  } finally {
+    select.disabled = false;
+    marketplaceMunicipalitiesLoading = false;
+  }
+}
+
+async function marketplaceTerritory() {
+  const search = ensureMarketplaceSearch();
+  const directory = await loadMunicipalityDirectory(search.uf);
+  const origin = directory.municipalities.find((item) => item.ibgeCode === search.cityCode) || null;
+  const radiusKm = Number(search.radiusKm) || 1000;
+  const municipalities = radiusKm >= 1000 || !origin ? directory.municipalities : directory.municipalities.filter((item) => haversineKm(origin, item) <= radiusKm);
+  return { uf: search.uf, origin, radiusKm, municipalityCodes: municipalities.map((item) => item.ibgeCode), directory };
+}
+
+async function loadMarketplace(force = false) {
+  if (marketplaceLoading || (marketplaceCache && !force)) return;
+  marketplaceLoading = true;
+  marketplaceError = '';
+  if (currentRoute === 'opportunities') renderOpportunities();
+  try {
+    if (appState.demo || !isCloudMode()) marketplaceCache = demoMarketplaceData();
+    else {
+      const search = ensureMarketplaceSearch();
+      const territory = await marketplaceTerritory();
+      const response = await cloud.opportunities({ action: 'list', uf: search.uf, professionalArea: search.professionalArea, contractType: search.contractType });
+      if (territory.radiusKm < 1000 && territory.origin) {
+        const allowedNames = new Set(territory.directory.municipalities.filter((item) => territory.municipalityCodes.includes(item.ibgeCode)).map((item) => normalizeDirectoryText(item.name)));
+        response.opportunities = (response.opportunities || []).filter((item) => allowedNames.has(normalizeDirectoryText(item.city || '')));
+      }
+      marketplaceCache = response;
+    }
+  } catch (error) {
+    marketplaceError = error instanceof Error ? error.message : 'Não foi possível carregar as oportunidades.';
+  } finally {
+    marketplaceLoading = false;
+    if (currentRoute === 'opportunities') renderOpportunities();
+  }
+}
+
+function professionalOpportunityMarkup(search) {
+  const items = marketplaceCache?.opportunities || [];
+  const list = marketplaceLoading
+    ? '<div class="card intelligence-loading"><span class="sync-spinner" aria-hidden="true"></span><strong>Buscando oportunidades</strong><p>Consultando ofertas publicadas na região escolhida.</p></div>'
+    : marketplaceError ? `<div class="notice warning">${escapeHtml(marketplaceError)}</div>`
+      : items.length ? `<div class="opportunity-list">${items.map(marketplaceOpportunityCard).join('')}</div>` : emptyCard('Nenhuma oferta com estes filtros', 'Altere a cidade, o raio, a profissão ou o tipo de vínculo.');
+  return `${marketplaceFiltersMarkup(search)}<section class="intelligence-section"><div class="section-heading"><div><p class="eyebrow">OFERTAS DIRETAS</p><h2>Oportunidades publicadas</h2><p class="section-subtitle">Empresas e órgãos contratantes são responsáveis pelas condições informadas e pela seleção.</p></div></div>${list}</section>`;
+}
+
+function companyOpportunityMarkup() {
+  const organization = marketplaceCache?.organizations?.[0] || appState.marketplace.demoOrganization;
+  if (!organization) return `<form class="card marketplace-company-form" id="marketplace-organization-form"><h2>Pré-cadastro do contratante</h2><p>Cadastre a organização para publicar ofertas e vincular profissionais que trabalharão e receberão pagamentos.</p><div class="form-grid"><label>Tipo<select id="marketplace-org-type"><option value="company">Empresa privada</option><option value="government">Órgão público</option></select></label><label>Razão Social<input id="marketplace-org-legal-name" required /></label><label>Nome fantasia<input id="marketplace-org-trade-name" required /></label><label>CNPJ<input id="marketplace-org-cnpj" inputmode="numeric" maxlength="18" required /></label><div class="inline-grid"><label>UF<select id="marketplace-org-uf">${ufOptions('SP')}</select></label><label>Município<input id="marketplace-org-city" required /></label></div><label>E-mail institucional<input id="marketplace-org-email" type="email" required /></label></div><button class="button primary" type="submit">Criar cadastro da organização</button></form>`;
+  const postings = marketplaceCache?.postings || [];
+  const workers = marketplaceCache?.workers || [];
+  return `<div class="card marketplace-org-summary"><div><span class="source-pill verified">CONTRATANTE</span><h2>${escapeHtml(organization.tradeName || organization.legalName)}</h2><p>${escapeHtml(organization.city || '')}/${escapeHtml(organization.uf || '')}</p></div></div><div class="marketplace-company-grid"><form class="card" id="marketplace-opportunity-form"><h2>Publicar oportunidade</h2><div class="form-grid"><label>Título<input id="marketplace-post-title" required placeholder="Ex.: Médico plantonista" /></label><div class="inline-grid"><label>Área<select id="marketplace-post-area">${Object.entries(PROFESSIONAL_AREAS).filter(([value]) => value !== 'all').map(([value, label]) => `<option value="${value}">${label}</option>`).join('')}</select></label><label>Vínculo<select id="marketplace-post-contract">${Object.entries(CONTRACT_TYPES).filter(([value]) => value !== 'all').map(([value, label]) => `<option value="${value}">${label}</option>`).join('')}</select></label></div><label>Especialidade ou função<input id="marketplace-post-specialty" placeholder="Ex.: Cardiologia" /></label><div class="inline-grid"><label>UF<select id="marketplace-post-uf">${ufOptions(organization.uf || 'SP')}</select></label><label>Município<input id="marketplace-post-city" value="${escapeHtml(organization.city || '')}" required /></label></div><label>Descrição<textarea id="marketplace-post-description" required></textarea></label><div class="inline-grid"><label>Remuneração mínima<input id="marketplace-post-min" inputmode="decimal" placeholder="0,00" /></label><label>Remuneração máxima<input id="marketplace-post-max" inputmode="decimal" placeholder="0,00" /></label></div></div><button class="button primary" type="submit">Publicar oferta</button></form><form class="card" id="marketplace-worker-form"><h2>Adicionar profissional</h2><p>O profissional receberá o vínculo no ecossistema MedRecebe quando o e-mail corresponder a uma conta.</p><div class="form-grid"><label>Nome<input id="marketplace-worker-name" required /></label><label>E-mail<input id="marketplace-worker-email" type="email" required /></label><label>Área profissional<select id="marketplace-worker-area">${Object.entries(PROFESSIONAL_AREAS).filter(([value]) => value !== 'all').map(([value, label]) => `<option value="${value}">${label}</option>`).join('')}</select></label><label>CRM/registro profissional (opcional)<input id="marketplace-worker-registration" /></label></div><button class="button secondary" type="submit">Adicionar profissional</button></form></div><section class="intelligence-section"><div class="section-heading"><div><p class="eyebrow">GESTÃO</p><h2>Publicações e profissionais</h2></div></div><div class="marketplace-management-grid"><div class="card"><h3>Ofertas publicadas</h3>${postings.length ? postings.map((item) => `<p><strong>${escapeHtml(item.title)}</strong><br/><small>${escapeHtml(item.city)}/${escapeHtml(item.uf)} · ${escapeHtml(CONTRACT_TYPES[item.contractType] || item.contractType)}</small></p>`).join('') : '<p class="muted">Nenhuma oferta publicada.</p>'}</div><div class="card"><h3>Profissionais vinculados</h3>${workers.length ? workers.map((item) => `<p><strong>${escapeHtml(item.name)}</strong><br/><small>${escapeHtml(item.email)} · ${escapeHtml(PROFESSIONAL_AREAS[item.professionalArea] || item.professionalArea)}</small></p>`).join('') : '<p class="muted">Nenhum profissional adicionado.</p>'}</div></div></section>`;
+}
+
+function renderOpportunities() {
+  const search = ensureMarketplaceSearch();
+  appState.marketplace.mode = marketplaceMode;
+  const content = marketplaceMode === 'company' ? companyOpportunityMarkup() : professionalOpportunityMarkup(search);
+  screen.innerHTML = `<div class="screen-stack opportunities-page">${pageHeading('Ecossistema de trabalho', 'Oportunidades', 'Encontre trabalho, publique necessidades e conecte contratantes aos profissionais que receberão os repasses.')}<div class="segmented-control marketplace-mode"><button class="${marketplaceMode === 'professional' ? 'active' : ''}" data-action="set-marketplace-mode" data-value="professional" type="button">Sou profissional</button><button class="${marketplaceMode === 'company' ? 'active' : ''}" data-action="set-marketplace-mode" data-value="company" type="button">Sou contratante</button></div>${content}</div>`;
+  if (marketplaceMode === 'professional') void populateMarketplaceMunicipalities();
+  if (!marketplaceCache && !marketplaceLoading && !marketplaceError) void loadMarketplace();
 }
 
 function renderAccount() {
@@ -2947,6 +3281,55 @@ async function handleClick(event) {
     marketIntelligenceError = '';
     void loadMarketIntelligence(true);
   }
+  if (action === 'download-fiscal-agreement') void downloadFiscalAgreement();
+  if (action === 'select-fiscal-workplace') {
+    appState.fiscalIntegration.selectedWorkplaceId = targetId;
+    saveState();
+    renderFiscalIntegration();
+  }
+  if (action === 'set-marketplace-mode') {
+    marketplaceMode = value === 'company' ? 'company' : 'professional';
+    appState.marketplace.mode = marketplaceMode;
+    saveState();
+    renderOpportunities();
+  }
+  if (action === 'search-marketplace') {
+    if (currentRoute === 'intelligence') {
+      marketIntelligenceCache = persistedMarketCache();
+      marketIntelligenceError = '';
+      privateProspectsError = '';
+      void loadMarketIntelligence(true);
+      void ensurePrivateProspects();
+    } else {
+      marketplaceCache = null;
+      marketplaceError = '';
+      void loadMarketplace(true);
+    }
+  }
+  if (action === 'apply-opportunity') {
+    const opportunity = (marketplaceCache?.opportunities || []).find((item) => item.id === targetId);
+    if (!opportunity) return showToast('Esta oportunidade não está mais disponível.');
+    target.disabled = true;
+    target.textContent = 'Enviando…';
+    try {
+      let application;
+      if (appState.demo || !isCloudMode()) {
+        application = { id: id('application'), opportunityId: targetId, status: 'interested', createdAt: new Date().toISOString() };
+        appState.marketplace.demoApplications = [...appState.marketplace.demoApplications.filter((item) => item.opportunityId !== targetId), application];
+        saveState();
+      } else {
+        const result = await cloud.opportunities({ action: 'apply', opportunityId: targetId });
+        application = result.application;
+      }
+      marketplaceCache = { ...(marketplaceCache || {}), applications: [...(marketplaceCache?.applications || []).filter((item) => item.opportunityId !== targetId), application] };
+      renderOpportunities();
+      showToast('Interesse enviado ao contratante.');
+    } catch (error) {
+      target.disabled = false;
+      target.textContent = 'Tenho interesse';
+      showToast(error instanceof Error ? error.message : 'Não foi possível enviar seu interesse.');
+    }
+  }
   if (action === 'upgrade-plan') {
     modalRoot.innerHTML = '';
     showBilling();
@@ -2954,6 +3337,24 @@ async function handleClick(event) {
   if (action === 'new-workplace') newWorkplace();
   if (action === 'create-workplace-from-prospect') newWorkplaceFromProspect(targetId);
   if (action === 'edit-workplace') editWorkplace(targetId);
+  if (action === 'delete-workplace') {
+    const workplace = appState.workplaces.find((item) => item.id === targetId);
+    if (workplace) {
+      const recordIds = [...new Set(appState.attendances.filter((item) => item.workplaceId === targetId).map(attendanceRecordId).filter(Boolean))];
+      const detail = recordIds.length ? ` Também serão excluídos ${recordIds.length} registro(s) de atendimento e seus comprovantes.` : '';
+      if (confirm(`Excluir definitivamente ${workplace.name}?${detail} Esta ação não pode ser desfeita.`)) {
+        appState.workplaces = appState.workplaces.filter((item) => item.id !== targetId);
+        appState.attendances = appState.attendances.filter((item) => item.workplaceId !== targetId);
+        appState.fiscalIntegration.connections = (appState.fiscalIntegration.connections || []).filter((item) => item.workplaceId !== targetId);
+        if (selectedWorkplaceId === targetId) selectedWorkplaceId = '';
+        saveState();
+        renderWorkplaces();
+        if (isCloudMode() && recordIds.length) {
+          Promise.allSettled(recordIds.map((recordId) => cloud.deleteDocumentsForRecord(recordId))).then(() => showToast('Local, atendimentos e comprovantes excluídos.'));
+        } else showToast('Local excluído.');
+      }
+    }
+  }
   if (action === 'create-workplace-from-invoice') newWorkplaceFromInvoice(targetId);
   if (action === 'delete-invoice') {
     const invoice = (appState.invoices || []).find((item) => item.id === targetId);
@@ -3102,6 +3503,61 @@ async function handleClick(event) {
 }
 
 function handleChange(event) {
+  if (event.target.id === 'fiscal-subject-type') {
+    const input = $('#fiscal-subject');
+    if (input) input.placeholder = event.target.value === 'cpf' ? '000.000.000-00' : '00.000.000/0000-00';
+    return;
+  }
+  if (event.target.id === 'fiscal-signed-file' && event.target.files[0]) {
+    const file = event.target.files[0];
+    const label = event.target.closest('label');
+    if (label) label.classList.add('busy');
+    void uploadSignedFiscalAgreement(file)
+      .catch((error) => showToast(error instanceof Error ? error.message : 'Não foi possível armazenar o contrato assinado.'))
+      .finally(() => label?.classList.remove('busy'));
+    return;
+  }
+  if (event.target.id === 'marketplace-uf') {
+    appState.marketplace.search.uf = event.target.value || 'SP';
+    appState.marketplace.search.city = '';
+    appState.marketplace.search.cityCode = '';
+    marketplaceCache = null;
+    saveState();
+    void populateMarketplaceMunicipalities();
+    return;
+  }
+  if (event.target.id === 'marketplace-city') {
+    const option = event.target.selectedOptions[0];
+    appState.marketplace.search.cityCode = event.target.value;
+    appState.marketplace.search.city = event.target.value ? option?.dataset.name || option?.textContent || '' : '';
+    marketplaceCache = null;
+    saveState();
+    return;
+  }
+  if (event.target.id === 'marketplace-radius') {
+    appState.marketplace.search.radiusKm = Number(event.target.value) || 1000;
+    marketplaceCache = null;
+    saveState();
+    return;
+  }
+  if (event.target.id === 'marketplace-area') {
+    appState.marketplace.search.professionalArea = event.target.value || 'all';
+    marketplaceCache = null;
+    saveState();
+    return;
+  }
+  if (event.target.id === 'marketplace-contract-type') {
+    appState.marketplace.search.contractType = event.target.value || 'all';
+    marketplaceCache = null;
+    saveState();
+    return;
+  }
+  if (event.target.id === 'public-contract-category') {
+    appState.marketplace.search.publicCategory = event.target.value || 'all';
+    saveState();
+    renderIntelligence();
+    return;
+  }
   if (event.target.id === 'professional-opportunity-uf' && professionalDraft) {
     professionalDraft.opportunityUf = event.target.value;
     professionalDraft.opportunityCity = '';
@@ -3254,6 +3710,106 @@ function handleInput(event) {
 }
 
 async function handleSubmit(event) {
+  if (event.target.id === 'marketplace-organization-form') {
+    event.preventDefault();
+    const organization = {
+      organizationType: $('#marketplace-org-type').value,
+      legalName: $('#marketplace-org-legal-name').value.trim(),
+      tradeName: $('#marketplace-org-trade-name').value.trim(),
+      cnpj: cnpjDigits($('#marketplace-org-cnpj').value),
+      uf: $('#marketplace-org-uf').value,
+      city: $('#marketplace-org-city').value.trim(),
+      contactEmail: $('#marketplace-org-email').value.trim().toLowerCase(),
+    };
+    if (!isValidCnpj(organization.cnpj)) return showToast('Informe um CNPJ válido.');
+    const button = event.target.querySelector('button[type="submit"]');
+    button.disabled = true;
+    button.textContent = 'Criando…';
+    try {
+      if (appState.demo || !isCloudMode()) {
+        appState.marketplace.demoOrganization = { id: id('organization'), ...organization };
+        saveState();
+        marketplaceCache = demoMarketplaceData();
+      } else {
+        const result = await cloud.opportunities({ action: 'save-organization', ...organization });
+        marketplaceCache = { ...(marketplaceCache || {}), organizations: [result.organization], postings: [], workers: [], applications: marketplaceCache?.applications || [] };
+      }
+      renderOpportunities();
+      showToast('Organização cadastrada. Agora você já pode publicar oportunidades.');
+    } catch (error) {
+      button.disabled = false;
+      button.textContent = 'Criar cadastro da organização';
+      showToast(error instanceof Error ? error.message : 'Não foi possível criar a organização.');
+    }
+    return;
+  }
+  if (event.target.id === 'marketplace-opportunity-form') {
+    event.preventDefault();
+    const payload = {
+      title: $('#marketplace-post-title').value.trim(),
+      professionalArea: $('#marketplace-post-area').value,
+      contractType: $('#marketplace-post-contract').value,
+      specialty: $('#marketplace-post-specialty').value.trim(),
+      uf: $('#marketplace-post-uf').value,
+      city: $('#marketplace-post-city').value.trim(),
+      description: $('#marketplace-post-description').value.trim(),
+      compensationMinCents: parseMoney($('#marketplace-post-min').value),
+      compensationMaxCents: parseMoney($('#marketplace-post-max').value),
+    };
+    const button = event.target.querySelector('button[type="submit"]');
+    button.disabled = true;
+    button.textContent = 'Publicando…';
+    try {
+      let opportunity;
+      if (appState.demo || !isCloudMode()) {
+        opportunity = { id: id('opportunity'), source: 'MedRecebe', organizationId: appState.marketplace.demoOrganization.id, organization: appState.marketplace.demoOrganization.tradeName, status: 'published', publishedAt: new Date().toISOString(), ...payload };
+        appState.marketplace.demoPostings.unshift(opportunity);
+        saveState();
+      } else {
+        const result = await cloud.opportunities({ action: 'create-opportunity', ...payload });
+        opportunity = result.opportunity;
+      }
+      marketplaceCache = { ...(marketplaceCache || {}), opportunities: [opportunity, ...(marketplaceCache?.opportunities || [])], postings: [opportunity, ...(marketplaceCache?.postings || [])] };
+      renderOpportunities();
+      showToast('Oportunidade publicada.');
+    } catch (error) {
+      button.disabled = false;
+      button.textContent = 'Publicar oferta';
+      showToast(error instanceof Error ? error.message : 'Não foi possível publicar a oportunidade.');
+    }
+    return;
+  }
+  if (event.target.id === 'marketplace-worker-form') {
+    event.preventDefault();
+    const payload = {
+      name: $('#marketplace-worker-name').value.trim(),
+      email: $('#marketplace-worker-email').value.trim().toLowerCase(),
+      professionalArea: $('#marketplace-worker-area').value,
+      professionalRegistration: $('#marketplace-worker-registration').value.trim(),
+    };
+    const button = event.target.querySelector('button[type="submit"]');
+    button.disabled = true;
+    button.textContent = 'Adicionando…';
+    try {
+      let worker;
+      if (appState.demo || !isCloudMode()) {
+        worker = { id: id('worker'), organizationId: appState.marketplace.demoOrganization.id, status: 'invited', ...payload };
+        appState.marketplace.demoWorkers.unshift(worker);
+        saveState();
+      } else {
+        const result = await cloud.opportunities({ action: 'add-worker', ...payload });
+        worker = result.worker;
+      }
+      marketplaceCache = { ...(marketplaceCache || {}), workers: [worker, ...(marketplaceCache?.workers || [])] };
+      renderOpportunities();
+      showToast('Profissional adicionado ao cadastro do contratante.');
+    } catch (error) {
+      button.disabled = false;
+      button.textContent = 'Adicionar profissional';
+      showToast(error instanceof Error ? error.message : 'Não foi possível adicionar o profissional.');
+    }
+    return;
+  }
   if (event.target.id === 'attendance-form') {
     event.preventDefault();
     const workplace = appState.workplaces.find((item) => item.id === selectedWorkplaceId);

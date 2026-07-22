@@ -156,6 +156,7 @@
     analyzeInvoice: (input) => authenticatedInvoke('analyze-invoice', input),
     professionalProfile: (input = { action: 'get' }) => authenticatedInvoke('professional-profile', input),
     marketIntelligence: (input = {}) => authenticatedInvoke('market-intelligence', input),
+    opportunities: (input = { action: 'list' }) => authenticatedInvoke('opportunities', input),
     listDocuments: () => authenticatedInvoke('documents', { action: 'list' }),
     uploadDocument: (input) => authenticatedInvoke('documents', { action: 'upload', ...input }),
     deleteDocumentsForRecord: (recordId) => authenticatedInvoke('documents', { action: 'delete-record', recordId }),

@@ -1270,3 +1270,74 @@ label, .drawer nav button { font-size: 14px; }
   .modal-header,
   .modal-body { background: #fff; }
 }
+
+/* Integração fiscal e ecossistema de oportunidades. */
+.fiscal-page,
+.opportunities-page { max-width: 1180px; }
+.fiscal-step { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 16px; align-items: start; }
+.fiscal-step-number { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 6px; background: var(--blue-700); color: #fff; font-weight: 900; }
+.fiscal-step h2,
+.marketplace-company-form h2,
+.marketplace-company-grid h2 { margin: 0 0 7px; color: var(--deep); font-size: 19px; }
+.fiscal-step p,
+.marketplace-company-form p,
+.marketplace-company-grid p { color: var(--muted); line-height: 1.55; }
+.fiscal-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+.fiscal-agreement-summary { display: flex; align-items: center; gap: 13px; }
+.fiscal-agreement-summary > div { flex: 1; min-width: 0; }
+.fiscal-agreement-summary p { margin: 3px 0 0; color: var(--muted); font-size: 11px; }
+.fiscal-pj-list { display: grid; gap: 12px; }
+.fiscal-pj-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; }
+.fiscal-pj-card { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; text-align: left; }
+.fiscal-pj-card.selected { border-color: var(--blue-700); box-shadow: 0 0 0 2px rgb(0 77 182 / 12%); }
+.fiscal-pj-card span:first-child { display: grid; gap: 4px; min-width: 0; }
+.fiscal-pj-card small { color: var(--muted); font-size: 10px; line-height: 1.45; }
+.fiscal-xml-flow { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 13px; }
+.fiscal-xml-flow span { padding: 8px 10px; border: 1px solid var(--line); border-radius: 5px; background: var(--blue-050); color: var(--deep); font-size: 11px; font-weight: 800; }
+.file-button.busy { opacity: .62; pointer-events: none; }
+
+.marketplace-mode { width: min(100%, 430px); }
+.marketplace-filters,
+.market-public-filters { display: grid; gap: 14px; }
+.opportunity-list,
+.private-prospect-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(285px, 1fr)); gap: 12px; }
+.marketplace-opportunity-card { display: flex; flex-direction: column; min-height: 250px; }
+.marketplace-opportunity-card > p { color: var(--muted); font-size: 12px; line-height: 1.5; }
+.marketplace-opportunity-card .opportunity-footer { margin-top: auto; }
+.marketplace-company-grid,
+.marketplace-management-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.marketplace-org-summary { display: flex; align-items: center; justify-content: space-between; }
+.marketplace-org-summary h2 { margin: 8px 0 2px; color: var(--deep); }
+.marketplace-management-grid .card > p { padding: 10px 0; border-bottom: 1px solid var(--line); }
+.marketplace-management-grid .card > p:last-child { border-bottom: 0; }
+.profile-alert-choices { display: grid; gap: 8px; }
+
+@media (min-width: 900px) {
+  body.web-plan[data-route="fiscal"] #screen,
+  body.web-plan[data-route="opportunities"] #screen { max-width: none; }
+  body.web-plan .fiscal-agreement-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  body.web-plan .market-public-filters .form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 899px) {
+  body:has(#app-view:not([hidden])) { width: 100%; height: 100dvh; overflow: hidden; overscroll-behavior: none; }
+  #app-view.app-shell { height: 100dvh; min-height: 0; overflow: hidden; }
+  #app-view .app-header { position: fixed !important; transform: translate3d(0,0,0); }
+  #app-view #screen {
+    height: calc(100dvh - 50px - env(safe-area-inset-top));
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+  .fiscal-step { grid-template-columns: 34px minmax(0, 1fr); gap: 11px; }
+  .fiscal-step-number { width: 32px; height: 32px; }
+  .fiscal-actions,
+  .fiscal-actions .button { width: 100%; }
+  .marketplace-company-grid,
+  .marketplace-management-grid,
+  .opportunity-list,
+  .private-prospect-list { grid-template-columns: 1fr; }
+  .fiscal-pj-card { align-items: flex-start; }
+}

@@ -44,3 +44,6 @@ verify_jwt = true
 
 [functions.market-intelligence]
 verify_jwt = true
+
+[functions.opportunities]
+verify_jwt = true

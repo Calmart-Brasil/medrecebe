@@ -4,7 +4,7 @@ import { adminClient, authenticatedUser, authenticationStatus } from '../_shared
 const BUCKET = 'medrecebe-documents';
 const MAX_BYTES = 10 * 1024 * 1024;
 const SIGNED_URL_SECONDS = 60 * 60;
-const DOCUMENT_TYPES = new Set(['attendance_evidence', 'invoice']);
+const DOCUMENT_TYPES = new Set(['attendance_evidence', 'invoice', 'fiscal_agreement']);
 const MIME_EXTENSIONS: Record<string, string> = {
   'image/jpeg': 'jpg',
   'image/png': 'png',

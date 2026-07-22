@@ -77,6 +77,11 @@ const [fiscalHealthMigration, healthDataDocumentation, cnesProfessionalDownloade
   read('docs/INTEGRACAO_FISCAL_E_DADOS_ASSISTENCIAIS.md'),
   read('scripts/download-cnes-professionals.mjs'),
 ]);
+const [fiscalAgreement, opportunityMigration, opportunityFunction] = await Promise.all([
+  read('confidencialidade-fiscal.html'),
+  read('supabase/migrations/202607220002_opportunity_marketplace.sql'),
+  read('supabase/functions/opportunities/index.ts'),
+]);
 
 assert.equal(manifest.display, 'standalone');
 assert.equal(manifest.start_url, './app.html?source=homescreen');
@@ -85,7 +90,7 @@ assert.equal(manifest.orientation, 'portrait');
 assert.ok(manifest.icons.some((icon) => icon.sizes === '192x192'));
 assert.ok(manifest.icons.some((icon) => icon.sizes === '512x512'));
 
-for (const asset of ['landing.css', 'legal.css', 'styles.css', 'app.html', 'app.js', 'reconciliation-pdf.js', 'cloud.js', 'frame-guard.js', 'admin.html', 'admin.js', 'admin.css', 'manifest.webmanifest', 'termos.html', 'privacidade.html', 'cancelamento.html', 'data/institution-directory-rmsp.json', 'data/institutions/index.json', 'data/institutions/SP.json', 'data/medical-specialties.json', 'scripts/build-institution-directory.mjs', 'scripts/build-national-institution-directory.mjs', 'scripts/download-cnes-professionals.mjs', 'docs/INTEGRACAO_FISCAL_E_DADOS_ASSISTENCIAIS.md', 'supabase/migrations/202607220001_fiscal_health_data_foundation.sql', 'assets/apple-touch-icon.png', 'assets/icon-192.png', 'assets/icon-512.png', 'branding/medrecebe-liquid-glass-master.png']) {
+for (const asset of ['landing.css', 'legal.css', 'styles.css', 'app.html', 'app.js', 'reconciliation-pdf.js', 'cloud.js', 'frame-guard.js', 'admin.html', 'admin.js', 'admin.css', 'manifest.webmanifest', 'termos.html', 'privacidade.html', 'confidencialidade-fiscal.html', 'cancelamento.html', 'data/institution-directory-rmsp.json', 'data/institutions/index.json', 'data/institutions/SP.json', 'data/medical-specialties.json', 'scripts/build-institution-directory.mjs', 'scripts/build-national-institution-directory.mjs', 'scripts/download-cnes-professionals.mjs', 'docs/INTEGRACAO_FISCAL_E_DADOS_ASSISTENCIAIS.md', 'supabase/migrations/202607220001_fiscal_health_data_foundation.sql', 'supabase/migrations/202607220002_opportunity_marketplace.sql', 'supabase/functions/opportunities/index.ts', 'assets/apple-touch-icon.png', 'assets/icon-192.png', 'assets/icon-512.png', 'branding/medrecebe-liquid-glass-master.png']) {
   const file = await stat(join(root, asset));
   assert.ok(file.size > 0, `${asset} precisa existir e não pode estar vazio`);
 }
@@ -99,7 +104,7 @@ for (const marker of [
   'Conciliação',
   'Mais',
 ]) assert.ok(appHtml.includes(marker), `app.html sem: ${marker}`);
-assert.equal((appHtml.match(/<nav>[\s\S]*?<\/nav>/)?.[0].match(/<svg /g) || []).length, 6, 'menu web precisa usar os seis ícones SVG da navegação');
+assert.equal((appHtml.match(/<nav>[\s\S]*?<\/nav>/)?.[0].match(/<svg /g) || []).length, 8, 'menu lateral precisa usar os oito ícones SVG da navegação');
 
 for (const marker of ['Cadastre-se grátis', 'Freemium', 'R$ 39,90', 'Nota Fiscal', 'Cancelamento e reembolso']) {
   assert.ok(landing.includes(marker), `landing page sem: ${marker}`);
@@ -126,8 +131,8 @@ assert.ok(
   'appState só pode ser carregado depois da mensagem padrão usada pelo estado vazio',
 );
 assert.ok(!appHtml.includes('Beta local:'), 'o aviso antigo de beta local não deve aparecer na entrada');
-assert.ok(appHtml.includes('styles.css?v=29') && appHtml.includes('cloud.js?v=10') && appHtml.includes('reconciliation-pdf.js?v=2') && appHtml.includes('app.js?v=32'), 'os arquivos corrigidos precisam de cache busting');
-for (const marker of ['position: fixed', 'padding-top: calc(50px + env(safe-area-inset-top))', 'height: calc(50px + env(safe-area-inset-top))']) assert.ok(appCss.includes(marker), `cabeçalho mobile fixo sem: ${marker}`);
+assert.ok(appHtml.includes('styles.css?v=31') && appHtml.includes('cloud.js?v=10') && appHtml.includes('reconciliation-pdf.js?v=4') && appHtml.includes('app.js?v=35'), 'os arquivos corrigidos precisam de cache busting');
+for (const marker of ['position: fixed', 'padding-top: calc(50px + env(safe-area-inset-top))', 'height: calc(50px + env(safe-area-inset-top))', 'height: 100dvh', 'overflow-y: auto']) assert.ok(appCss.includes(marker), `cabeçalho mobile fixo sem: ${marker}`);
 for (const marker of ['auth-phone-country', 'auth-phone', 'Cadastre-se grátis']) assert.ok(appHtml.includes(marker), `cadastro gratuito sem: ${marker}`);
 for (const marker of ['auth-crm-uf', 'auth-crm-number', 'auth-specialty', 'Inteligência de mercado']) assert.ok(appHtml.includes(marker), `perfil profissional sem: ${marker}`);
 for (const marker of ['formatMobilePhone', 'isFreemiumAccount', 'canCreateWorkplace', 'phoneCountryCode', 'phoneNumber']) assert.ok(app.includes(marker), `plano Freemium ou celular sem: ${marker}`);
@@ -181,6 +186,10 @@ for (const marker of ['profissionais-url-download', 'ProfissionaisServlet', 'met
 for (const marker of ['normalizeSpecialties', 'self_reported', 'opportunityRadiusKm', 'cfmConnectorAvailable']) assert.ok(professionalFunction.includes(marker), `perfil profissional sem: ${marker}`);
 for (const marker of ['pncp.gov.br/api/consulta', 'MEDICAL_SERVICE_TERMS', 'regional', 'recordsInspected']) assert.ok(marketFunction.includes(marker), `radar de mercado sem: ${marker}`);
 for (const marker of ['incomeConcentration', 'loadMarketIntelligence', 'renderIntelligence', 'professionalProfile']) assert.ok(app.includes(marker), `inteligência no aplicativo sem: ${marker}`);
+for (const marker of ['renderFiscalIntegration', 'buildFiscalAgreement', 'fiscal-signed-file', 'connections', 'xmlSyncStatus']) assert.ok(app.includes(marker) || reconciliationPdf.includes(marker), `integração fiscal sem: ${marker}`);
+for (const marker of ['Confidencialidade', 'senha GOV.BR', 'chave privada', 'ti@calmart.com.br']) assert.ok(fiscalAgreement.includes(marker), `termo fiscal sem: ${marker}`);
+for (const marker of ['marketplace_organizations', 'marketplace_opportunities', 'marketplace_applications', 'marketplace_workers', 'row level security']) assert.ok(opportunityMigration.toLowerCase().includes(marker), `marketplace sem: ${marker}`);
+for (const marker of ['save-organization', 'create-opportunity', 'add-worker', "action === 'apply'", 'cnpj_hash']) assert.ok(opportunityFunction.includes(marker) || opportunityMigration.includes(marker), `API de oportunidades sem: ${marker}`);
 for (const marker of ['loadInstitutionDirectory', 'searchInstitutionDirectory', 'CNPJ_CARD_URL']) assert.ok(mobileInstitutionDirectory.includes(marker), `diretório nativo sem: ${marker}`);
 for (const marker of ['billing-view', 'R$ 39,90', 'PLANO COMPLETO', 'runtime-config.js', 'cloud.js']) {
   assert.ok(appHtml.includes(marker), `fluxo de assinatura sem: ${marker}`);
@@ -244,7 +253,7 @@ for (const [name, document] of [['Landing', landing], ['Aplicativo', `${appHtml}
   }
 }
 
-for (const marker of ['install', 'activate', 'fetch', 'caches.open', 'medrecebe-app-v38', './app.html', 'reconciliation-pdf.js?v=2', 'data/institutions/index.json', 'data/medical-specialties.json']) {
+for (const marker of ['install', 'activate', 'fetch', 'caches.open', 'medrecebe-app-v41', './app.html', 'reconciliation-pdf.js?v=4', 'data/institutions/index.json', 'data/medical-specialties.json']) {
   assert.ok(worker.includes(marker), `sw.js sem: ${marker}`);
 }
 
@@ -263,7 +272,7 @@ assert.ok(supabaseConfig.includes('[functions.request-password-reset]\nverify_jw
 assert.ok(sharedHttp.includes('Origin not allowed') && sharedHttp.includes("allowed.includes(normalized)") && !sharedHttp.includes("? origin : allowed[0]"), 'CORS precisa rejeitar origem fora da allowlist');
 assert.ok(sharedSupabase.includes('is_auth_session_active') && sharedSupabase.includes('AuthenticationError'), 'JWT revogado precisa ser rejeitado imediatamente');
 assert.ok(rateLimit.includes("HMAC") && rateLimit.includes("x-forwarded-for"), 'rate limit precisa proteger IP e identificador pseudonimizado');
-for (const protectedFunction of ['account-status', 'create-subscription', 'admin-users', 'admin-update-user', 'admin-create-user', 'sync-state', 'cancel-subscription', 'documents', 'analyze-invoice']) {
+for (const protectedFunction of ['account-status', 'create-subscription', 'admin-users', 'admin-update-user', 'admin-create-user', 'sync-state', 'cancel-subscription', 'documents', 'analyze-invoice', 'opportunities']) {
   assert.ok(supabaseConfig.includes(`[functions.${protectedFunction}]\nverify_jwt = true`), `${protectedFunction} precisa validar JWT no gateway`);
 }
 assert.ok(syncStateFunction.includes('delete source.profile'), 'estado sincronizado não pode conter CPF do perfil');

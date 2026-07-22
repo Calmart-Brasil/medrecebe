@@ -16,7 +16,7 @@ function validCrmNumber(value: string): boolean {
 async function readProfile(userId: string) {
   const admin = adminClient();
   const [profileResult, registrationResult, specialtiesResult] = await Promise.all([
-    admin.from('professional_profiles').select('opportunity_city, opportunity_city_code, opportunity_uf, opportunity_radius_km, updated_at').eq('user_id', userId).maybeSingle(),
+    admin.from('professional_profiles').select('opportunity_city, opportunity_city_code, opportunity_uf, opportunity_radius_km, opportunity_alerts_enabled, company_alerts_enabled, public_contract_alerts_enabled, updated_at').eq('user_id', userId).maybeSingle(),
     admin.from('professional_registrations').select('id, crm_uf, crm_number, is_primary, registration_status, verification_source, verified_at, source_updated_at').eq('user_id', userId).order('is_primary', { ascending: false }).order('created_at'),
     admin.from('professional_specialties').select('id, specialty_code, specialty_name, rqe_number, verification_status, verification_source, confirmed_by_user, verified_at, source_updated_at').eq('user_id', userId).order('specialty_name'),
   ]);
@@ -28,6 +28,9 @@ async function readProfile(userId: string) {
     opportunityCityCode: profileResult.data?.opportunity_city_code || '',
     opportunityUf: profileResult.data?.opportunity_uf || registrationResult.data?.find((item) => item.is_primary)?.crm_uf || '',
     opportunityRadiusKm: profileResult.data?.opportunity_radius_km || 100,
+    opportunityAlertsEnabled: profileResult.data?.opportunity_alerts_enabled ?? true,
+    companyAlertsEnabled: profileResult.data?.company_alerts_enabled ?? true,
+    publicContractAlertsEnabled: profileResult.data?.public_contract_alerts_enabled ?? true,
     registrations: (registrationResult.data || []).map((item) => ({
       id: item.id,
       crmUf: item.crm_uf,
@@ -83,6 +86,9 @@ Deno.serve(async (request) => {
     const opportunityCity = String(body.opportunityCity || '').trim().slice(0, 120);
     const opportunityCityCode = String(body.opportunityCityCode || '').replace(/\D/g, '').slice(0, 7);
     const opportunityRadiusKm = Math.min(1000, Math.max(10, Number(body.opportunityRadiusKm) || 100));
+    const opportunityAlertsEnabled = body.opportunityAlertsEnabled !== false;
+    const companyAlertsEnabled = body.companyAlertsEnabled !== false;
+    const publicContractAlertsEnabled = body.publicContractAlertsEnabled !== false;
     const specialties = normalizeSpecialties(body.specialties);
     if (!UFS.has(crmUf)) return publicError(request, 'Selecione a UF do CRM.');
     if (!validCrmNumber(crmNumber)) return publicError(request, 'Informe um número de CRM válido.');
@@ -105,6 +111,9 @@ Deno.serve(async (request) => {
       opportunity_city_code: opportunityCityCode || null,
       opportunity_uf: opportunityUf,
       opportunity_radius_km: opportunityRadiusKm,
+      opportunity_alerts_enabled: opportunityAlertsEnabled,
+      company_alerts_enabled: companyAlertsEnabled,
+      public_contract_alerts_enabled: publicContractAlertsEnabled,
     }, { onConflict: 'user_id' });
     if (profileError) throw profileError;
 
