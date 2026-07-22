@@ -5,3 +5,4 @@ Thumbs.db
 .vscode/
 supabase/.temp/
 .tmp-cnes/
+data/raw/

@@ -72,6 +72,11 @@ const [nationalInstitutionIndexText, nationalSpDirectoryText, nationalInstitutio
 const nationalInstitutionIndex = JSON.parse(nationalInstitutionIndexText);
 const nationalSpDirectory = JSON.parse(nationalSpDirectoryText);
 const medicalSpecialties = JSON.parse(medicalSpecialtiesText);
+const [fiscalHealthMigration, healthDataDocumentation, cnesProfessionalDownloader] = await Promise.all([
+  read('supabase/migrations/202607220001_fiscal_health_data_foundation.sql'),
+  read('docs/INTEGRACAO_FISCAL_E_DADOS_ASSISTENCIAIS.md'),
+  read('scripts/download-cnes-professionals.mjs'),
+]);
 
 assert.equal(manifest.display, 'standalone');
 assert.equal(manifest.start_url, './app.html?source=homescreen');
@@ -80,7 +85,7 @@ assert.equal(manifest.orientation, 'portrait');
 assert.ok(manifest.icons.some((icon) => icon.sizes === '192x192'));
 assert.ok(manifest.icons.some((icon) => icon.sizes === '512x512'));
 
-for (const asset of ['landing.css', 'legal.css', 'styles.css', 'app.html', 'app.js', 'reconciliation-pdf.js', 'cloud.js', 'frame-guard.js', 'admin.html', 'admin.js', 'admin.css', 'manifest.webmanifest', 'termos.html', 'privacidade.html', 'cancelamento.html', 'data/institution-directory-rmsp.json', 'data/institutions/index.json', 'data/institutions/SP.json', 'data/medical-specialties.json', 'scripts/build-institution-directory.mjs', 'scripts/build-national-institution-directory.mjs', 'assets/apple-touch-icon.png', 'assets/icon-192.png', 'assets/icon-512.png', 'branding/medrecebe-liquid-glass-master.png']) {
+for (const asset of ['landing.css', 'legal.css', 'styles.css', 'app.html', 'app.js', 'reconciliation-pdf.js', 'cloud.js', 'frame-guard.js', 'admin.html', 'admin.js', 'admin.css', 'manifest.webmanifest', 'termos.html', 'privacidade.html', 'cancelamento.html', 'data/institution-directory-rmsp.json', 'data/institutions/index.json', 'data/institutions/SP.json', 'data/medical-specialties.json', 'scripts/build-institution-directory.mjs', 'scripts/build-national-institution-directory.mjs', 'scripts/download-cnes-professionals.mjs', 'docs/INTEGRACAO_FISCAL_E_DADOS_ASSISTENCIAIS.md', 'supabase/migrations/202607220001_fiscal_health_data_foundation.sql', 'assets/apple-touch-icon.png', 'assets/icon-192.png', 'assets/icon-512.png', 'branding/medrecebe-liquid-glass-master.png']) {
   const file = await stat(join(root, asset));
   assert.ok(file.size > 0, `${asset} precisa existir e não pode estar vazio`);
 }
@@ -121,7 +126,7 @@ assert.ok(
   'appState só pode ser carregado depois da mensagem padrão usada pelo estado vazio',
 );
 assert.ok(!appHtml.includes('Beta local:'), 'o aviso antigo de beta local não deve aparecer na entrada');
-assert.ok(appHtml.includes('styles.css?v=25') && appHtml.includes('cloud.js?v=9') && appHtml.includes('reconciliation-pdf.js?v=2') && appHtml.includes('app.js?v=27'), 'os arquivos corrigidos precisam de cache busting');
+assert.ok(appHtml.includes('styles.css?v=28') && appHtml.includes('cloud.js?v=10') && appHtml.includes('reconciliation-pdf.js?v=2') && appHtml.includes('app.js?v=32'), 'os arquivos corrigidos precisam de cache busting');
 for (const marker of ['auth-phone-country', 'auth-phone', 'Cadastre-se grátis']) assert.ok(appHtml.includes(marker), `cadastro gratuito sem: ${marker}`);
 for (const marker of ['auth-crm-uf', 'auth-crm-number', 'auth-specialty', 'Inteligência de mercado']) assert.ok(appHtml.includes(marker), `perfil profissional sem: ${marker}`);
 for (const marker of ['formatMobilePhone', 'isFreemiumAccount', 'canCreateWorkplace', 'phoneCountryCode', 'phoneNumber']) assert.ok(app.includes(marker), `plano Freemium ou celular sem: ${marker}`);
@@ -169,8 +174,11 @@ for (const marker of ['UF_BY_CODE', 'servicodados.ibge.gov.br', 'isValidCnpj', '
 assert.equal(medicalSpecialties.meta.count, 55, 'a lista precisa conter as 55 especialidades reconhecidas pelo CFM');
 assert.equal(medicalSpecialties.specialties.length, 55, 'a lista de especialidades está incompleta');
 for (const marker of ['professional_profiles', 'professional_registrations', 'professional_specialties', 'market_data_snapshots', 'market_indicators']) assert.ok(professionalMigration.includes(marker), `migration profissional sem: ${marker}`);
+for (const marker of ['market_source_registry', 'market_indicator_definitions', 'fiscal_connections', 'fiscal_connection_vault_refs', 'fiscal_connection_checkpoints', 'fiscal_sync_runs', 'fiscal_document_index', 'national_suppressed_demand']) assert.ok(fiscalHealthMigration.includes(marker), `fundação fiscal/assistencial sem: ${marker}`);
+for (const marker of ['API do ADN', 'GET /DFe/{NSU}', 'utilização observada', 'produção aprovada', '6 milhões', 'demanda reprimida real', 'Portões de qualidade']) assert.ok(healthDataDocumentation.includes(marker), `documentação fiscal/assistencial sem: ${marker}`);
+for (const marker of ['profissionais-url-download', 'ProfissionaisServlet', 'method: \'HEAD\'', 'Readable.fromWeb', 'sha256', 'Um registro representa um vínculo']) assert.ok(cnesProfessionalDownloader.includes(marker), `downloader CNES sem: ${marker}`);
 for (const marker of ['normalizeSpecialties', 'self_reported', 'opportunityRadiusKm', 'cfmConnectorAvailable']) assert.ok(professionalFunction.includes(marker), `perfil profissional sem: ${marker}`);
-for (const marker of ['pncp.gov.br/api/consulta', 'GENERAL_MEDICAL_TERMS', 'regional', 'recordsInspected']) assert.ok(marketFunction.includes(marker), `radar de mercado sem: ${marker}`);
+for (const marker of ['pncp.gov.br/api/consulta', 'MEDICAL_SERVICE_TERMS', 'regional', 'recordsInspected']) assert.ok(marketFunction.includes(marker), `radar de mercado sem: ${marker}`);
 for (const marker of ['incomeConcentration', 'loadMarketIntelligence', 'renderIntelligence', 'professionalProfile']) assert.ok(app.includes(marker), `inteligência no aplicativo sem: ${marker}`);
 for (const marker of ['loadInstitutionDirectory', 'searchInstitutionDirectory', 'CNPJ_CARD_URL']) assert.ok(mobileInstitutionDirectory.includes(marker), `diretório nativo sem: ${marker}`);
 for (const marker of ['billing-view', 'R$ 39,90', 'PLANO COMPLETO', 'runtime-config.js', 'cloud.js']) {
@@ -235,7 +243,7 @@ for (const [name, document] of [['Landing', landing], ['Aplicativo', `${appHtml}
   }
 }
 
-for (const marker of ['install', 'activate', 'fetch', 'caches.open', 'medrecebe-app-v32', './app.html', 'reconciliation-pdf.js?v=2', 'data/institutions/index.json', 'data/medical-specialties.json']) {
+for (const marker of ['install', 'activate', 'fetch', 'caches.open', 'medrecebe-app-v37', './app.html', 'reconciliation-pdf.js?v=2', 'data/institutions/index.json', 'data/medical-specialties.json']) {
   assert.ok(worker.includes(marker), `sw.js sem: ${marker}`);
 }
 

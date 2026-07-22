@@ -29,6 +29,13 @@ As tabelas `market_data_snapshots` e `market_indicators` registram fonte, versã
 8. CNES: identifica potenciais contratantes privados ativos para prospecção regional, sem tratá-los como vagas anunciadas.
 9. CFM: CRM e especialidades, somente pelo canal oficial contratado.
 
+10. SIH/SUS por CID principal: utilização hospitalar observada, nunca apresentada como prevalência ou fila.
+11. SIA/SUS + SIGTAP + OCI: produção aprovada, composição dos cuidados, CNES e CBO; demanda reprimida permanece bloqueada sem fila pública comparável.
+12. TISS/ANS: volume privado por procedimento, com cobertura e outliers explícitos; não será publicado como censo privado por CID.
+13. ADN NFS-e: sincronização fiscal por NSU e certificado, após homologação do conector; e-CAC e senha Gov.br não serão automatizados.
+
 O total do mapa considera profissionais-indivíduos selecionados nas ocupações médicas do CNES. A visualização por especialidade usa CBO e não deve ser interpretada como quantidade de RQEs ativos no CFM. Um mesmo médico pode aparecer em mais de um município; por isso o total estadual de indivíduos é exibido separadamente da presença municipal.
 
 Indicadores agregados não podem identificar pacientes. Dados públicos de profissionais mantêm finalidade, minimização, proveniência, prazo de atualização e canal de correção, conforme LGPD.
+
+O catálogo `market_source_registry` registra a qualidade e a decisão de uso de cada fonte. `market_indicator_definitions` impede que utilização observada, oferta instalada, sinal analítico e fila real sejam tratados como a mesma medida. A análise completa e os portões de qualidade estão em `docs/INTEGRACAO_FISCAL_E_DADOS_ASSISTENCIAIS.md`.

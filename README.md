@@ -18,6 +18,7 @@ SaaS para médicos registrarem atendimentos, acompanharem repasses e prepararem 
 - Conciliação de Nota Fiscal em PDF/XML por CNPJ, Razão Social e valor contabilizado.
 - Diretório nacional CNES, particionado por UF, com nome fantasia, razão social, 14.422 CNPJs e 22.782 hospitais e empresas de saúde.
 - Inteligência de mercado com concentração de honorários, radar ao vivo do PNCP e oportunidades por CRM, região e múltiplas especialidades.
+- Fundação auditável para NFS-e automática via ADN/NSU, sem senha do e-CAC, e para indicadores assistenciais com portões de qualidade.
 
 ## Estrutura
 
@@ -30,6 +31,8 @@ SaaS para médicos registrarem atendimentos, acompanharem repasses e prepararem 
 - `data/institutions/` e `scripts/build-national-institution-directory.mjs`: base institucional nacional por UF e gerador auditável.
 - `data/medical-specialties.json`: especialidades reconhecidas pela Resolução CFM nº 2.380/2024.
 - `docs/DIRETORIO_INSTITUCIONAL.md`: escopo, fontes, critérios de CNPJ e rotina de atualização.
+- `docs/INTEGRACAO_FISCAL_E_DADOS_ASSISTENCIAIS.md`: decisões de NFS-e, CID, OCI, CNES, qualidade e LGPD.
+- `scripts/download-cnes-professionals.mjs`: manifesto e download oficial da extração nacional de profissionais por UF.
 - `mobile/`: base do aplicativo iOS para TestFlight.
 
 ## Instalação no iPhone
