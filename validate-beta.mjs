@@ -126,7 +126,8 @@ assert.ok(
   'appState só pode ser carregado depois da mensagem padrão usada pelo estado vazio',
 );
 assert.ok(!appHtml.includes('Beta local:'), 'o aviso antigo de beta local não deve aparecer na entrada');
-assert.ok(appHtml.includes('styles.css?v=28') && appHtml.includes('cloud.js?v=10') && appHtml.includes('reconciliation-pdf.js?v=2') && appHtml.includes('app.js?v=32'), 'os arquivos corrigidos precisam de cache busting');
+assert.ok(appHtml.includes('styles.css?v=29') && appHtml.includes('cloud.js?v=10') && appHtml.includes('reconciliation-pdf.js?v=2') && appHtml.includes('app.js?v=32'), 'os arquivos corrigidos precisam de cache busting');
+for (const marker of ['position: fixed', 'padding-top: calc(50px + env(safe-area-inset-top))', 'height: calc(50px + env(safe-area-inset-top))']) assert.ok(appCss.includes(marker), `cabeçalho mobile fixo sem: ${marker}`);
 for (const marker of ['auth-phone-country', 'auth-phone', 'Cadastre-se grátis']) assert.ok(appHtml.includes(marker), `cadastro gratuito sem: ${marker}`);
 for (const marker of ['auth-crm-uf', 'auth-crm-number', 'auth-specialty', 'Inteligência de mercado']) assert.ok(appHtml.includes(marker), `perfil profissional sem: ${marker}`);
 for (const marker of ['formatMobilePhone', 'isFreemiumAccount', 'canCreateWorkplace', 'phoneCountryCode', 'phoneNumber']) assert.ok(app.includes(marker), `plano Freemium ou celular sem: ${marker}`);
@@ -243,7 +244,7 @@ for (const [name, document] of [['Landing', landing], ['Aplicativo', `${appHtml}
   }
 }
 
-for (const marker of ['install', 'activate', 'fetch', 'caches.open', 'medrecebe-app-v37', './app.html', 'reconciliation-pdf.js?v=2', 'data/institutions/index.json', 'data/medical-specialties.json']) {
+for (const marker of ['install', 'activate', 'fetch', 'caches.open', 'medrecebe-app-v38', './app.html', 'reconciliation-pdf.js?v=2', 'data/institutions/index.json', 'data/medical-specialties.json']) {
   assert.ok(worker.includes(marker), `sw.js sem: ${marker}`);
 }
 
