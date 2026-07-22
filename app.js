@@ -1157,7 +1157,7 @@ function showBilling() {
     suspended: ['Este acesso foi suspenso pelo administrador.', 'Entre em contato com o suporte antes de tentar um novo pagamento.'],
   };
   const [lead, detail] = upgrading
-    ? ['Desbloqueie locais ilimitados e mantenha toda a gestão em uma única conta.', 'Seu plano gratuito continua ativo enquanto você conclui a assinatura.']
+    ? ['Desbloqueie os recursos avançados do MedRecebe e mantenha toda a gestão em uma única conta.', 'Seu plano gratuito continua ativo enquanto você conclui a assinatura.']
     : messages[status] || messages.pending_payment;
   $('#billing-title').textContent = upgrading ? 'Evolua para o plano completo' : 'Ative seu acesso';
   $('#billing-lead').textContent = lead;
@@ -1692,7 +1692,7 @@ async function ensurePrivateProspects() {
 function newWorkplaceFromProspect(institutionId) {
   const cached = [...institutionDirectoryCache.values()].find((entry) => entry.institutions.some((item) => item.id === institutionId));
   const institution = cached?.institutions.find((item) => item.id === institutionId);
-  if (!institution || !canCreateWorkplace()) return;
+  if (!institution) return;
   pendingInvoiceWorkplaceId = '';
   draftWorkplace = { id: id('work'), name: '', address: '', payerCnpj: '', payerLegalName: '', reconciliationEmail: '', reconciliationCc: '', active: true, modalities: [] };
   editingModalityIndex = null;
@@ -1949,14 +1949,8 @@ function renderWorkplaces() {
       return `<article class="card workplace-summary"><div class="card-head"><span class="round-icon">⌂</span><div><h3>${escapeHtml(workplace.name)}</h3><p>${escapeHtml(workplace.payerLegalName || 'Razão Social não informada')}<br/>${workplace.payerCnpj ? `CNPJ ${formatCnpj(workplace.payerCnpj)}` : 'CNPJ não informado'}<br/>${escapeHtml(workplace.address || 'Endereço não informado')}</p></div><span class="badge ${workplace.active ? '' : 'inactive'}">${workplace.active ? 'Ativo' : 'Inativo'}</span></div><div class="modality-lines">${modes || '<p class="muted">Nenhuma modalidade cadastrada.</p>'}${remaining ? `<p class="field-hint">+ ${remaining} ${remaining === 1 ? 'modalidade cadastrada' : 'modalidades cadastradas'}</p>` : ''}</div><div class="row-actions"><button class="button secondary small" data-action="edit-workplace" data-id="${workplace.id}" type="button">Editar</button><button class="button secondary small" data-action="toggle-workplace" data-id="${workplace.id}" type="button">${workplace.active ? 'Desativar' : 'Reativar'}</button><button class="danger-link" data-action="delete-workplace" data-id="${workplace.id}" type="button">Excluir</button></div></article>`;
     })
     .join('');
-  const freemiumLimitReached = isFreemiumAccount() && appState.workplaces.length >= 1;
-  const planNotice = isFreemiumAccount()
-    ? `<div class="notice"><strong>Plano Freemium: ${Math.min(appState.workplaces.length, 1)} de 1 local utilizado</strong><br/>Você pode editar este local livremente ou migrar para o plano completo para cadastrar locais ilimitados.</div>`
-    : '';
-  const primaryAction = freemiumLimitReached
-    ? '<button class="button primary" data-action="upgrade-plan" type="button">Cadastrar mais locais</button>'
-    : '<button class="button primary" data-action="new-workplace" type="button">Adicionar local</button>';
-  screen.innerHTML = `<div class="screen-stack">${pageHeading('', 'Locais e modalidades', 'Cadastre, consulte, edite ou exclua pagadores e suas regras de atendimento.')}${planNotice}${primaryAction}<div class="list">${cards || emptyCard('Comece pelo primeiro local', 'Cadastre o pagador e suas modalidades.')}</div></div>`;
+  const primaryAction = '<button class="button primary" data-action="new-workplace" type="button">Adicionar local</button>';
+  screen.innerHTML = `<div class="screen-stack">${pageHeading('', 'Locais e modalidades', 'Cadastre, consulte, edite ou exclua pagadores e suas regras de atendimento.')}${primaryAction}<div class="list">${cards || emptyCard('Comece pelo primeiro local', 'Cadastre o pagador e suas modalidades.')}</div></div>`;
 }
 
 function renderAttendance() {
@@ -2557,8 +2551,8 @@ function renderAccount() {
   const freemium = isFreemiumAccount();
   const cloudSection = isCloudMode()
     ? freemium
-      ? `<h2 class="section-title">Plano e acesso</h2><div class="card workplace-summary"><div class="card-head"><span class="round-icon">1</span><div><h3>Plano Freemium</h3><p>1 local de trabalho gratuito</p></div><span class="badge">Ativo</span></div><p class="field-hint">Seus dados continuam sincronizados. Migre para o plano completo quando precisar cadastrar outros locais.</p><button class="button primary small" data-action="upgrade-plan" type="button">Conhecer o plano completo</button></div>`
-      : `<h2 class="section-title">Plano e acesso</h2><div class="card workplace-summary"><div class="card-head"><span class="round-icon">✓</span><div><h3>Plano completo</h3><p>R$ 39,90 por mês</p></div><span class="badge ${accessStatus === 'active' ? '' : 'inactive'}">${escapeHtml(subscriptionLabels[accessStatus] || 'Em configuração')}</span></div><p class="field-hint">Locais ilimitados e dados sincronizados entre o celular e o computador.</p></div>`
+      ? `<h2 class="section-title">Plano e acesso</h2><div class="card workplace-summary"><div class="card-head"><span class="round-icon">∞</span><div><h3>Plano Freemium</h3><p>Locais de trabalho sem limite</p></div><span class="badge">Ativo</span></div><p class="field-hint">Seus locais e dados de gestão continuam sincronizados. Conheça o plano completo para acessar recursos avançados.</p><button class="button primary small" data-action="upgrade-plan" type="button">Conhecer o plano completo</button></div>`
+      : `<h2 class="section-title">Plano e acesso</h2><div class="card workplace-summary"><div class="card-head"><span class="round-icon">✓</span><div><h3>Plano completo</h3><p>R$ 39,90 por mês</p></div><span class="badge ${accessStatus === 'active' ? '' : 'inactive'}">${escapeHtml(subscriptionLabels[accessStatus] || 'Em configuração')}</span></div><p class="field-hint">Recursos avançados e dados sincronizados entre o celular e o computador.</p></div>`
     : '';
   const deleteLabel = isCloudMode() ? 'Excluir dados salvos neste aparelho' : 'Excluir conta e dados locais';
   const phone = appState.profile?.phoneNumber ? `<br/>${escapeHtml(appState.profile.phoneCountryCode || '+55')} ${escapeHtml(formatMobilePhone(appState.profile.phoneNumber, appState.profile.phoneCountryCode || '+55'))}` : '';
@@ -2635,18 +2629,7 @@ function openInstallModal() {
   modalRoot.innerHTML = `<div class="modal-wrap"><section class="modal-sheet" role="dialog" aria-modal="true" aria-labelledby="install-title"><header class="modal-header"><button data-action="close-modal" type="button">Fechar</button><h2 id="install-title">Instalar no iPhone</h2><span></span></header><div class="modal-body"><div class="notice">Use o Safari. Outros navegadores no iPhone podem não mostrar a opção correta.</div><div class="install-steps"><div class="install-step"><div><strong>Abra o menu Compartilhar</strong><p>Toque no ícone de compartilhar do Safari.</p></div></div><div class="install-step"><div><strong>Adicionar à Tela de Início</strong><p>Role a lista de ações e escolha esta opção.</p></div></div><div class="install-step"><div><strong>Ative “Abrir como App da Web”</strong><p>Toque em Adicionar. O ícone MedRecebe aparecerá na Home Screen.</p></div></div></div><div class="notice success">Depois da primeira abertura online, o aplicativo também funciona sem internet.</div></div></section></div>`;
 }
 
-function showFreemiumLimit() {
-  modalRoot.innerHTML = `<div class="modal-wrap"><section class="modal-sheet" role="dialog" aria-modal="true" aria-labelledby="freemium-limit-title"><header class="modal-header simple"><span></span><h2 id="freemium-limit-title">Limite do plano gratuito</h2><button data-action="close-modal" aria-label="Fechar" type="button">×</button></header><div class="modal-body"><div class="notice"><strong>Seu local gratuito já está cadastrado.</strong><br/>Você pode continuar registrando atendimentos e editando este local. Para adicionar outros pagadores, migre para o plano completo.</div><button class="button primary" data-action="upgrade-plan" type="button">Cadastrar locais ilimitados</button><button class="button secondary" data-action="close-modal" type="button">Agora não</button></div></section></div>`;
-}
-
-function canCreateWorkplace() {
-  if (!isFreemiumAccount() || appState.workplaces.length < 1) return true;
-  showFreemiumLimit();
-  return false;
-}
-
 function newWorkplace() {
-  if (!canCreateWorkplace()) return;
   pendingInvoiceWorkplaceId = '';
   draftWorkplace = { id: id('work'), name: '', address: '', payerCnpj: '', payerLegalName: '', reconciliationEmail: '', reconciliationCc: '', active: true, modalities: [] };
   editingModalityIndex = null;
@@ -2669,7 +2652,6 @@ function invoicePayerSuggestion(invoice) {
 }
 
 function newWorkplaceFromInvoice(invoiceId) {
-  if (!canCreateWorkplace()) return;
   const invoice = (appState.invoices || []).find((item) => item.id === invoiceId);
   if (!invoice) return showToast('A Nota Fiscal não está mais disponível.');
   const suggestion = invoicePayerSuggestion(invoice);
@@ -3059,7 +3041,7 @@ function setAuthMode(mode) {
   };
   const descriptions = {
     login: isCloudMode() ? 'Entre com o CPF e a senha da sua conta MedRecebe.' : 'Entre com o CPF e a senha cadastrados neste aparelho.',
-    register: isCloudMode() ? 'Cadastre-se gratuitamente e organize os atendimentos de um local de trabalho.' : 'Cadastre seus dados reais. A conta permanecerá salva neste aparelho.',
+    register: isCloudMode() ? 'Cadastre-se gratuitamente e organize seus locais, atendimentos e repasses.' : 'Cadastre seus dados reais. A conta permanecerá salva neste aparelho.',
     forgot: 'Informe seu CPF para receber as instruções no e-mail cadastrado.',
     reset: 'Defina uma nova senha com pelo menos oito caracteres.',
   };
@@ -3938,7 +3920,6 @@ function saveWorkplace() {
   if (!isValidCnpj(draftWorkplace.payerCnpj)) return showToast('Informe um CNPJ válido do pagador.');
   if (!draftWorkplace.modalities.length) return showToast('Cadastre pelo menos uma modalidade.');
   const exists = appState.workplaces.some((item) => item.id === draftWorkplace.id);
-  if (!exists && isFreemiumAccount() && appState.workplaces.length >= 1) return showFreemiumLimit();
   const savedWorkplace = structuredClone(draftWorkplace);
   if (exists) appState.workplaces = appState.workplaces.map((item) => (item.id === draftWorkplace.id ? savedWorkplace : item));
   else appState.workplaces.push(savedWorkplace);

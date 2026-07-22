@@ -131,11 +131,12 @@ assert.ok(
   'appState só pode ser carregado depois da mensagem padrão usada pelo estado vazio',
 );
 assert.ok(!appHtml.includes('Beta local:'), 'o aviso antigo de beta local não deve aparecer na entrada');
-assert.ok(appHtml.includes('styles.css?v=31') && appHtml.includes('cloud.js?v=10') && appHtml.includes('reconciliation-pdf.js?v=4') && appHtml.includes('app.js?v=35'), 'os arquivos corrigidos precisam de cache busting');
+assert.ok(appHtml.includes('styles.css?v=31') && appHtml.includes('cloud.js?v=10') && appHtml.includes('reconciliation-pdf.js?v=4') && appHtml.includes('app.js?v=36'), 'os arquivos corrigidos precisam de cache busting');
 for (const marker of ['position: fixed', 'padding-top: calc(50px + env(safe-area-inset-top))', 'height: calc(50px + env(safe-area-inset-top))', 'height: 100dvh', 'overflow-y: auto']) assert.ok(appCss.includes(marker), `cabeçalho mobile fixo sem: ${marker}`);
 for (const marker of ['auth-phone-country', 'auth-phone', 'Cadastre-se grátis']) assert.ok(appHtml.includes(marker), `cadastro gratuito sem: ${marker}`);
 for (const marker of ['auth-crm-uf', 'auth-crm-number', 'auth-specialty', 'Inteligência de mercado']) assert.ok(appHtml.includes(marker), `perfil profissional sem: ${marker}`);
-for (const marker of ['formatMobilePhone', 'isFreemiumAccount', 'canCreateWorkplace', 'phoneCountryCode', 'phoneNumber']) assert.ok(app.includes(marker), `plano Freemium ou celular sem: ${marker}`);
+for (const marker of ['formatMobilePhone', 'isFreemiumAccount', 'phoneCountryCode', 'phoneNumber']) assert.ok(app.includes(marker), `plano Freemium ou celular sem: ${marker}`);
+assert.ok(!app.includes('showFreemiumLimit') && !app.includes('canCreateWorkplace') && !app.includes('workplaces.length >= 1'), 'o frontend não pode limitar locais no Freemium');
 for (const marker of ['Esqueci minha senha', 'auth-new-password', 'auth-confirm-password']) assert.ok(appHtml.includes(marker), `recuperação de senha sem: ${marker}`);
 for (const marker of ['consumeRecoveryLink', 'history.replaceState', "setAuthMode('forgot')", 'cloud.updatePassword']) assert.ok(app.includes(marker), `jornada de recuperação sem: ${marker}`);
 for (const marker of ['requestPasswordReset', 'updatePassword', '/auth/v1/logout?scope=global']) assert.ok(cloud.includes(marker), `cliente de recuperação sem: ${marker}`);
@@ -228,7 +229,7 @@ for (const marker of ['freemium_user_created', 'durationUnit', 'lifetime']) asse
 for (const marker of ['update_profile', 'schedule_suspension', 'force_suspension', 'delete_user']) assert.ok(adminUpdateFunction.includes(marker), `CRUD administrativo sem: ${marker}`);
 for (const marker of ['phone_country_code', 'phone_number', "set default 'freemium'", "selected_plan in ('freemium', 'standard')"]) assert.ok(selfServiceMigration.includes(marker), `migration Freemium sem: ${marker}`);
 for (const marker of ['normalizePhoneCountryCode', 'normalizePhoneNumber', 'isValidPhone']) assert.ok(phoneShared.includes(marker), `validação de celular sem: ${marker}`);
-assert.ok(syncStateFunction.includes("selected_plan === 'freemium'") && syncStateFunction.includes('workplaces.length > 1'), 'limite Freemium precisa ser validado no servidor');
+assert.ok(!syncStateFunction.includes("selected_plan === 'freemium'") && !syncStateFunction.includes('workplaces.length > 1'), 'o servidor não pode limitar locais no Freemium');
 for (const marker of ['cancelPreapproval', "['cancelled', 'canceled']", 'MercadoPagoError', 'status === 404']) assert.ok(mercadoPagoShared.includes(marker), `cancelamento recorrente sem: ${marker}`);
 assert.ok(adminUpdateFunction.includes('cancelPreapproval'), 'exclusão administrativa não cancela a assinatura de forma compatível');
 assert.ok(createSubscriptionFunction.includes('cancelPreapproval'), 'substituição de assinatura pendente não cancela a anterior de forma compatível');
@@ -253,7 +254,7 @@ for (const [name, document] of [['Landing', landing], ['Aplicativo', `${appHtml}
   }
 }
 
-for (const marker of ['install', 'activate', 'fetch', 'caches.open', 'medrecebe-app-v41', './app.html', 'reconciliation-pdf.js?v=4', 'data/institutions/index.json', 'data/medical-specialties.json']) {
+for (const marker of ['install', 'activate', 'fetch', 'caches.open', 'medrecebe-app-v42', './app.html', 'reconciliation-pdf.js?v=4', 'data/institutions/index.json', 'data/medical-specialties.json']) {
   assert.ok(worker.includes(marker), `sw.js sem: ${marker}`);
 }
 
@@ -281,4 +282,4 @@ assert.ok(cloud.includes('/auth/v1/logout?scope=local') && cloud.includes('await
 assert.ok(appHtml.includes('Content-Security-Policy') && adminHtml.includes('Content-Security-Policy'), 'áreas autenticadas precisam de CSP');
 assert.ok(appHtml.includes('frame-guard.js?v=1') && adminHtml.includes('frame-guard.js?v=1') && frameGuard.includes('window.top === window.self'), 'áreas autenticadas precisam de defesa contra frames');
 
-console.log('MedRecebe validado: cadastro com celular, Freemium de um local, plano completo, logout, CRUD, Nota Fiscal, backup, cancelamento e sincronização presentes.');
+console.log('MedRecebe validado: cadastro com celular, Freemium sem limite de locais, plano completo, logout, CRUD, Nota Fiscal, backup, cancelamento e sincronização presentes.');

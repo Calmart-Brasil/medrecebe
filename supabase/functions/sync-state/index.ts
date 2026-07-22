@@ -63,9 +63,6 @@ Deno.serve(async (request) => {
 
     if (action !== 'save') return publicError(request, 'Ação inválida.');
     const state = safeState(body.state);
-    if (profile.role !== 'admin' && profile.selected_plan === 'freemium' && Array.isArray(state.workplaces) && state.workplaces.length > 1) {
-      return publicError(request, 'O plano Freemium permite cadastrar um local de trabalho.', 403);
-    }
     const serialized = JSON.stringify(state);
     if (serialized.length > 2_000_000) return publicError(request, 'Os dados excedem o limite de sincronização.', 413);
 

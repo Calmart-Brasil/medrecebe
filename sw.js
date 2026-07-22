@@ -1,4 +1,4 @@
-const CACHE_NAME = 'medrecebe-app-v41';
+const CACHE_NAME = 'medrecebe-app-v42';
 const APP_SHELL = [
   './',
   './index.html',
@@ -8,7 +8,7 @@ const APP_SHELL = [
   './cloud.js?v=10',
   './frame-guard.js?v=1',
   './reconciliation-pdf.js?v=4',
-  './app.js?v=35',
+  './app.js?v=36',
   './data/institutions/index.json?v=20260718',
   './data/institutions/SP.json?v=20260718',
   './data/medical-specialties.json?v=20260721',
